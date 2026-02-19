@@ -27,6 +27,7 @@ jobs:
         cp backend/pyproject.toml hf/
         cp backend/uv.lock hf/
         cp backend/Dockerfile hf/
+        cp backend/src hf/
 
         cd hf
         git add .
