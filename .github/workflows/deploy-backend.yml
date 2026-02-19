@@ -2,7 +2,7 @@ name: Deploy to Hugging Face
 
 on:
   push:
-    branches: [ main ]
+    branches: [ master ]
 
 jobs:
   deploy:
@@ -23,10 +23,11 @@ jobs:
 
         git clone https://huggingface.co/spaces/$HF_USERNAME/$HF_SPACE_NAME hf
 
-        cp main.py hf/
-        cp pyproject.toml hf/
-        cp uv.lock hf/
-        cp Dockerfile hf/
+        # Copy all necessary files from backend directory
+        cp backend/pyproject.toml hf/
+        cp backend/uv.lock hf/
+        cp backend/Dockerfile hf/
+        cp -r backend/src hf/
 
         cd hf
         git add .
