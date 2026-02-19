@@ -1,0 +1,670 @@
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from typing import List, Dict, Any
+from uuid import UUID
+import logging
+
+from src.database.session import get_db
+from src.services.invoice_service import InvoiceService
+from src.services.fbr_service import fbr_service
+from src.schemas.invoice import InvoiceCreate, InvoiceResponse, InvoiceUpdate, InvoiceListResponse, InvoiceFilter
+from src.api.middleware.auth_middleware import require_authentication
+from src.api.deps import get_database_session, get_pagination_params
+from src.models.user import User
+from src.models.invoice import Invoice, InvoiceStatus
+from src.models.fbr_response import FBRResponse
+
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+
+@router.post("/", response_model=InvoiceResponse)
+def create_invoice(
+    invoice_create: InvoiceCreate,
+    db = Depends(get_database_session),
+    user_id: str = Depends(require_authentication)
+):
+    """
+    Create a new invoice in draft status.
+    """
+    service = InvoiceService()
+
+    # Convert user_id string to UUID
+    user_uuid = UUID(user_id)
+
+    # Create the invoice
+    db_invoice = service.create_invoice(db, invoice_create, user_uuid)
+
+    # Convert to response model
+    return InvoiceResponse(
+        id=db_invoice.id,
+        external_id=db_invoice.external_id,
+        user_id=db_invoice.user_id,
+        invoice_type=db_invoice.invoice_type,
+        invoice_date=db_invoice.invoice_date,
+        seller_ntn_cnic=db_invoice.seller_ntn_cnic,
+        seller_business_name=db_invoice.seller_business_name,
+        seller_province=db_invoice.seller_province,
+        seller_address=db_invoice.seller_address,
+        buyer_ntn_cnic=db_invoice.buyer_ntn_cnic,
+        buyer_business_name=db_invoice.buyer_business_name,
+        buyer_province=db_invoice.buyer_province,
+        buyer_address=db_invoice.buyer_address,
+        buyer_registration_type=db_invoice.buyer_registration_type,
+        invoice_ref_no=db_invoice.invoice_ref_no,
+        scenario_id=db_invoice.scenario_id,
+        items=db_invoice.items,
+        environment=db_invoice.environment,
+        status=db_invoice.status,
+        created_at=db_invoice.created_at,
+        updated_at=db_invoice.updated_at,
+        validated_at=db_invoice.validated_at,
+        posted_at=db_invoice.posted_at,
+        fbr_reference_number=db_invoice.fbr_reference_number,
+        validation_errors=db_invoice.validation_errors
+    )
+
+
+@router.get("/{invoice_id}", response_model=InvoiceResponse)
+def get_invoice(
+    invoice_id: UUID,
+    db = Depends(get_database_session),
+    user_id: str = Depends(require_authentication)
+):
+    """
+    Get an invoice by its ID.
+    """
+    service = InvoiceService()
+
+    # Convert user_id string to UUID
+    user_uuid = UUID(user_id)
+
+    # Get the invoice
+    db_invoice = service.get_invoice_by_id(db, invoice_id, user_uuid)
+
+    if not db_invoice:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invoice not found"
+        )
+
+    # Convert to response model
+    return InvoiceResponse(
+        id=db_invoice.id,
+        external_id=db_invoice.external_id,
+        user_id=db_invoice.user_id,
+        invoice_type=db_invoice.invoice_type,
+        invoice_date=db_invoice.invoice_date,
+        seller_ntn_cnic=db_invoice.seller_ntn_cnic,
+        seller_business_name=db_invoice.seller_business_name,
+        seller_province=db_invoice.seller_province,
+        seller_address=db_invoice.seller_address,
+        buyer_ntn_cnic=db_invoice.buyer_ntn_cnic,
+        buyer_business_name=db_invoice.buyer_business_name,
+        buyer_province=db_invoice.buyer_province,
+        buyer_address=db_invoice.buyer_address,
+        buyer_registration_type=db_invoice.buyer_registration_type,
+        invoice_ref_no=db_invoice.invoice_ref_no,
+        scenario_id=db_invoice.scenario_id,
+        items=db_invoice.items,
+        environment=db_invoice.environment,
+        status=db_invoice.status,
+        created_at=db_invoice.created_at,
+        updated_at=db_invoice.updated_at,
+        validated_at=db_invoice.validated_at,
+        posted_at=db_invoice.posted_at,
+        fbr_reference_number=db_invoice.fbr_reference_number,
+        validation_errors=db_invoice.validation_errors
+    )
+
+
+@router.get("/", response_model=InvoiceListResponse)
+def list_invoices(
+    filters: InvoiceFilter = Depends(),
+    db = Depends(get_database_session),
+    user_id: str = Depends(require_authentication)
+):
+    """
+    List invoices with optional filtering and pagination.
+    """
+    service = InvoiceService()
+
+    # Convert user_id string to UUID
+    user_uuid = UUID(user_id)
+
+    # Get invoices with filters
+    invoices = service.get_invoices_by_user(db, user_uuid, filters)
+
+    # Get total count for pagination
+    total_count = service.get_invoice_count(db, user_uuid, filters)
+
+    # Calculate pagination info
+    total_pages = (total_count + filters.size - 1) // filters.size
+
+    # Convert to response models
+    invoice_responses = [
+        InvoiceResponse(
+            id=inv.id,
+            external_id=inv.external_id,
+            user_id=inv.user_id,
+            invoice_type=inv.invoice_type,
+            invoice_date=inv.invoice_date,
+            seller_ntn_cnic=inv.seller_ntn_cnic,
+            seller_business_name=inv.seller_business_name,
+            seller_province=inv.seller_province,
+            seller_address=inv.seller_address,
+            buyer_ntn_cnic=inv.buyer_ntn_cnic,
+            buyer_business_name=inv.buyer_business_name,
+            buyer_province=inv.buyer_province,
+            buyer_address=inv.buyer_address,
+            buyer_registration_type=inv.buyer_registration_type,
+            invoice_ref_no=inv.invoice_ref_no,
+            scenario_id=inv.scenario_id,
+            items=inv.items,
+            environment=inv.environment,
+            status=inv.status,
+            created_at=inv.created_at,
+            updated_at=inv.updated_at,
+            validated_at=inv.validated_at,
+            posted_at=inv.posted_at,
+            fbr_reference_number=inv.fbr_reference_number,
+            validation_errors=inv.validation_errors
+        )
+        for inv in invoices
+    ]
+
+    return InvoiceListResponse(
+        data=invoice_responses,
+        total=total_count,
+        page=filters.page,
+        size=filters.size,
+        total_pages=total_pages
+    )
+
+
+@router.put("/{invoice_id}", response_model=InvoiceResponse)
+async def update_invoice(
+    invoice_id: UUID,
+    request: Request,
+    db = Depends(get_database_session),
+    user_id: str = Depends(require_authentication)
+):
+    """
+    Update an existing invoice.
+    """
+    service = InvoiceService()
+
+    # Convert user_id string to UUID
+    user_uuid = UUID(user_id)
+
+    # Parse the request body directly as dict
+    import json
+    raw_body = await request.body()
+    body_data = json.loads(raw_body)
+
+    # Create InvoiceUpdate from the parsed data for validation
+    invoice_update = InvoiceUpdate(**body_data)
+
+    # Update the invoice using the raw body data (already validated by InvoiceUpdate)
+    updated_invoice = service.update_invoice_from_dict(db, invoice_id, body_data, user_uuid)
+
+    if not updated_invoice:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invoice not found"
+        )
+
+    # Convert to response model
+    return InvoiceResponse(
+        id=updated_invoice.id,
+        external_id=updated_invoice.external_id,
+        user_id=updated_invoice.user_id,
+        invoice_type=updated_invoice.invoice_type,
+        invoice_date=updated_invoice.invoice_date,
+        seller_ntn_cnic=updated_invoice.seller_ntn_cnic,
+        seller_business_name=updated_invoice.seller_business_name,
+        seller_province=updated_invoice.seller_province,
+        seller_address=updated_invoice.seller_address,
+        buyer_ntn_cnic=updated_invoice.buyer_ntn_cnic,
+        buyer_business_name=updated_invoice.buyer_business_name,
+        buyer_province=updated_invoice.buyer_province,
+        buyer_address=updated_invoice.buyer_address,
+        buyer_registration_type=updated_invoice.buyer_registration_type,
+        invoice_ref_no=updated_invoice.invoice_ref_no,
+        scenario_id=updated_invoice.scenario_id,
+        items=updated_invoice.items,
+        environment=updated_invoice.environment,
+        status=updated_invoice.status,
+        created_at=updated_invoice.created_at,
+        updated_at=updated_invoice.updated_at,
+        validated_at=updated_invoice.validated_at,
+        posted_at=updated_invoice.posted_at,
+        fbr_reference_number=updated_invoice.fbr_reference_number,
+        validation_errors=updated_invoice.validation_errors
+    )
+
+
+@router.delete("/{invoice_id}")
+def delete_invoice(
+    invoice_id: UUID,
+    db = Depends(get_database_session),
+    user_id: str = Depends(require_authentication)
+):
+    """
+    Mark an invoice as deleted (soft delete).
+    """
+    service = InvoiceService()
+
+    # Convert user_id string to UUID
+    user_uuid = UUID(user_id)
+
+    # Attempt to delete the invoice
+    success = service.delete_invoice(db, invoice_id, user_uuid)
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invoice not found"
+        )
+
+    return {"message": "Invoice marked as deleted"}
+
+
+@router.get("/{invoice_id}/history")
+def get_invoice_history(
+    invoice_id: UUID,
+    db = Depends(get_database_session),
+    user_id: str = Depends(require_authentication)
+):
+    """
+    Get an invoice with its complete history including FBR responses.
+    """
+    service = InvoiceService()
+
+    # Convert user_id string to UUID
+    user_uuid = UUID(user_id)
+
+    # Get the invoice with history
+    result = service.get_invoice_with_history(db, invoice_id, user_uuid)
+
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invoice not found"
+        )
+
+    # Convert to response model
+    invoice = result["invoice"]
+    fbr_responses = result["fbr_responses"]
+
+    return {
+        "invoice": InvoiceResponse(
+            id=invoice.id,
+            external_id=invoice.external_id,
+            user_id=invoice.user_id,
+            invoice_type=invoice.invoice_type,
+            invoice_date=invoice.invoice_date,
+            seller_ntn_cnic=invoice.seller_ntn_cnic,
+            seller_business_name=invoice.seller_business_name,
+            seller_province=invoice.seller_province,
+            seller_address=invoice.seller_address,
+            buyer_ntn_cnic=invoice.buyer_ntn_cnic,
+            buyer_business_name=invoice.buyer_business_name,
+            buyer_province=invoice.buyer_province,
+            buyer_address=invoice.buyer_address,
+            buyer_registration_type=invoice.buyer_registration_type,
+            invoice_ref_no=invoice.invoice_ref_no,
+            scenario_id=invoice.scenario_id,
+            items=invoice.items,
+            environment=invoice.environment,
+            status=invoice.status,
+            created_at=invoice.created_at,
+            updated_at=invoice.updated_at,
+            validated_at=invoice.validated_at,
+            posted_at=invoice.posted_at,
+            fbr_reference_number=invoice.fbr_reference_number,
+            validation_errors=invoice.validation_errors
+        ),
+        "fbr_responses": [
+            {
+                "id": str(resp.id),
+                "request_payload": resp.request_payload,
+                "response_payload": resp.response_payload,
+                "endpoint": resp.endpoint,
+                "method": resp.method,
+                "status_code": resp.status_code,
+                "timestamp": resp.timestamp,
+                "environment": resp.environment,
+                "correlation_id": resp.correlation_id,
+                "processing_duration_ms": resp.processing_duration_ms
+            }
+            for resp in fbr_responses
+        ]
+    }
+
+
+@router.patch("/{invoice_id}/status")
+def update_invoice_status(
+    invoice_id: UUID,
+    status_update: InvoiceUpdate,
+    db = Depends(get_database_session),
+    user_id: str = Depends(require_authentication)
+):
+    """
+    Update the status of an invoice.
+    """
+    service = InvoiceService()
+
+    # Convert user_id string to UUID
+    user_uuid = UUID(user_id)
+
+    # Validate the status transition
+    if status_update.status:
+        invoice = service.get_invoice_by_id(db, invoice_id, user_uuid)
+        if not invoice:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Invoice not found"
+            )
+
+        if not service.validate_invoice_transition(invoice.status, status_update.status):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid status transition: {invoice.status} -> {status_update.status}"
+            )
+
+    # Update the invoice status
+    updated_invoice = service.update_invoice_status(
+        db,
+        invoice_id,
+        status_update.status,
+        user_uuid
+    )
+
+    if not updated_invoice:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invoice not found"
+        )
+
+    # Convert to response model
+    return InvoiceResponse(
+        id=updated_invoice.id,
+        external_id=updated_invoice.external_id,
+        user_id=updated_invoice.user_id,
+        invoice_type=updated_invoice.invoice_type,
+        invoice_date=updated_invoice.invoice_date,
+        seller_ntn_cnic=updated_invoice.seller_ntn_cnic,
+        seller_business_name=updated_invoice.seller_business_name,
+        seller_province=updated_invoice.seller_province,
+        seller_address=updated_invoice.seller_address,
+        buyer_ntn_cnic=updated_invoice.buyer_ntn_cnic,
+        buyer_business_name=updated_invoice.buyer_business_name,
+        buyer_province=updated_invoice.buyer_province,
+        buyer_address=updated_invoice.buyer_address,
+        buyer_registration_type=updated_invoice.buyer_registration_type,
+        invoice_ref_no=updated_invoice.invoice_ref_no,
+        scenario_id=updated_invoice.scenario_id,
+        items=updated_invoice.items,
+        environment=updated_invoice.environment,
+        status=updated_invoice.status,
+        created_at=updated_invoice.created_at,
+        updated_at=updated_invoice.updated_at,
+        validated_at=updated_invoice.validated_at,
+        posted_at=updated_invoice.posted_at,
+        fbr_reference_number=updated_invoice.fbr_reference_number,
+        validation_errors=updated_invoice.validation_errors
+    )
+
+@router.post("/{invoice_id}/validate")
+async def validate_invoice_with_fbr(
+    invoice_id: UUID,
+    db = Depends(get_database_session),
+    user_id: str = Depends(require_authentication)
+):
+    """
+    Validate an invoice with FBR Digital Invoicing System.
+    Invoice must be in DRAFT status.
+    """
+    service = InvoiceService()
+    user_uuid = UUID(user_id)
+
+    # Get the invoice
+    invoice = service.get_invoice_by_id(db, invoice_id, user_uuid)
+    if not invoice:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invoice not found"
+        )
+
+    # Check if invoice is in DRAFT status
+    if invoice.status != InvoiceStatus.DRAFT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invoice must be in DRAFT status to validate. Current status: {invoice.status}"
+        )
+
+    # Get user's FBR access token from database based on environment
+    user = db.get(User, user_uuid)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    # Select the appropriate token based on invoice environment
+    if invoice.environment == "SANDBOX":
+        access_token = user.fbr_sandbox_token or user.fbr_access_token
+        if not access_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="FBR Sandbox token not configured. Please update your profile with FBR Sandbox credentials."
+            )
+    else:  # PRODUCTION
+        access_token = user.fbr_production_token or user.fbr_access_token
+        if not access_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="FBR Production token not configured. Please update your profile with FBR Production credentials."
+            )
+
+    try:
+        # Call FBR validation API
+        logger.info(f"Validating invoice {invoice_id} with FBR")
+        fbr_response = await fbr_service.validate_invoice(invoice, access_token)
+
+        # Parse the response
+        is_valid, error_message, item_errors = fbr_service.parse_validation_response(fbr_response)
+
+        if is_valid:
+            # Update invoice status to VALIDATED
+            updated_invoice = service.update_invoice_status(
+                db, invoice_id, InvoiceStatus.VALIDATED, user_uuid
+            )
+
+            logger.info(f"Invoice {invoice_id} validated successfully")
+
+            return {
+                "success": True,
+                "message": "Invoice validated successfully",
+                "invoice": InvoiceResponse(
+                    id=updated_invoice.id,
+                    external_id=updated_invoice.external_id,
+                    user_id=updated_invoice.user_id,
+                    invoice_type=updated_invoice.invoice_type,
+                    invoice_date=updated_invoice.invoice_date,
+                    seller_ntn_cnic=updated_invoice.seller_ntn_cnic,
+                    seller_business_name=updated_invoice.seller_business_name,
+                    seller_province=updated_invoice.seller_province,
+                    seller_address=updated_invoice.seller_address,
+                    buyer_ntn_cnic=updated_invoice.buyer_ntn_cnic,
+                    buyer_business_name=updated_invoice.buyer_business_name,
+                    buyer_province=updated_invoice.buyer_province,
+                    buyer_address=updated_invoice.buyer_address,
+                    buyer_registration_type=updated_invoice.buyer_registration_type,
+                    invoice_ref_no=updated_invoice.invoice_ref_no,
+                    scenario_id=updated_invoice.scenario_id,
+                    items=updated_invoice.items,
+                    environment=updated_invoice.environment,
+                    status=updated_invoice.status,
+                    created_at=updated_invoice.created_at,
+                    updated_at=updated_invoice.updated_at,
+                    validated_at=updated_invoice.validated_at,
+                    posted_at=updated_invoice.posted_at,
+                    fbr_reference_number=updated_invoice.fbr_reference_number,
+                    validation_errors=updated_invoice.validation_errors
+                ),
+                "fbr_response": fbr_response
+            }
+        else:
+            # Store validation errors
+            invoice.validation_errors = {
+                "error": error_message,
+                "item_errors": item_errors
+            }
+            db.add(invoice)
+            db.commit()
+
+            logger.warning(f"Invoice {invoice_id} validation failed: {error_message}")
+
+            return {
+                "success": False,
+                "message": error_message,
+                "errors": item_errors,
+                "fbr_response": fbr_response
+            }
+
+    except Exception as e:
+        logger.error(f"Error validating invoice {invoice_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to validate invoice: {str(e)}"
+        )
+
+
+@router.post("/{invoice_id}/post")
+async def post_invoice_to_fbr(
+    invoice_id: UUID,
+    db = Depends(get_database_session),
+    user_id: str = Depends(require_authentication)
+):
+    """
+    Post a validated invoice to FBR Digital Invoicing System.
+    Invoice must be in VALIDATED status.
+    """
+    service = InvoiceService()
+    user_uuid = UUID(user_id)
+
+    # Get the invoice
+    invoice = service.get_invoice_by_id(db, invoice_id, user_uuid)
+    if not invoice:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invoice not found"
+        )
+
+    # Check if invoice is in VALIDATED status
+    if invoice.status != InvoiceStatus.VALIDATED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invoice must be in VALIDATED status to post. Current status: {invoice.status}"
+        )
+
+    # Get user's FBR access token from database based on environment
+    user = db.get(User, user_uuid)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    # Select the appropriate token based on invoice environment
+    if invoice.environment == "SANDBOX":
+        access_token = user.fbr_sandbox_token or user.fbr_access_token
+        if not access_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="FBR Sandbox token not configured. Please update your profile with FBR Sandbox credentials."
+            )
+    else:  # PRODUCTION
+        access_token = user.fbr_production_token or user.fbr_access_token
+        if not access_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="FBR Production token not configured. Please update your profile with FBR Production credentials."
+            )
+
+    try:
+        # Call FBR posting API
+        logger.info(f"Posting invoice {invoice_id} to FBR")
+        fbr_response = await fbr_service.post_invoice(invoice, access_token)
+
+        # Parse the response
+        is_success, fbr_invoice_number, error_message = fbr_service.parse_posting_response(fbr_response)
+
+        if is_success:
+            # Update invoice status to POSTED and store FBR reference number
+            invoice.status = InvoiceStatus.POSTED
+            invoice.fbr_reference_number = fbr_invoice_number
+            db.add(invoice)
+            db.commit()
+            db.refresh(invoice)
+
+            logger.info(f"Invoice {invoice_id} posted successfully. FBR Number: {fbr_invoice_number}")
+
+            return {
+                "success": True,
+                "message": "Invoice posted successfully",
+                "fbr_invoice_number": fbr_invoice_number,
+                "invoice": InvoiceResponse(
+                    id=invoice.id,
+                    external_id=invoice.external_id,
+                    user_id=invoice.user_id,
+                    invoice_type=invoice.invoice_type,
+                    invoice_date=invoice.invoice_date,
+                    seller_ntn_cnic=invoice.seller_ntn_cnic,
+                    seller_business_name=invoice.seller_business_name,
+                    seller_province=invoice.seller_province,
+                    seller_address=invoice.seller_address,
+                    buyer_ntn_cnic=invoice.buyer_ntn_cnic,
+                    buyer_business_name=invoice.buyer_business_name,
+                    buyer_province=invoice.buyer_province,
+                    buyer_address=invoice.buyer_address,
+                    buyer_registration_type=invoice.buyer_registration_type,
+                    invoice_ref_no=invoice.invoice_ref_no,
+                    scenario_id=invoice.scenario_id,
+                    items=invoice.items,
+                    environment=invoice.environment,
+                    status=invoice.status,
+                    created_at=invoice.created_at,
+                    updated_at=invoice.updated_at,
+                    validated_at=invoice.validated_at,
+                    posted_at=invoice.posted_at,
+                    fbr_reference_number=invoice.fbr_reference_number,
+                    validation_errors=invoice.validation_errors
+                ),
+                "fbr_response": fbr_response
+            }
+        else:
+            # Update status to FAILED
+            invoice.status = InvoiceStatus.FAILED
+            invoice.validation_errors = {
+                "error": error_message
+            }
+            db.add(invoice)
+            db.commit()
+
+            logger.warning(f"Invoice {invoice_id} posting failed: {error_message}")
+
+            return {
+                "success": False,
+                "message": error_message,
+                "fbr_response": fbr_response
+            }
+
+    except Exception as e:
+        logger.error(f"Error posting invoice {invoice_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to post invoice: {str(e)}"
+        )

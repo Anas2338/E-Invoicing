@@ -1,0 +1,49 @@
+{
+  "examples": [
+    {
+      "error_log": "Traceback (most recent call last):\n  File \"app.py\", line 25, in get_user\n    return users[user_id]\nIndexError: list index out of range",
+      "analysis": {
+        "error_type": "index_error",
+        "simple_explanation": "The code is trying to access an item in a list using an index that doesn't exist",
+        "root_cause": "The user_id is greater than or equal to the length of the users list",
+        "solutions": [
+          {
+            "approach": "Add bounds checking",
+            "code": "# Before\nreturn users[user_id]\n\n# After\nif 0 <= user_id < len(users):\n    return users[user_id]\nelse:\n    raise ValueError(f'User ID {user_id} not found')",
+            "reasoning": "Prevents accessing indices that don't exist in the list"
+          },
+          {
+            "approach": "Use exception handling",
+            "code": "try:\n    return users[user_id]\nexcept IndexError:\n    raise ValueError(f'User ID {user_id} not found')",
+            "reasoning": "Gracefully handles the case when index is out of bounds"
+          }
+        ],
+        "common_pitfalls": [
+          "Not validating user input for array indices",
+          "Assuming list contains expected number of items",
+          "Off-by-one errors in loop conditions"
+        ]
+      }
+    },
+    {
+      "error_log": "Traceback (most recent call last):\n  File \"api.py\", line 18, in get_data\n    return response.json()\n  File \"python3.9/site-packages/requests/models.py\", line 910, in json\n    return complexjson.loads(self.text)\n  File \"/usr/local/lib/python3.9/json/__init__.py\", line 359, in loads\n    return cls(raw_decode(s, idx=0))\njson.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)",
+      "analysis": {
+        "error_type": "json_error",
+        "simple_explanation": "The code is trying to parse JSON from a response that doesn't contain valid JSON",
+        "root_cause": "The API returned an empty response or non-JSON content",
+        "solutions": [
+          {
+            "approach": "Check response content before parsing",
+            "code": "# Before\nreturn response.json()\n\n# After\nif response.content and response.headers.get('content-type', '').startswith('application/json'):\n    return response.json()\nelse:\n    return {}",
+            "reasoning": "Ensures response contains JSON before attempting to parse"
+          }
+        ],
+        "common_pitfalls": [
+          "Not checking response status before parsing",
+          "Assuming all API responses are valid JSON",
+          "Not handling empty responses"
+        ]
+      }
+    }
+  ]
+}

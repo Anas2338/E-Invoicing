@@ -1,0 +1,49 @@
+{
+  "examples": [
+    {
+      "error_log": "TypeError: Cannot read property 'length' of undefined at src/components/UserList.js:15:23",
+      "analysis": {
+        "error_type": "null_reference",
+        "simple_explanation": "The code is trying to access the 'length' property on a variable that is undefined",
+        "root_cause": "The variable 'users' is undefined when the component renders",
+        "solutions": [
+          {
+            "approach": "Add null check",
+            "code": "// Before\nconst count = users.length;\n\n// After\nconst count = users ? users.length : 0;",
+            "reasoning": "Prevents accessing length on undefined value"
+          },
+          {
+            "approach": "Use optional chaining",
+            "code": "const count = users?.length || 0;",
+            "reasoning": "Safely accesses nested properties"
+          }
+        ],
+        "common_pitfalls": [
+          "Forgetting to initialize state variables",
+          "Asynchronous data not loaded yet",
+          "Incorrect API response structure"
+        ]
+      }
+    },
+    {
+      "error_log": "SyntaxError: Unexpected token '}' in JSON at position 42",
+      "analysis": {
+        "error_type": "syntax_error",
+        "simple_explanation": "There's a syntax error in JSON data - likely a missing comma or extra bracket",
+        "root_cause": "Malformed JSON with incorrect syntax",
+        "solutions": [
+          {
+            "approach": "Validate JSON syntax",
+            "code": "// Use JSON validator or formatter to check syntax",
+            "reasoning": "Identifies exact location of syntax error"
+          }
+        ],
+        "common_pitfalls": [
+          "Trailing commas in JSON objects",
+          "Missing quotes around property names",
+          "Unescaped quotes in string values"
+        ]
+      }
+    }
+  ]
+}

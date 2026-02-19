@@ -1,0 +1,19 @@
+{
+  "/(auth)/login/page": "/login",
+  "/(auth)/register/page": "/register",
+  "/(protected)/dashboard/page": "/dashboard",
+  "/(protected)/help/page": "/help",
+  "/(protected)/invoices/[id]/edit/page": "/invoices/[id]/edit",
+  "/(protected)/invoices/[id]/page": "/invoices/[id]",
+  "/(protected)/invoices/create/page": "/invoices/create",
+  "/(protected)/invoices/history/page": "/invoices/history",
+  "/(protected)/invoices/validated/page": "/invoices/validated",
+  "/(protected)/profile/page": "/profile",
+  "/(protected)/settings/page": "/settings",
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/api/auth/login/route": "/api/auth/login",
+  "/api/auth/logout/route": "/api/auth/logout",
+  "/api/auth/register/route": "/api/auth/register",
+  "/page": "/"
+}
