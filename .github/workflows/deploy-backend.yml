@@ -24,11 +24,14 @@ jobs:
         git clone https://huggingface.co/spaces/$HF_USERNAME/$HF_SPACE_NAME hf
 
         # Copy all necessary files from backend directory
-        cp backend/src/main.py hf/
         cp backend/pyproject.toml hf/
         cp backend/uv.lock hf/
         cp backend/Dockerfile hf/
         cp -r backend/src hf/
+        cp -r backend/alembic hf/
+        cp backend/alembic.ini hf/
+        cp backend/.env.example hf/
+        cp backend/README.md hf/
 
         cd hf
         git add .
