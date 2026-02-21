@@ -1483,7 +1483,7 @@ function DashboardPage() {
         columnNumber: 5
     }, this);
 }
-_s(DashboardPage, "Nrd/aoD3z/VsPs4tUwi2zXiQzxY=", false, function() {
+_s(DashboardPage, "pF629r3nQxICJBzNxAOG6P7cGE4=", false, function() {
     return [
         __TURBOPACK__imported__module__$5b$project$5d2f$src$2f$providers$2f$auth$2d$provider$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useAuth"]
     ];
