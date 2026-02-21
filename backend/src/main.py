@@ -27,7 +27,6 @@ app = FastAPI(
     openapi_url="/api/v1/openapi.json",
     docs_url="/api/v1/docs",
     redoc_url="/api/v1/redoc",
-    redirect_slashes=False,
 )
 
 # Add CORS middleware
