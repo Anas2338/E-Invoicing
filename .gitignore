@@ -53,6 +53,23 @@ yarn-error.log*
 .env.test.local
 .env.production.local
 
+# Security - Sensitive files
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+*.crt
+*.der
+*.secret
+*.secrets
+credentials.json
+secrets.json
+config.secret.*
+*.credentials
+auth.json
+service-account*.json
+
 # IDE
 .vscode/
 .idea/
