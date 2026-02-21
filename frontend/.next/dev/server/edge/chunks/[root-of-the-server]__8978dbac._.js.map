@@ -1,6 +1,0 @@
-{
-  "version": 3,
-  "sources": [],
-  "sections": [
-    {"offset": {"line": 16, "column": 0}, "map": {"version":3,"sources":["turbopack:///[project]/src/middleware.ts"],"sourcesContent":["import { NextRequest, NextResponse } from 'next/server';\n\n// NOTE: Authentication is handled client-side via the protected layout\n// because tokens are stored in localStorage (not accessible server-side).\n// This middleware is disabled to allow client-side auth checks.\nexport function middleware(request: NextRequest) {\n  // Allow all requests - client-side protected layout will handle auth\n  return NextResponse.next();\n}\n\n// Apply middleware to specific paths\nexport const config = {\n  matcher: [\n    /*\n     * Match all request paths except for the ones starting with:\n     * - api (API routes)\n     * - _next/static (static files)\n     * - _next/image (image optimization files)\n     * - favicon.ico (favicon file)\n     */\n    '/((?!api|_next/static|_next/image|favicon.ico).*)',\n  ],\n};"],"names":[],"mappings":";;;;;;AAAA;AAAA;;AAKO,SAAS,WAAW,OAAoB;IAC7C,qEAAqE;IACrE,OAAO,gMAAY,CAAC,IAAI;AAC1B;AAGO,MAAM,SAAS;IACpB,SAAS;QACP;;;;;;KAMC,GACD;KACD;AACH"}}]
-}

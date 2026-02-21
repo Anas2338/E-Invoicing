@@ -1,3 +1,0 @@
-module.exports=[40777,a=>{"use strict";var b=a.i(87924),c=a.i(72131),d=a.i(50944),e=a.i(11710);function f(){let a=(0,d.useRouter)(),{user:f,loading:g}=(0,e.useAuth)();return(0,c.useEffect)(()=>{g||(f?a.push("/dashboard"):a.push("/login"))},[f,g,a]),(0,b.jsx)("div",{className:"flex items-center justify-center min-h-screen bg-gray-50",children:(0,b.jsxs)("div",{className:"text-center",children:[(0,b.jsx)("h1",{className:"text-3xl font-bold text-gray-900",children:"FBR Invoice Portal"}),(0,b.jsx)("p",{className:"mt-2 text-gray-600",children:"Redirecting..."})]})})}a.s(["default",()=>f])}];
-
-//# sourceMappingURL=src_app_page_tsx_a7111f3e._.js.map
