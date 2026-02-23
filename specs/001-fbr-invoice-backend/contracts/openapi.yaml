@@ -1,0 +1,591 @@
+openapi: 3.1.0
+info:
+  title: FBR Invoice Integration Backend API
+  version: 1.0.0
+  description: |
+    Secure FastAPI backend for FBR (Federal Board of Revenue) invoice processing, validation, and posting.
+
+    ## Authentication
+    All endpoints require JWT Bearer token authentication via Better Auth.
+
+    ## Features
+    - Invoice CRUD operations
+    - FBR validation integration
+    - FBR posting integration (sandbox/production)
+    - Audit trail retrieval
+    - Idempotency support for posting operations
+
+  contact:
+    name: API Support
+    email: support@example.com
+
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local development
+  - url: https://api.example.com/api/v1
+    description: Production
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Invoices
+    description: Invoice CRUD operations
+  - name: Validation
+    description: FBR invoice validation
+  - name: Posting
+    description: FBR invoice posting
+  - name: Audit
+    description: Audit log retrieval
+
+paths:
+  /invoices:
+    get:
+      tags: [Invoices]
+      summary: List user's invoices
+      description: Retrieve paginated list of invoices with optional filters
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, validated, posted, failed]
+          description: Filter by invoice status
+        - name: environment
+          in: query
+          schema:
+            type: string
+            enum: [sandbox, production]
+          description: Filter by environment
+        - name: invoice_type
+          in: query
+          schema:
+            type: string
+            enum: [sale, purchase]
+          description: Filter by invoice type
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+          description: Number of results per page
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+          description: Number of results to skip
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Invoice'
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Invoices]
+      summary: Create draft invoice
+      description: Create a new invoice in draft status
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceCreate'
+      responses:
+        '201':
+          description: Invoice created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /invoices/{invoice_id}:
+    get:
+      tags: [Invoices]
+      summary: Get invoice details
+      description: Retrieve detailed invoice information including FBR responses
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /invoices/{invoice_id}/validate:
+    post:
+      tags: [Validation]
+      summary: Validate invoice with FBR
+      description: |
+        Validate invoice against FBR validation API. Invoice must be in 'draft' status.
+        On success, invoice transitions to 'validated' status.
+        On failure, invoice remains in 'draft' status with error details stored.
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Validation completed (check status for success/failure)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /invoices/{invoice_id}/post:
+    post:
+      tags: [Posting]
+      summary: Post validated invoice to FBR
+      description: |
+        Post validated invoice to FBR posting API. Invoice must be in 'validated' status.
+        Requires idempotency key in header to prevent duplicate submissions.
+        On success, invoice transitions to 'posted' status with FBR reference number.
+        On failure, invoice transitions to 'failed' status with error details.
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Unique key to prevent duplicate posting (cached for 24h)
+      responses:
+        '200':
+          description: Posting completed (check status for success/failure)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostingResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /invoices/bulk-post:
+    post:
+      tags: [Posting]
+      summary: Bulk post multiple validated invoices
+      description: |
+        Post multiple validated invoices in a single request.
+        Processes each invoice independently with partial success handling.
+        Requires idempotency key in header.
+      parameters:
+        - name: X-Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                invoice_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  minItems: 1
+                  maxItems: 100
+      responses:
+        '200':
+          description: Bulk posting completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PostingResult'
+                  summary:
+                    type: object
+                    properties:
+                      total:
+                        type: integer
+                      succeeded:
+                        type: integer
+                      failed:
+                        type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /audit:
+    get:
+      tags: [Audit]
+      summary: Retrieve audit logs
+      description: Get audit trail of FBR API interactions and invoice operations
+      parameters:
+        - name: invoice_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter by invoice ID
+        - name: operation
+          in: query
+          schema:
+            type: string
+            enum: [create, validate, post, retrieve, update]
+          description: Filter by operation type
+        - name: environment
+          in: query
+          schema:
+            type: string
+            enum: [sandbox, production]
+          description: Filter by environment
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditLog'
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /health:
+    get:
+      tags: [System]
+      summary: Health check
+      description: Check API health status
+      security: []
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  timestamp:
+                    type: string
+                    format: date-time
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token from Better Auth
+
+  schemas:
+    Invoice:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+        invoice_type:
+          type: string
+          enum: [sale, purchase]
+        environment:
+          type: string
+          enum: [sandbox, production]
+        status:
+          type: string
+          enum: [draft, validated, posted, failed]
+        version:
+          type: integer
+        payload:
+          type: object
+          description: FBR invoice structure (JSONB)
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    InvoiceDetail:
+      allOf:
+        - $ref: '#/components/schemas/Invoice'
+        - type: object
+          properties:
+            fbr_responses:
+              type: array
+              items:
+                $ref: '#/components/schemas/FBRResponse'
+
+    InvoiceCreate:
+      type: object
+      required:
+        - invoice_type
+        - environment
+        - payload
+      properties:
+        invoice_type:
+          type: string
+          enum: [sale, purchase]
+        environment:
+          type: string
+          enum: [sandbox, production]
+        payload:
+          type: object
+          description: FBR invoice structure
+          required:
+            - invoiceDate
+            - sellerNTNCNIC
+            - sellerBusinessName
+            - buyerNTNCNIC
+            - buyerBusinessName
+            - scenarioId
+            - items
+
+    FBRResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        invoice_id:
+          type: string
+          format: uuid
+        response_type:
+          type: string
+          enum: [validation, posting]
+        status_code:
+          type: string
+          description: FBR status code (00=success, 01=failure)
+        fbr_reference_number:
+          type: string
+          nullable: true
+        response_payload:
+          type: object
+          description: Complete FBR response (JSONB)
+        created_at:
+          type: string
+          format: date-time
+
+    ValidationResult:
+      type: object
+      properties:
+        invoice_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [validated, failed]
+        fbr_status_code:
+          type: string
+        message:
+          type: string
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              item_sno:
+                type: string
+              error_code:
+                type: string
+              error:
+                type: string
+
+    PostingResult:
+      type: object
+      properties:
+        invoice_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [posted, failed]
+        fbr_status_code:
+          type: string
+        fbr_reference_number:
+          type: string
+          nullable: true
+        message:
+          type: string
+        errors:
+          type: array
+          items:
+            type: object
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        invoice_id:
+          type: string
+          format: uuid
+          nullable: true
+        user_id:
+          type: string
+        operation:
+          type: string
+          enum: [create, validate, post, retrieve, update]
+        endpoint:
+          type: string
+          nullable: true
+        environment:
+          type: string
+          enum: [sandbox, production]
+          nullable: true
+        request_payload:
+          type: object
+          nullable: true
+        response_payload:
+          type: object
+          nullable: true
+        http_status_code:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        detail:
+          type: string
+        code:
+          type: string
+          nullable: true
+
+  responses:
+    BadRequest:
+      description: Bad request - invalid input
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            detail: "Invalid invoice status transition"
+            code: "INVALID_TRANSITION"
+
+    Unauthorized:
+      description: Unauthorized - missing or invalid JWT token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            detail: "Could not validate credentials"
+
+    Forbidden:
+      description: Forbidden - insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            detail: "Production access required"
+            code: "INSUFFICIENT_PERMISSIONS"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            detail: "Invoice not found"
+
+    Conflict:
+      description: Conflict - resource was modified by another request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            detail: "Invoice was modified by another request. Please retry."
+            code: "OPTIMISTIC_LOCK_FAILURE"

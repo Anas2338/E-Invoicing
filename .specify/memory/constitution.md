@@ -1,15 +1,15 @@
 <!-- SYNC IMPACT REPORT:
-Version change: N/A -> 1.0.0
-Modified principles: None (new constitution)
-Added sections: All sections
+Version change: 1.0.0 -> 1.1.0
+Modified principles: Architectural Constraints (Database provider changed from Supabase to Neon)
+Added sections: None
 Removed sections: None
 Templates requiring updates:
-- .specify/templates/plan-template.md ✅ updated
-- .specify/templates/spec-template.md ✅ updated
-- .specify/templates/tasks-template.md ✅ updated
+- .specify/templates/plan-template.md ⚠ pending review
+- .specify/templates/spec-template.md ⚠ pending review
+- .specify/templates/tasks-template.md ⚠ pending review
 - .specify/templates/commands/*.md ⚠ pending review
 - README.md ⚠ pending review
-Follow-up TODOs: None
+Follow-up TODOs: Review all templates and docs for Supabase references
 -->
 
 # FBR Sale & Purchase Invoice Integration Portal Constitution
@@ -49,7 +49,7 @@ Sandbox and Production environments must never mix or share configuration. Stric
 - Frontend: Next.js 16+ App Router only
 - Backend: FastAPI only
 - ORM: SQLModel only
-- Database: Supabase PostgreSQL only
+- Database: Neon PostgreSQL only
 - Authentication provider: Better Auth only
 - No business logic inside frontend components
 - All FBR communication must go through backend service layer
@@ -103,4 +103,4 @@ Sandbox and Production environments must never mix or share configuration. Stric
 
 This constitution supersedes all other development practices and standards within the project. All team members must comply with these principles. Any deviation from these principles requires formal amendment to this constitution with proper justification and approval. All pull requests and code reviews must verify compliance with these principles. All architectural decisions that meet significance criteria (long-term consequences, multiple viable options, cross-cutting influence) must be documented in ADRs. Use standard development workflow with proper testing, validation, and approval processes.
 
-**Version**: 1.0.0 | **Ratified**: 2026-01-29 | **Last Amended**: 2026-01-29
+**Version**: 1.1.0 | **Ratified**: 2026-01-29 | **Last Amended**: 2026-02-22
