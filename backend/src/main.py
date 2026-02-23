@@ -30,9 +30,10 @@ app = FastAPI(
 )
 
 # Add CORS middleware
+# TEMPORARY: Allow all origins for testing (INSECURE - remove in production)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins,
+    allow_origins=["*"],  # Temporarily allow all origins
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
