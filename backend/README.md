@@ -1,3 +1,13 @@
+---
+title: E-Invoicing Backend
+emoji: 📊
+colorFrom: blue
+colorTo: green
+sdk: docker
+pinned: false
+app_port: 7860
+---
+
 # FBR Invoice Integration Portal - Backend
 
 Backend service for FBR invoice processing with validation and posting capabilities.
