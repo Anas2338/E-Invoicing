@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,10 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { api, ApiError } from '@/lib/api';
 import { authService } from '@/lib/api/api-client';
-import { Key, Building, Hash, User, Mail, Eye, EyeOff, Trash2, MapPin, Home } from 'lucide-react';
+import { Key, Building, Hash, User, Mail, Eye, EyeOff, Trash2, MapPin, Home, ArrowLeft } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 export default function ProfilePage() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -147,8 +149,8 @@ export default function ProfilePage() {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading profile...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#008060] dark:border-[#00a876] mx-auto"></div>
+          <p className="mt-4 text-[#6d7175] dark:text-[#8c9196]">Loading profile...</p>
         </div>
       </div>
     );
@@ -156,9 +158,22 @@ export default function ProfilePage() {
 
   return (
     <div className="space-y-6 max-w-4xl pb-8">
+      {/* Back to Dashboard Button */}
+      <div className="flex items-center gap-4">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => router.push('/dashboard')}
+          className="flex items-center gap-2"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Dashboard
+        </Button>
+      </div>
+
       <div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Profile Settings</h1>
-        <p className="mt-2 text-sm sm:text-base text-gray-600">Manage your account information and FBR integration credentials</p>
+        <h1 className="text-2xl sm:text-3xl font-bold text-[#202223] dark:text-[#e3e3e3]">Profile Settings</h1>
+        <p className="mt-2 text-sm sm:text-base text-[#6d7175] dark:text-[#8c9196]">Manage your account information and FBR integration credentials</p>
       </div>
 
       {/* User Information Card */}
@@ -176,36 +191,36 @@ export default function ProfilePage() {
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <Label className="flex items-center gap-2 text-gray-500 text-sm">
+                <Label className="flex items-center gap-2 text-[#6d7175] dark:text-[#8c9196] text-sm">
                   <Mail className="h-4 w-4" />
                   Email Address
                 </Label>
-                <p className="mt-1 text-gray-900 font-medium">{userProfile?.email || 'Not available'}</p>
+                <p className="mt-1 text-[#202223] dark:text-[#e3e3e3] font-medium">{userProfile?.email || 'Not available'}</p>
               </div>
               <div>
-                <Label className="flex items-center gap-2 text-gray-500 text-sm">
+                <Label className="flex items-center gap-2 text-[#6d7175] dark:text-[#8c9196] text-sm">
                   <User className="h-4 w-4" />
                   Name
                 </Label>
-                <p className="mt-1 text-gray-900 font-medium">{userProfile?.name || 'Not set'}</p>
+                <p className="mt-1 text-[#202223] dark:text-[#e3e3e3] font-medium">{userProfile?.name || 'Not set'}</p>
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <Label className="text-gray-500 text-sm">Account Status</Label>
+                <Label className="text-[#6d7175] dark:text-[#8c9196] text-sm">Account Status</Label>
                 <p className="mt-1">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    userProfile?.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                    userProfile?.is_active ? 'bg-[#d1fae5] text-[#065f46] dark:bg-[#064e3b]/30 dark:text-[#34d399]' : 'bg-[#fee2e2] text-[#991b1b] dark:bg-[#7f1d1d]/30 dark:text-[#f87171]'
                   }`}>
                     {userProfile?.is_active ? 'Active' : 'Inactive'}
                   </span>
                 </p>
               </div>
               <div>
-                <Label className="text-gray-500 text-sm">Production Access</Label>
+                <Label className="text-[#6d7175] dark:text-[#8c9196] text-sm">Production Access</Label>
                 <p className="mt-1">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    userProfile?.has_production_access ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                    userProfile?.has_production_access ? 'bg-[#dbeafe] text-[#1e40af] dark:bg-[#1e3a8a]/30 dark:text-[#60a5fa]' : 'bg-[#f6f6f7] text-[#6d7175] dark:bg-[#2e2e2e] dark:text-[#8c9196]'
                   }`}>
                     {userProfile?.has_production_access ? 'Enabled' : 'Disabled'}
                   </span>
@@ -234,10 +249,10 @@ export default function ProfilePage() {
               <div className="space-y-4">
                 {/* Sandbox Token */}
                 {hasSandboxToken && sandboxToken && (
-                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="p-4 bg-[#dbeafe] dark:bg-[#1e3a8a]/30 border border-[#bfdbfe] dark:border-[#1e3a8a] rounded-xl">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
-                        <Label className="flex items-center gap-2 text-blue-900 font-medium mb-2">
+                        <Label className="flex items-center gap-2 text-[#1e40af] dark:text-[#60a5fa] font-semibold mb-2">
                           <Key className="h-4 w-4" />
                           Sandbox FBR Access Token
                         </Label>
@@ -246,7 +261,7 @@ export default function ProfilePage() {
                             type={showSandboxToken ? "text" : "password"}
                             value={sandboxToken}
                             readOnly
-                            className="font-mono text-sm bg-white"
+                            className="font-mono text-sm bg-white dark:bg-[#1a1a1a]"
                           />
                           <Button
                             type="button"
@@ -272,7 +287,7 @@ export default function ProfilePage() {
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
-                        <p className="text-xs text-blue-700 mt-2">
+                        <p className="text-xs text-[#1e40af] dark:text-[#60a5fa] mt-2">
                           Your Sandbox token for testing. Click the eye icon to view or the trash icon to delete.
                         </p>
                       </div>
@@ -282,10 +297,10 @@ export default function ProfilePage() {
 
                 {/* Production Token */}
                 {hasProductionToken && productionToken && (
-                  <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <div className="p-4 bg-[#d1fae5] dark:bg-[#064e3b]/30 border border-[#a7f3d0] dark:border-[#065f46] rounded-xl">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
-                        <Label className="flex items-center gap-2 text-green-900 font-medium mb-2">
+                        <Label className="flex items-center gap-2 text-[#065f46] dark:text-[#34d399] font-semibold mb-2">
                           <Key className="h-4 w-4" />
                           Production FBR Access Token
                         </Label>
@@ -294,7 +309,7 @@ export default function ProfilePage() {
                             type={showProductionToken ? "text" : "password"}
                             value={productionToken}
                             readOnly
-                            className="font-mono text-sm bg-white"
+                            className="font-mono text-sm bg-white dark:bg-[#1a1a1a]"
                           />
                           <Button
                             type="button"
@@ -320,7 +335,7 @@ export default function ProfilePage() {
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
-                        <p className="text-xs text-green-700 mt-2">
+                        <p className="text-xs text-[#065f46] dark:text-[#34d399] mt-2">
                           Your Production token for live invoices. Click the eye icon to view or the trash icon to delete.
                         </p>
                       </div>
@@ -331,8 +346,8 @@ export default function ProfilePage() {
             )}
 
             {/* Add/Update Token Form */}
-            <div className="pt-4 border-t">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">
+            <div className="pt-4 border-t border-[#e1e3e5] dark:border-[#2e2e2e]">
+              <h3 className="text-lg font-semibold text-[#202223] dark:text-[#e3e3e3] mb-4">
                 {hasSandboxToken || hasProductionToken ? 'Add or Update Token' : 'Add FBR Token'}
               </h3>
 
@@ -348,7 +363,7 @@ export default function ProfilePage() {
                     <SelectItem value="PRODUCTION">Production (Live)</SelectItem>
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
                   Select which environment this token is for
                 </p>
               </div>
@@ -368,7 +383,7 @@ export default function ProfilePage() {
                 placeholder={`Enter your ${fbrEnvironment} FBR API access token`}
                 className="mt-1"
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
                 Your FBR API access token from the FBR Digital Invoicing Portal
               </p>
             </div>
@@ -387,7 +402,7 @@ export default function ProfilePage() {
                 placeholder="Enter your 7-digit NTN or 13-digit CNIC"
                 className="mt-1"
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
                 Your National Tax Number (7 digits) or CNIC (13 digits)
               </p>
             </div>
@@ -406,7 +421,7 @@ export default function ProfilePage() {
                 placeholder="Enter your registered business name"
                 className="mt-1"
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
                 Your business name as registered with FBR
               </p>
             </div>
@@ -431,7 +446,7 @@ export default function ProfilePage() {
                   <SelectItem value="ISLAMABAD">Islamabad Capital Territory</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
                 Your business province (will auto-fill in invoices)
               </p>
             </div>
@@ -450,15 +465,15 @@ export default function ProfilePage() {
                 placeholder="Enter your complete business address"
                 className="mt-1"
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
                 Your complete business address (will auto-fill in invoices)
               </p>
             </div>
 
             {/* Information Box */}
-            <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <h4 className="text-sm font-medium text-blue-900 mb-2">How to get FBR credentials:</h4>
-              <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
+            <div className="p-4 bg-[#dbeafe] dark:bg-[#1e3a8a]/30 border border-[#bfdbfe] dark:border-[#1e3a8a] rounded-xl">
+              <h4 className="text-sm font-semibold text-[#1e40af] dark:text-[#60a5fa] mb-2">How to get FBR credentials:</h4>
+              <ol className="text-sm text-[#1e40af] dark:text-[#60a5fa] space-y-1 list-decimal list-inside">
                 <li>Register at FBR Digital Invoicing Portal: <a href="https://e.fbr.gov.pk" target="_blank" rel="noopener noreferrer" className="underline">https://e.fbr.gov.pk</a></li>
                 <li>Complete the registration and verification process</li>
                 <li>Navigate to API Settings to generate your access token</li>
@@ -471,7 +486,7 @@ export default function ProfilePage() {
               <Button
                 type="submit"
                 disabled={saving}
-                className="bg-indigo-600 hover:bg-indigo-700"
+                className="bg-[#008060] hover:bg-[#006e52] dark:bg-[#00a876] dark:hover:bg-[#008f64]"
               >
                 {saving ? 'Saving...' : 'Save FBR Credentials'}
               </Button>

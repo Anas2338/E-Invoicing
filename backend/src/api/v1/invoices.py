@@ -1,12 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
-from typing import List, Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
+from typing import List, Dict, Any, Optional
 from uuid import UUID
+from datetime import date
 import logging
 
 from src.database.session import get_db
 from src.services.invoice_service import InvoiceService
 from src.services.fbr_service import fbr_service
-from src.schemas.invoice import InvoiceCreate, InvoiceResponse, InvoiceUpdate, InvoiceListResponse, InvoiceFilter
+from src.schemas.invoice import (
+    InvoiceCreate, InvoiceResponse, InvoiceUpdate, InvoiceListResponse,
+    InvoiceFilter, UnifiedInvoiceListResponse
+)
 from src.api.middleware.auth_middleware import require_authentication
 from src.api.deps import get_database_session, get_pagination_params
 from src.models.user import User
@@ -62,6 +66,53 @@ def create_invoice(
         posted_at=db_invoice.posted_at,
         fbr_reference_number=db_invoice.fbr_reference_number,
         validation_errors=db_invoice.validation_errors
+    )
+
+
+@router.get("/unified-history", response_model=UnifiedInvoiceListResponse)
+def get_unified_invoice_history(
+    request: Request,
+    user_id: str = Depends(require_authentication),
+    source: Optional[str] = Query(None, description="Filter by source: manual, automated"),
+    status: Optional[str] = Query(None, description="Filter by status"),
+    date_from: Optional[date] = Query(None, description="Filter by date from"),
+    date_to: Optional[date] = Query(None, description="Filter by date to"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    db = Depends(get_database_session)
+):
+    """
+    Get unified list of manual and automated invoices with source indicators.
+
+    Combines invoices from both the manual invoice system and automation system
+    into a single paginated list with clear source indicators.
+    """
+    service = InvoiceService()
+
+    # Convert user_id string to UUID
+    user_uuid = UUID(user_id)
+
+    # Get unified invoice history
+    invoices, total = service.get_unified_invoice_history(
+        db=db,
+        user_id=user_uuid,
+        source=source,
+        status=status,
+        date_from=date_from,
+        date_to=date_to,
+        page=page,
+        page_size=page_size
+    )
+
+    # Calculate total pages
+    total_pages = (total + page_size - 1) // page_size
+
+    return UnifiedInvoiceListResponse(
+        invoices=invoices,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages
     )
 
 
@@ -293,54 +344,7 @@ def get_invoice_history(
             detail="Invoice not found"
         )
 
-    # Convert to response model
-    invoice = result["invoice"]
-    fbr_responses = result["fbr_responses"]
-
-    return {
-        "invoice": InvoiceResponse(
-            id=invoice.id,
-            external_id=invoice.external_id,
-            user_id=invoice.user_id,
-            invoice_type=invoice.invoice_type,
-            invoice_date=invoice.invoice_date,
-            seller_ntn_cnic=invoice.seller_ntn_cnic,
-            seller_business_name=invoice.seller_business_name,
-            seller_province=invoice.seller_province,
-            seller_address=invoice.seller_address,
-            buyer_ntn_cnic=invoice.buyer_ntn_cnic,
-            buyer_business_name=invoice.buyer_business_name,
-            buyer_province=invoice.buyer_province,
-            buyer_address=invoice.buyer_address,
-            buyer_registration_type=invoice.buyer_registration_type,
-            invoice_ref_no=invoice.invoice_ref_no,
-            scenario_id=invoice.scenario_id,
-            items=invoice.items,
-            environment=invoice.environment,
-            status=invoice.status,
-            created_at=invoice.created_at,
-            updated_at=invoice.updated_at,
-            validated_at=invoice.validated_at,
-            posted_at=invoice.posted_at,
-            fbr_reference_number=invoice.fbr_reference_number,
-            validation_errors=invoice.validation_errors
-        ),
-        "fbr_responses": [
-            {
-                "id": str(resp.id),
-                "request_payload": resp.request_payload,
-                "response_payload": resp.response_payload,
-                "endpoint": resp.endpoint,
-                "method": resp.method,
-                "status_code": resp.status_code,
-                "timestamp": resp.timestamp,
-                "environment": resp.environment,
-                "correlation_id": resp.correlation_id,
-                "processing_duration_ms": resp.processing_duration_ms
-            }
-            for resp in fbr_responses
-        ]
-    }
+    return result
 
 
 @router.patch("/{invoice_id}/status")

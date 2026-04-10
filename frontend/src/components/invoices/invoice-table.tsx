@@ -1,19 +1,22 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Eye, Edit, CheckCircle, Send, Trash2 } from 'lucide-react';
+import { Eye, Edit, CheckCircle, Send, Trash2, Loader2 } from 'lucide-react';
 
 interface Invoice {
   id: string;
+  source: 'manual' | 'automated';
   invoiceNumber: string;
   date: string;
   buyerName: string;
   sellerName: string;
   totalAmount: number;
-  status: 'DRAFT' | 'VALIDATED' | 'POSTED' | 'FAILED';
-  environment: 'SANDBOX' | 'PRODUCTION';
+  status: string;
+  environment: string;
   invoiceType: string;
   createdAt: string;
+  scheduledDate?: string;
+  scheduledTime?: string;
 }
 
 interface InvoiceTableProps {
@@ -25,6 +28,8 @@ interface InvoiceTableProps {
   onValidate?: (id: string) => void;
   onPost?: (id: string) => void;
   onDelete?: (id: string) => void;
+  validatingInvoiceId?: string | null;
+  postingInvoiceId?: string | null;
 }
 
 export function InvoiceTable({
@@ -35,26 +40,43 @@ export function InvoiceTable({
   onEdit,
   onValidate,
   onPost,
-  onDelete
+  onDelete,
+  validatingInvoiceId = null,
+  postingInvoiceId = null
 }: InvoiceTableProps) {
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'DRAFT': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'VALIDATED': return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'POSTED': return 'bg-green-100 text-green-800 border-green-200';
-      case 'FAILED': return 'bg-red-100 text-red-800 border-red-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    switch (status.toUpperCase()) {
+      case 'DRAFT':
+      case 'PENDING':
+        return 'bg-[#fef3c7] text-[#92400e] border-[#fde68a] dark:bg-[#451a03]/30 dark:text-[#fbbf24] dark:border-[#451a03]';
+      case 'VALIDATED':
+        return 'bg-[#dbeafe] text-[#1e40af] border-[#bfdbfe] dark:bg-[#1e3a8a]/30 dark:text-[#60a5fa] dark:border-[#1e3a8a]';
+      case 'POSTED':
+      case 'SUBMITTED':
+        return 'bg-[#d1fae5] text-[#065f46] border-[#a7f3d0] dark:bg-[#064e3b]/30 dark:text-[#34d399] dark:border-[#065f46]';
+      case 'FAILED':
+        return 'bg-[#fee2e2] text-[#991b1b] border-[#fecaca] dark:bg-[#7f1d1d]/30 dark:text-[#f87171] dark:border-[#7f1d1d]';
+      case 'EXPIRED':
+        return 'bg-[#f3f4f6] text-[#4b5563] border-[#d1d5db] dark:bg-[#374151]/30 dark:text-[#9ca3af] dark:border-[#4b5563]';
+      default:
+        return 'bg-[#f6f6f7] text-[#6d7175] border-[#e1e3e5] dark:bg-[#2e2e2e] dark:text-[#8c9196] dark:border-[#404040]';
     }
+  };
+
+  const getSourceColor = (source: string) => {
+    return source === 'manual'
+      ? 'bg-[#dbeafe] text-[#1e40af] border-[#bfdbfe] dark:bg-[#1e3a8a]/30 dark:text-[#60a5fa] dark:border-[#1e3a8a]'
+      : 'bg-[#d1fae5] text-[#065f46] border-[#a7f3d0] dark:bg-[#064e3b]/30 dark:text-[#34d399] dark:border-[#065f46]';
   };
 
   const getEnvironmentColor = (env: string) => {
     return env === 'PRODUCTION'
-      ? 'bg-red-100 text-red-800 border-red-200'
-      : 'bg-blue-100 text-blue-800 border-blue-200';
+      ? 'bg-[#fee2e2] text-[#991b1b] border-[#fecaca] dark:bg-[#7f1d1d]/30 dark:text-[#f87171] dark:border-[#7f1d1d]'
+      : 'bg-[#dbeafe] text-[#1e40af] border-[#bfdbfe] dark:bg-[#1e3a8a]/30 dark:text-[#60a5fa] dark:border-[#1e3a8a]';
   };
 
   const formatStatus = (status: string) => {
-    return status.charAt(0) + status.slice(1).toLowerCase();
+    return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
   };
 
   const handleSelectAll = (checked: boolean) => {
@@ -94,7 +116,7 @@ export function InvoiceTable({
     return (
       <div className="text-center py-12">
         <svg
-          className="mx-auto h-12 w-12 text-gray-400"
+          className="mx-auto h-12 w-12 text-[#8c9196] dark:text-[#6d7175]"
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -106,8 +128,8 @@ export function InvoiceTable({
             d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
           />
         </svg>
-        <h3 className="mt-2 text-sm font-medium text-gray-900">No invoices found</h3>
-        <p className="mt-1 text-sm text-gray-500">
+        <h3 className="mt-2 text-sm font-semibold text-[#202223] dark:text-[#e3e3e3]">No invoices found</h3>
+        <p className="mt-1 text-sm text-[#6d7175] dark:text-[#8c9196]">
           Try adjusting your filters or create a new invoice.
         </p>
       </div>
@@ -125,8 +147,8 @@ export function InvoiceTable({
           return (
             <div
               key={invoice.id}
-              className={`bg-white rounded-lg border-2 p-4 ${
-                isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+              className={`bg-white dark:bg-[#1a1a1a] rounded-xl border-2 p-4 transition-all duration-150 ${
+                isSelected ? 'border-[#008060] bg-[#f1f8f5] dark:border-[#00a876] dark:bg-[#0d3d2f]/20' : 'border-[#e1e3e5] dark:border-[#2e2e2e]'
               }`}
             >
               {/* Header with checkbox and invoice number */}
@@ -142,12 +164,15 @@ export function InvoiceTable({
                     />
                   )}
                   <div className="flex-1">
-                    <div className="text-sm font-semibold text-gray-900">{invoice.invoiceNumber}</div>
-                    <div className="text-xs text-gray-500">{invoice.invoiceType}</div>
+                    <div className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3]">{invoice.invoiceNumber}</div>
+                    <div className="text-xs text-[#6d7175] dark:text-[#8c9196]">{invoice.invoiceType}</div>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <Badge className={`${getStatusColor(invoice.status)} border text-xs`}>
+                <div className="flex gap-2 flex-wrap justify-end">
+                  <Badge className={`${getSourceColor(invoice.source)} border text-xs font-semibold`}>
+                    {invoice.source === 'manual' ? 'Manual' : 'Automated'}
+                  </Badge>
+                  <Badge className={`${getStatusColor(invoice.status)} border text-xs font-semibold`}>
                     {formatStatus(invoice.status)}
                   </Badge>
                 </div>
@@ -156,8 +181,8 @@ export function InvoiceTable({
               {/* Invoice Details */}
               <div className="space-y-2 mb-3 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Date:</span>
-                  <span className="text-gray-900 font-medium">
+                  <span className="text-[#6d7175] dark:text-[#8c9196]">Date:</span>
+                  <span className="text-[#202223] dark:text-[#e3e3e3] font-medium">
                     {new Date(invoice.date).toLocaleDateString('en-US', {
                       year: 'numeric',
                       month: 'short',
@@ -166,16 +191,16 @@ export function InvoiceTable({
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Buyer:</span>
-                  <span className="text-gray-900 truncate ml-2">{invoice.buyerName}</span>
+                  <span className="text-[#6d7175] dark:text-[#8c9196]">Buyer:</span>
+                  <span className="text-[#202223] dark:text-[#e3e3e3] truncate ml-2">{invoice.buyerName}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Seller:</span>
-                  <span className="text-gray-900 truncate ml-2">{invoice.sellerName}</span>
+                  <span className="text-[#6d7175] dark:text-[#8c9196]">Seller:</span>
+                  <span className="text-[#202223] dark:text-[#e3e3e3] truncate ml-2">{invoice.sellerName}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Amount:</span>
-                  <span className="text-gray-900 font-semibold">
+                  <span className="text-[#6d7175] dark:text-[#8c9196]">Amount:</span>
+                  <span className="text-[#202223] dark:text-[#e3e3e3] font-semibold">
                     PKR {invoice.totalAmount.toLocaleString('en-US', {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2
@@ -183,21 +208,21 @@ export function InvoiceTable({
                   </span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-gray-500">Environment:</span>
-                  <Badge className={`${getEnvironmentColor(invoice.environment)} border text-xs`}>
+                  <span className="text-[#6d7175] dark:text-[#8c9196]">Environment:</span>
+                  <Badge className={`${getEnvironmentColor(invoice.environment)} border text-xs font-semibold`}>
                     {invoice.environment}
                   </Badge>
                 </div>
               </div>
 
               {/* Actions */}
-              <div className="flex flex-wrap gap-2 pt-3 border-t border-gray-200">
+              <div className="flex flex-wrap gap-2 pt-3 border-t border-[#e1e3e5] dark:border-[#2e2e2e]">
                 {onView && (
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => onView(invoice.id)}
-                    className="flex-1 min-w-[80px] h-9 border-blue-300 text-blue-600 hover:bg-blue-50"
+                    className="flex-1 min-w-[80px] h-9"
                   >
                     <Eye className="h-4 w-4 mr-1" />
                     View
@@ -208,7 +233,7 @@ export function InvoiceTable({
                     variant="outline"
                     size="sm"
                     onClick={() => onEdit(invoice.id)}
-                    className="flex-1 min-w-[80px] h-9 border-gray-300 text-gray-600 hover:bg-gray-50"
+                    className="flex-1 min-w-[80px] h-9"
                   >
                     <Edit className="h-4 w-4 mr-1" />
                     Edit
@@ -219,10 +244,15 @@ export function InvoiceTable({
                     variant="outline"
                     size="sm"
                     onClick={() => onValidate(invoice.id)}
-                    className="flex-1 min-w-[80px] h-9 border-blue-300 text-blue-600 hover:bg-blue-50"
+                    disabled={validatingInvoiceId === invoice.id}
+                    className="flex-1 min-w-[80px] h-9"
                   >
-                    <CheckCircle className="h-4 w-4 mr-1" />
-                    Validate
+                    {validatingInvoiceId === invoice.id ? (
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    ) : (
+                      <CheckCircle className="h-4 w-4 mr-1" />
+                    )}
+                    {validatingInvoiceId === invoice.id ? 'Validating...' : 'Validate'}
                   </Button>
                 )}
                 {onPost && invoice.status === 'VALIDATED' && (
@@ -230,10 +260,15 @@ export function InvoiceTable({
                     variant="outline"
                     size="sm"
                     onClick={() => onPost(invoice.id)}
-                    className="flex-1 min-w-[80px] h-9 border-green-300 text-green-600 hover:bg-green-50"
+                    disabled={postingInvoiceId === invoice.id}
+                    className="flex-1 min-w-[80px] h-9"
                   >
-                    <Send className="h-4 w-4 mr-1" />
-                    Post
+                    {postingInvoiceId === invoice.id ? (
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4 mr-1" />
+                    )}
+                    {postingInvoiceId === invoice.id ? 'Posting...' : 'Post'}
                   </Button>
                 )}
                 {onDelete && isDeletable && (
@@ -241,7 +276,7 @@ export function InvoiceTable({
                     variant="outline"
                     size="sm"
                     onClick={() => onDelete(invoice.id)}
-                    className="flex-1 min-w-[80px] h-9 border-red-300 text-red-600 hover:bg-red-50"
+                    className="flex-1 min-w-[80px] h-9"
                   >
                     <Trash2 className="h-4 w-4 mr-1" />
                     Delete
@@ -255,8 +290,8 @@ export function InvoiceTable({
 
       {/* Desktop Table View */}
       <div className="hidden lg:block overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-        <thead className="bg-gray-50">
+        <table className="min-w-full divide-y divide-[#e1e3e5] dark:divide-[#2e2e2e]">
+        <thead className="bg-[#f6f6f7] dark:bg-[#2e2e2e]">
           <tr>
             {onSelectionChange && (
               <th scope="col" className="px-6 py-3 text-left">
@@ -268,39 +303,42 @@ export function InvoiceTable({
                 />
               </th>
             )}
-            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
               Invoice #
             </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
+              Source
+            </th>
+            <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
               Date
             </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
               Buyer
             </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
               Seller
             </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
               Amount
             </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
               Status
             </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
               Environment
             </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+            <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
               Actions
             </th>
           </tr>
         </thead>
-        <tbody className="bg-white divide-y divide-gray-200">
+        <tbody className="bg-white dark:bg-[#1a1a1a] divide-y divide-[#e1e3e5] dark:divide-[#2e2e2e]">
           {invoices.map((invoice) => {
             const isDeletable = invoice.status === 'DRAFT' || invoice.status === 'FAILED';
             const isSelected = selectedInvoices.has(invoice.id);
 
             return (
-            <tr key={invoice.id} className={`hover:bg-gray-50 transition-colors ${isSelected ? 'bg-blue-50' : ''}`}>
+            <tr key={invoice.id} className={`hover:bg-[#f6f6f7] dark:hover:bg-[#2e2e2e] transition-colors duration-150 ${isSelected ? 'bg-[#f1f8f5] dark:bg-[#0d3d2f]/20' : ''}`}>
               {onSelectionChange && (
                 <td className="px-6 py-4 whitespace-nowrap">
                   <Checkbox
@@ -312,10 +350,15 @@ export function InvoiceTable({
                 </td>
               )}
               <td className="px-6 py-4 whitespace-nowrap">
-                <div className="text-sm font-medium text-gray-900">{invoice.invoiceNumber}</div>
-                <div className="text-xs text-gray-500">{invoice.invoiceType}</div>
+                <div className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3]">{invoice.invoiceNumber}</div>
+                <div className="text-xs text-[#6d7175] dark:text-[#8c9196]">{invoice.invoiceType}</div>
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+              <td className="px-6 py-4 whitespace-nowrap">
+                <Badge className={`${getSourceColor(invoice.source)} border text-xs font-semibold`}>
+                  {invoice.source === 'manual' ? 'Manual' : 'Automated'}
+                </Badge>
+              </td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-[#6d7175] dark:text-[#8c9196]">
                 {new Date(invoice.date).toLocaleDateString('en-US', {
                   year: 'numeric',
                   month: 'short',
@@ -323,13 +366,13 @@ export function InvoiceTable({
                 })}
               </td>
               <td className="px-6 py-4 whitespace-nowrap">
-                <div className="text-sm text-gray-900">{invoice.buyerName}</div>
+                <div className="text-sm text-[#202223] dark:text-[#e3e3e3]">{invoice.buyerName}</div>
               </td>
               <td className="px-6 py-4 whitespace-nowrap">
-                <div className="text-sm text-gray-900">{invoice.sellerName}</div>
+                <div className="text-sm text-[#202223] dark:text-[#e3e3e3]">{invoice.sellerName}</div>
               </td>
               <td className="px-6 py-4 whitespace-nowrap">
-                <div className="text-sm font-medium text-gray-900">
+                <div className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3]">
                   PKR {invoice.totalAmount.toLocaleString('en-US', {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2
@@ -337,12 +380,12 @@ export function InvoiceTable({
                 </div>
               </td>
               <td className="px-6 py-4 whitespace-nowrap">
-                <Badge className={`${getStatusColor(invoice.status)} border`}>
+                <Badge className={`${getStatusColor(invoice.status)} border font-semibold`}>
                   {formatStatus(invoice.status)}
                 </Badge>
               </td>
               <td className="px-6 py-4 whitespace-nowrap">
-                <Badge className={`${getEnvironmentColor(invoice.environment)} border`}>
+                <Badge className={`${getEnvironmentColor(invoice.environment)} border font-semibold`}>
                   {invoice.environment}
                 </Badge>
               </td>
@@ -354,7 +397,7 @@ export function InvoiceTable({
                       variant="outline"
                       size="sm"
                       onClick={() => onView(invoice.id)}
-                      className="h-8 px-3 border-blue-300 text-blue-600 hover:bg-blue-50 hover:border-blue-400"
+                      className="h-8 px-3"
                       title="View Details"
                     >
                       <Eye className="h-4 w-4" />
@@ -367,7 +410,7 @@ export function InvoiceTable({
                       variant="outline"
                       size="sm"
                       onClick={() => onEdit(invoice.id)}
-                      className="h-8 px-3 border-gray-300 text-gray-600 hover:bg-gray-50 hover:border-gray-400"
+                      className="h-8 px-3"
                       title="Edit Invoice"
                     >
                       <Edit className="h-4 w-4" />
@@ -380,10 +423,15 @@ export function InvoiceTable({
                       variant="outline"
                       size="sm"
                       onClick={() => onValidate(invoice.id)}
-                      className="h-8 px-3 border-blue-300 text-blue-600 hover:bg-blue-50 hover:border-blue-400"
+                      disabled={validatingInvoiceId === invoice.id}
+                      className="h-8 px-3"
                       title="Validate with FBR"
                     >
-                      <CheckCircle className="h-4 w-4" />
+                      {validatingInvoiceId === invoice.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <CheckCircle className="h-4 w-4" />
+                      )}
                     </Button>
                   )}
 
@@ -393,10 +441,15 @@ export function InvoiceTable({
                       variant="outline"
                       size="sm"
                       onClick={() => onPost(invoice.id)}
-                      className="h-8 px-3 border-green-300 text-green-600 hover:bg-green-50 hover:border-green-400"
+                      disabled={postingInvoiceId === invoice.id}
+                      className="h-8 px-3"
                       title="Post to FBR"
                     >
-                      <Send className="h-4 w-4" />
+                      {postingInvoiceId === invoice.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Send className="h-4 w-4" />
+                      )}
                     </Button>
                   )}
 
@@ -406,7 +459,7 @@ export function InvoiceTable({
                       variant="outline"
                       size="sm"
                       onClick={() => onDelete(invoice.id)}
-                      className="h-8 px-3 border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400"
+                      className="h-8 px-3"
                       title="Delete Invoice"
                     >
                       <Trash2 className="h-4 w-4" />

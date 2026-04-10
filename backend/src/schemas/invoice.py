@@ -153,3 +153,35 @@ class InvoiceFilter(BaseModel):
     date_to: Optional[datetime] = None
     page: int = 1
     size: int = 20
+
+
+class UnifiedInvoiceItem(BaseModel):
+    """
+    Schema for unified invoice item (manual + automated).
+    """
+    id: uuid.UUID
+    source: str  # "manual" or "automated"
+    invoice_number: str
+    invoice_type: str
+    invoice_date: str
+    buyer_business_name: str
+    seller_business_name: str
+    total_amount: float
+    status: str
+    created_at: datetime
+
+    # Optional fields specific to source
+    scheduled_date: Optional[str] = None  # automated only
+    scheduled_time: Optional[str] = None  # automated only
+    environment: Optional[str] = None  # both
+
+
+class UnifiedInvoiceListResponse(BaseModel):
+    """
+    Schema for unified invoice list response with pagination.
+    """
+    invoices: List[UnifiedInvoiceItem]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int

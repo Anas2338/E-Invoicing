@@ -20,7 +20,7 @@ interface InvoiceItem {
   valueSalesExcludingST: number;
   fixedNotifiedValueOrRetailPrice: number;
   salesTaxApplicable: number;
-  salesTaxWithheldAtSource: number;
+  salesTaxWithheldAtSource: string;
   extraTax: number;
   furtherTax: number;
   sroScheduleNo: string;
@@ -63,17 +63,20 @@ export function SaleInvoiceForm({
   const [invoiceRefNo, setInvoiceRefNo] = useState('');
   const [scenarioId, setScenarioId] = useState('SN001');
   const [environment, setEnvironment] = useState<'SANDBOX' | 'PRODUCTION'>('SANDBOX');
+  const [transactionTypeId, setTransactionTypeId] = useState<string>('');
 
   // Seller information state
   const [sellerNTNCNIC, setSellerNTNCNIC] = useState('');
   const [sellerBusinessName, setSellerBusinessName] = useState('');
   const [sellerProvince, setSellerProvince] = useState('');
+  const [sellerProvinceCode, setSellerProvinceCode] = useState('');
   const [sellerAddress, setSellerAddress] = useState('');
 
   // Buyer information state
   const [buyerNTNCNIC, setBuyerNTNCNIC] = useState('');
   const [buyerBusinessName, setBuyerBusinessName] = useState('');
   const [buyerProvince, setBuyerProvince] = useState('');
+  const [buyerProvinceCode, setBuyerProvinceCode] = useState('');
   const [buyerAddress, setBuyerAddress] = useState('');
   const [buyerRegistrationType, setBuyerRegistrationType] = useState<'Registered' | 'Unregistered'>('Registered');
 
@@ -81,14 +84,14 @@ export function SaleInvoiceForm({
   const [items, setItems] = useState<InvoiceItem[]>([{
     hsCode: '',
     productDescription: '',
-    rate: '18',
+    rate: '',
     uoM: 'NOS',
     quantity: 0,
     totalValues: 0,
     valueSalesExcludingST: 0,
     fixedNotifiedValueOrRetailPrice: 0,
     salesTaxApplicable: 0,
-    salesTaxWithheldAtSource: 0,
+    salesTaxWithheldAtSource: '',
     extraTax: 0,
     furtherTax: 0,
     sroScheduleNo: '',
@@ -97,6 +100,12 @@ export function SaleInvoiceForm({
     saleType: '01',
     sroItemSerialNo: ''
   }]);
+
+  // Dynamic tax rate fetching state
+  const [dynamicTaxRates, setDynamicTaxRates] = useState<Array<{rate: string, name: string}>>([]);
+  const [fetchingTaxRates, setFetchingTaxRates] = useState(false);
+  const [taxRateError, setTaxRateError] = useState<string | null>(null);
+  const [hasSelectedTransactionType, setHasSelectedTransactionType] = useState(false);
 
   // Fetch master data on component mount
   useEffect(() => {
@@ -126,8 +135,8 @@ export function SaleInvoiceForm({
   // Auto-fill seller information from user profile
   useEffect(() => {
     const fetchUserProfile = async () => {
-      // Only auto-fill if not in edit mode
-      if (isEditMode) return;
+      // Only auto-fill if not in edit mode and masterData is loaded
+      if (isEditMode || !masterData) return;
 
       try {
         const profile = await api.auth.getProfile();
@@ -141,6 +150,12 @@ export function SaleInvoiceForm({
         }
         if (profile.fbr_seller_province) {
           setSellerProvince(profile.fbr_seller_province);
+
+          // Also set the province code by looking it up in masterData
+          const province = masterData.provinces.find(p => p.name === profile.fbr_seller_province);
+          if (province) {
+            setSellerProvinceCode(province.code);
+          }
         }
         if (profile.fbr_seller_address) {
           setSellerAddress(profile.fbr_seller_address);
@@ -151,7 +166,7 @@ export function SaleInvoiceForm({
     };
 
     fetchUserProfile();
-  }, [isEditMode]);
+  }, [isEditMode, masterData]);
 
   // Populate form with initial data when in edit mode
   useEffect(() => {
@@ -163,6 +178,12 @@ export function SaleInvoiceForm({
       setInvoiceRefNo(initialData.invoice_ref_no || '');
       setScenarioId(initialData.scenario_id || '');
       setEnvironment(initialData.environment || 'SANDBOX');
+      setTransactionTypeId(initialData.transaction_type_id || '');
+
+      // If transaction type exists in initial data, mark as selected
+      if (initialData.transaction_type_id) {
+        setHasSelectedTransactionType(true);
+      }
 
       // Populate seller information
       setSellerNTNCNIC(initialData.seller_ntn_cnic || '');
@@ -170,12 +191,28 @@ export function SaleInvoiceForm({
       setSellerProvince(initialData.seller_province || '');
       setSellerAddress(initialData.seller_address || '');
 
+      // Resolve seller province code from masterData
+      if (initialData.seller_province && masterData) {
+        const province = masterData.provinces.find(p => p.name === initialData.seller_province);
+        if (province) {
+          setSellerProvinceCode(province.code);
+        }
+      }
+
       // Populate buyer information
       setBuyerNTNCNIC(initialData.buyer_ntn_cnic || '');
       setBuyerBusinessName(initialData.buyer_business_name || '');
       setBuyerProvince(initialData.buyer_province || '');
       setBuyerAddress(initialData.buyer_address || '');
       setBuyerRegistrationType(initialData.buyer_registration_type || 'Registered');
+
+      // Resolve buyer province code from masterData
+      if (initialData.buyer_province && masterData) {
+        const province = masterData.provinces.find(p => p.name === initialData.buyer_province);
+        if (province) {
+          setBuyerProvinceCode(province.code);
+        }
+      }
 
       // Populate items
       if (initialData.items && Array.isArray(initialData.items)) {
@@ -189,7 +226,7 @@ export function SaleInvoiceForm({
           valueSalesExcludingST: item.valueSalesExcludingST || item.value_sales_excluding_st || 0,
           fixedNotifiedValueOrRetailPrice: item.fixedNotifiedValueOrRetailPrice || item.fixed_notified_value_or_retail_price || 0,
           salesTaxApplicable: item.salesTaxApplicable || item.sales_tax_applicable || 0,
-          salesTaxWithheldAtSource: item.salesTaxWithheldAtSource || item.sales_tax_withheld_at_source || 0,
+          salesTaxWithheldAtSource: item.salesTaxWithheldAtSource || item.sales_tax_withheld_at_source?.toString() || '',
           extraTax: item.extraTax || item.extra_tax || 0,
           furtherTax: item.furtherTax || item.further_tax || 0,
           sroScheduleNo: item.sroScheduleNo || item.sro_schedule_no || '',
@@ -200,7 +237,7 @@ export function SaleInvoiceForm({
         })));
       }
     }
-  }, [isEditMode, initialData]);
+  }, [isEditMode, initialData, masterData]);
 
   // Verify buyer registration with FBR
   const verifyBuyerRegistration = useCallback(async (ntnCnic: string) => {
@@ -271,18 +308,70 @@ export function SaleInvoiceForm({
     return () => clearTimeout(timeoutId);
   }, [buyerNTNCNIC, verifyBuyerRegistration]);
 
+  // Fetch dynamic tax rates from FBR API
+  const fetchTaxRates = useCallback(async () => {
+    // Only fetch if user has explicitly selected a transaction type
+    if (!hasSelectedTransactionType) {
+      return;
+    }
+
+    // Only fetch if all required fields are present
+    if (!transactionTypeId || !invoiceDate || !sellerProvinceCode) {
+      setDynamicTaxRates([]);
+      setTaxRateError(null);
+      return;
+    }
+
+    setFetchingTaxRates(true);
+    setTaxRateError(null);
+
+    try {
+      // Convert date format: YYYY-MM-DD to DD-MMM-YYYY
+      const [year, month, day] = invoiceDate.split('-');
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const formattedDate = `${day}-${monthNames[parseInt(month) - 1]}-${year}`;
+
+      const rates = await masterDataService.getSaleTypeToRate(
+        formattedDate,
+        parseInt(transactionTypeId),
+        parseInt(sellerProvinceCode)
+      );
+
+      if (rates && rates.length > 0) {
+        setDynamicTaxRates(rates);
+        setTaxRateError(null);
+      } else {
+        // Use fallback rates
+        setDynamicTaxRates([]);
+        setTaxRateError('Using default tax rates');
+      }
+    } catch (error) {
+      console.error('Error fetching tax rates:', error);
+      setDynamicTaxRates([]);
+      setTaxRateError('Failed to fetch tax rates, using defaults');
+    } finally {
+      setFetchingTaxRates(false);
+    }
+  }, [transactionTypeId, invoiceDate, sellerProvinceCode, hasSelectedTransactionType]);
+
+  // Trigger tax rate fetching when required fields change
+  useEffect(() => {
+    fetchTaxRates();
+  }, [fetchTaxRates]);
+
   const addItem = () => {
     setItems([...items, {
       hsCode: '',
       productDescription: '',
-      rate: '18',
+      rate: '',
       uoM: 'NOS',
       quantity: 1,
       totalValues: 0,
       valueSalesExcludingST: 0,
       fixedNotifiedValueOrRetailPrice: 0,
       salesTaxApplicable: 0,
-      salesTaxWithheldAtSource: 0,
+      salesTaxWithheldAtSource: '',
       extraTax: 0,
       furtherTax: 0,
       sroScheduleNo: '',
@@ -409,13 +498,12 @@ export function SaleInvoiceForm({
 
         setHsCodeSuggestions(prev => ({ ...prev, [index]: filtered }));
 
-        // If exact match found, auto-fill description and fetch valid UOMs
+        // If exact match found, fetch valid UOMs (description is manual)
         const exactMatch = masterData.hs_codes.find(hs =>
           hs.code.toLowerCase() === value.toLowerCase()
         );
 
         if (exactMatch) {
-          updateItem(index, 'productDescription', exactMatch.description);
           setHsCodeSuggestions(prev => ({ ...prev, [index]: [] })); // Clear suggestions
 
           // Fetch valid UOMs for this HS code
@@ -430,7 +518,6 @@ export function SaleInvoiceForm({
   // Function to select an HS code from suggestions
   const selectHSCode = useCallback((index: number, hsCode: {code: string, description: string}) => {
     updateItem(index, 'hsCode', hsCode.code);
-    updateItem(index, 'productDescription', hsCode.description);
     setHsCodeSuggestions(prev => ({ ...prev, [index]: [] })); // Clear suggestions
 
     // Fetch valid UOMs for this HS code
@@ -440,6 +527,20 @@ export function SaleInvoiceForm({
   // Function to handle tax rate change
   const handleTaxRateChange = useCallback((index: number, rateValue: string) => {
     updateItem(index, 'rate', rateValue);
+
+    // Auto-select Sale Type based on tax rate
+    const rate = parseFloat(rateValue);
+    let autoSaleType = '01'; // Default: Goods at standard rate
+
+    if (rate === 0) {
+      autoSaleType = '03'; // Goods at zero rate
+    } else if (rate > 0 && rate < 18) {
+      autoSaleType = '02'; // Goods at reduced rate
+    } else if (rate === 18) {
+      autoSaleType = '01'; // Goods at standard rate (default)
+    }
+
+    updateItem(index, 'saleType', autoSaleType);
 
     // Fetch SRO schedules for this tax rate
     if (rateValue && invoiceDate) {
@@ -461,7 +562,7 @@ export function SaleInvoiceForm({
       value_sales_excluding_st: item.valueSalesExcludingST,
       fixed_notified_value_or_retail_price: item.fixedNotifiedValueOrRetailPrice,
       sales_tax_applicable: item.salesTaxApplicable,
-      sales_tax_withheld_at_source: item.salesTaxWithheldAtSource,
+      sales_tax_withheld_at_source: parseFloat(item.salesTaxWithheldAtSource) || 0,
       extra_tax: item.extraTax,
       further_tax: item.furtherTax,
       sro_schedule_no: item.sroScheduleNo || undefined,
@@ -475,6 +576,7 @@ export function SaleInvoiceForm({
       external_id: invoiceNo || `INV-${Date.now()}`, // Use user-provided invoice no or auto-generate
       invoice_type: invoiceType,
       invoice_date: invoiceDate,
+      transaction_type_id: transactionTypeId || undefined,
       seller_ntn_cnic: sellerNTNCNIC,
       seller_business_name: sellerBusinessName,
       seller_province: sellerProvince,
@@ -554,6 +656,35 @@ export function SaleInvoiceForm({
                       )}
                     </SelectContent>
                   </Select>
+                </div>
+
+                <div>
+                  <Label htmlFor="transactionType">Transaction Type *</Label>
+                  <Select value={transactionTypeId} onValueChange={(val) => {
+                    setTransactionTypeId(val);
+                    setHasSelectedTransactionType(true);
+                  }}>
+                    <SelectTrigger disabled={masterData.transaction_types.length === 0}>
+                      <span className="flex-1 text-left">
+                        {transactionTypeId
+                          ? masterData.transaction_types.find(t => t.code === transactionTypeId)?.name || transactionTypeId
+                          : masterData.transaction_types.length === 0
+                            ? "Configure FBR token in profile"
+                            : "Select transaction type"
+                        }
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {masterData.transaction_types.length === 0 ? (
+                        <SelectItem value="none" disabled>No options available - Configure FBR token</SelectItem>
+                      ) : (
+                        masterData.transaction_types.map((type) => (
+                          <SelectItem key={type.code} value={type.code}>{type.name}</SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-gray-500 mt-1">Required for automatic tax rate calculation</p>
                 </div>
 
             <div>
@@ -644,7 +775,14 @@ export function SaleInvoiceForm({
 
             <div>
               <Label htmlFor="sellerProvince">Province *</Label>
-              <Select value={sellerProvince} onValueChange={setSellerProvince}>
+              <Select value={sellerProvince} onValueChange={(val) => {
+                setSellerProvince(val);
+                // Find and store province code
+                const province = masterData.provinces.find(p => p.name === val);
+                if (province) {
+                  setSellerProvinceCode(province.code);
+                }
+              }}>
                 <SelectTrigger disabled={masterData.provinces.length === 0}>
                   <SelectValue placeholder={masterData.provinces.length === 0 ? "Configure FBR token in profile" : "Select province"} />
                 </SelectTrigger>
@@ -735,7 +873,14 @@ export function SaleInvoiceForm({
 
             <div>
               <Label htmlFor="buyerProvince">Province *</Label>
-              <Select value={buyerProvince} onValueChange={setBuyerProvince}>
+              <Select value={buyerProvince} onValueChange={(val) => {
+                setBuyerProvince(val);
+                // Find and store province code
+                const province = masterData.provinces.find(p => p.name === val);
+                if (province) {
+                  setBuyerProvinceCode(province.code);
+                }
+              }}>
                 <SelectTrigger disabled={masterData.provinces.length === 0}>
                   <SelectValue placeholder={masterData.provinces.length === 0 ? "Configure FBR token in profile" : "Select province"} />
                 </SelectTrigger>
@@ -834,22 +979,39 @@ export function SaleInvoiceForm({
                 </div>
 
                 <div>
-                  <Label>Tax Rate *</Label>
-                  <Select value={item.rate} onValueChange={(val) => handleTaxRateChange(index, val)}>
+                  <div className="flex items-center gap-2">
+                    <Label>Tax Rate *</Label>
+                    {fetchingTaxRates && (
+                      <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
+                    )}
+                  </div>
+                  <Select value={item.rate} onValueChange={(val) => handleTaxRateChange(index, val)} disabled={dynamicTaxRates.length === 0}>
                     <SelectTrigger>
                       <span className="flex-1 text-left">
-                        {item.rate
-                          ? masterData.tax_rates.find(r => r.rate === item.rate)?.name || item.rate
-                          : "Select tax rate"
+                        {item.rate && dynamicTaxRates.length > 0
+                          ? dynamicTaxRates.find(r => r.rate === item.rate)?.name || item.rate
+                          : dynamicTaxRates.length === 0
+                            ? "No tax rate found"
+                            : "Select tax rate"
                         }
                       </span>
                     </SelectTrigger>
                     <SelectContent>
-                      {masterData.tax_rates.map((rate) => (
-                        <SelectItem key={rate.rate} value={rate.rate}>{rate.name}</SelectItem>
-                      ))}
+                      {dynamicTaxRates.length === 0 ? (
+                        <SelectItem value="none" disabled>No tax rates available</SelectItem>
+                      ) : (
+                        dynamicTaxRates.map((rate) => (
+                          <SelectItem key={rate.rate} value={rate.rate}>{rate.name}</SelectItem>
+                        ))
+                      )}
                     </SelectContent>
                   </Select>
+                  {dynamicTaxRates.length === 0 && !fetchingTaxRates && (
+                    <p className="text-xs text-gray-500 mt-1">Fill transaction type, date & province</p>
+                  )}
+                  {taxRateError && (
+                    <p className="text-xs text-amber-600 mt-1">{taxRateError}</p>
+                  )}
                 </div>
 
                 <div>
@@ -897,7 +1059,10 @@ export function SaleInvoiceForm({
                     type="number"
                     step="0.0001"
                     value={item.quantity || ''}
-                    onChange={(e) => updateItem(index, 'quantity', parseFloat(e.target.value) || 0)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      updateItem(index, 'quantity', val === '' ? 0 : parseFloat(val));
+                    }}
                     required
                   />
                 </div>
@@ -908,7 +1073,10 @@ export function SaleInvoiceForm({
                     type="number"
                     step="0.01"
                     value={item.totalValues || ''}
-                    onChange={(e) => updateItem(index, 'totalValues', parseFloat(e.target.value) || 0)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      updateItem(index, 'totalValues', val === '' ? 0 : parseFloat(val));
+                    }}
                     required
                   />
                 </div>
@@ -919,7 +1087,10 @@ export function SaleInvoiceForm({
                     type="number"
                     step="0.01"
                     value={item.valueSalesExcludingST || ''}
-                    onChange={(e) => updateItem(index, 'valueSalesExcludingST', parseFloat(e.target.value) || 0)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      updateItem(index, 'valueSalesExcludingST', val === '' ? 0 : parseFloat(val));
+                    }}
                     required
                   />
                 </div>
@@ -930,7 +1101,10 @@ export function SaleInvoiceForm({
                     type="number"
                     step="0.01"
                     value={item.fixedNotifiedValueOrRetailPrice || ''}
-                    onChange={(e) => updateItem(index, 'fixedNotifiedValueOrRetailPrice', parseFloat(e.target.value) || 0)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      updateItem(index, 'fixedNotifiedValueOrRetailPrice', val === '' ? 0 : parseFloat(val));
+                    }}
                     required
                   />
                 </div>
@@ -941,7 +1115,10 @@ export function SaleInvoiceForm({
                     type="number"
                     step="0.01"
                     value={item.salesTaxApplicable || ''}
-                    onChange={(e) => updateItem(index, 'salesTaxApplicable', parseFloat(e.target.value) || 0)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      updateItem(index, 'salesTaxApplicable', val === '' ? 0 : parseFloat(val));
+                    }}
                     required
                   />
                 </div>
@@ -949,10 +1126,10 @@ export function SaleInvoiceForm({
                 <div>
                   <Label>Sales Tax Withheld *</Label>
                   <Input
-                    type="number"
-                    step="0.01"
-                    value={item.salesTaxWithheldAtSource || ''}
-                    onChange={(e) => updateItem(index, 'salesTaxWithheldAtSource', parseFloat(e.target.value) || 0)}
+                    type="text"
+                    value={item.salesTaxWithheldAtSource}
+                    onChange={(e) => updateItem(index, 'salesTaxWithheldAtSource', e.target.value)}
+                    placeholder="Enter amount (e.g., 0, 100.50)"
                     required
                   />
                 </div>
@@ -963,7 +1140,10 @@ export function SaleInvoiceForm({
                     type="number"
                     step="0.01"
                     value={item.extraTax || ''}
-                    onChange={(e) => updateItem(index, 'extraTax', parseFloat(e.target.value) || 0)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      updateItem(index, 'extraTax', val === '' ? 0 : parseFloat(val));
+                    }}
                   />
                 </div>
 
@@ -973,7 +1153,10 @@ export function SaleInvoiceForm({
                     type="number"
                     step="0.01"
                     value={item.furtherTax || ''}
-                    onChange={(e) => updateItem(index, 'furtherTax', parseFloat(e.target.value) || 0)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      updateItem(index, 'furtherTax', val === '' ? 0 : parseFloat(val));
+                    }}
                   />
                 </div>
 
@@ -1023,7 +1206,10 @@ export function SaleInvoiceForm({
                     type="number"
                     step="0.01"
                     value={item.fedPayable || ''}
-                    onChange={(e) => updateItem(index, 'fedPayable', parseFloat(e.target.value) || 0)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      updateItem(index, 'fedPayable', val === '' ? 0 : parseFloat(val));
+                    }}
                   />
                 </div>
 
@@ -1033,7 +1219,10 @@ export function SaleInvoiceForm({
                     type="number"
                     step="0.01"
                     value={item.discount || ''}
-                    onChange={(e) => updateItem(index, 'discount', parseFloat(e.target.value) || 0)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      updateItem(index, 'discount', val === '' ? 0 : parseFloat(val));
+                    }}
                   />
                 </div>
 

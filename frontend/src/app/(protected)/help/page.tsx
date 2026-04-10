@@ -51,21 +51,26 @@ export default function HelpPage() {
   ];
 
   return (
-    <div className="space-y-6 pb-8">
+    <div className="space-y-6 pb-8 max-w-4xl">
+      {/* Back to Dashboard Button */}
+      <div className="flex items-center gap-4">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => router.push('/dashboard')}
+          className="flex items-center gap-2"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Dashboard
+        </Button>
+      </div>
+
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex-1">
-          <div className="flex items-center gap-4 mb-2">
-            <Button variant="ghost" onClick={() => router.push('/dashboard')}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Dashboard
-            </Button>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Help & Support</h1>
-          <p className="mt-2 text-sm sm:text-base text-gray-600">
-            Find answers to common questions and get support for FBR e-invoicing
-          </p>
-        </div>
+      <div>
+        <h1 className="text-2xl sm:text-3xl font-bold text-[#202223] dark:text-[#e3e3e3]">Help & Support</h1>
+        <p className="mt-2 text-sm sm:text-base text-[#6d7175] dark:text-[#8c9196]">
+          Find answers to common questions and get support for FBR e-invoicing
+        </p>
       </div>
 
       {/* Contact Support */}
@@ -80,20 +85,20 @@ export default function HelpPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             <div className="flex items-start gap-4">
               <div className="flex-shrink-0">
-                <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center">
-                  <Mail className="h-6 w-6 text-indigo-600" />
+                <div className="w-12 h-12 bg-[#dbeafe] dark:bg-[#1e3a8a]/30 rounded-xl flex items-center justify-center">
+                  <Mail className="h-6 w-6 text-[#1e40af] dark:text-[#60a5fa]" />
                 </div>
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-gray-900 mb-1">Email Support</h3>
-                <p className="text-sm text-gray-600 mb-2">
+                <h3 className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] mb-1">Email Support</h3>
+                <p className="text-sm text-[#6d7175] dark:text-[#8c9196] mb-2">
                   Get help via email within 24 hours
                 </p>
                 <a
                   href="https://mail.google.com/mail/?view=cm&to=support@example.com"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-sm text-indigo-600 hover:text-indigo-500 font-medium"
+                  className="text-sm text-[#008060] dark:text-[#00a876] hover:text-[#006e52] dark:hover:text-[#008f64] font-semibold"
                 >
                   mohdanus20@gmail.com
                 </a>
@@ -102,18 +107,18 @@ export default function HelpPage() {
 
             <div className="flex items-start gap-4">
               <div className="flex-shrink-0">
-                <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                  <Phone className="h-6 w-6 text-green-600" />
+                <div className="w-12 h-12 bg-[#d1fae5] dark:bg-[#064e3b]/30 rounded-xl flex items-center justify-center">
+                  <Phone className="h-6 w-6 text-[#065f46] dark:text-[#34d399]" />
                 </div>
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-gray-900 mb-1">Phone Support</h3>
-                <p className="text-sm text-gray-600 mb-2">
+                <h3 className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] mb-1">Phone Support</h3>
+                <p className="text-sm text-[#6d7175] dark:text-[#8c9196] mb-2">
                   Call us during business hours (9 AM - 5 PM)
                 </p>
                 <a
                   href="tel:+92-51-1234567"
-                  className="text-sm text-green-600 hover:text-green-500 font-medium"
+                  className="text-sm text-[#008060] dark:text-[#00a876] hover:text-[#006e52] dark:hover:text-[#008f64] font-semibold"
                 >
                   +92-51-1234567
                 </a>
@@ -131,11 +136,11 @@ export default function HelpPage() {
         <CardContent>
           <div className="space-y-6">
             {faqs.map((faq, index) => (
-              <div key={index} className="border-b border-gray-200 last:border-0 pb-6 last:pb-0">
-                <h3 className="text-base font-semibold text-gray-900 mb-2">
+              <div key={index} className="border-b border-[#e1e3e5] dark:border-[#2e2e2e] last:border-0 pb-6 last:pb-0">
+                <h3 className="text-base font-semibold text-[#202223] dark:text-[#e3e3e3] mb-2">
                   {faq.question}
                 </h3>
-                <p className="text-sm text-gray-600 leading-relaxed">
+                <p className="text-sm text-[#6d7175] dark:text-[#8c9196] leading-relaxed">
                   {faq.answer}
                 </p>
               </div>
@@ -157,23 +162,23 @@ export default function HelpPage() {
                 href={resource.link}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-start gap-4 p-4 rounded-lg border-2 border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 transition-colors"
+                className="flex items-start gap-4 p-4 rounded-xl border-2 border-[#e1e3e5] dark:border-[#2e2e2e] hover:border-[#008060] dark:hover:border-[#00a876] hover:bg-[#f1f8f5] dark:hover:bg-[#0d3d2f]/20 transition-all duration-150"
               >
                 <div className="flex-shrink-0">
-                  <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center text-indigo-600">
+                  <div className="w-12 h-12 bg-[#f1f8f5] dark:bg-[#0d3d2f]/30 rounded-xl flex items-center justify-center text-[#008060] dark:text-[#00a876]">
                     {resource.icon}
                   </div>
                 </div>
                 <div className="flex-1">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-1">
+                  <h3 className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] mb-1">
                     {resource.title}
                   </h3>
-                  <p className="text-xs text-gray-600">
+                  <p className="text-xs text-[#6d7175] dark:text-[#8c9196]">
                     {resource.description}
                   </p>
                 </div>
                 <svg
-                  className="h-5 w-5 text-gray-400 flex-shrink-0"
+                  className="h-5 w-5 text-[#8c9196] dark:text-[#6d7175] flex-shrink-0"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -199,34 +204,34 @@ export default function HelpPage() {
         <CardContent>
           <ul className="space-y-3">
             <li className="flex items-start gap-3">
-              <div className="flex-shrink-0 w-6 h-6 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 text-xs font-bold mt-0.5">
+              <div className="flex-shrink-0 w-6 h-6 bg-[#f1f8f5] dark:bg-[#0d3d2f]/30 rounded-full flex items-center justify-center text-[#008060] dark:text-[#00a876] text-xs font-bold mt-0.5">
                 1
               </div>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-[#6d7175] dark:text-[#8c9196]">
                 Always test your invoices in SANDBOX environment before posting to PRODUCTION
               </p>
             </li>
             <li className="flex items-start gap-3">
-              <div className="flex-shrink-0 w-6 h-6 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 text-xs font-bold mt-0.5">
+              <div className="flex-shrink-0 w-6 h-6 bg-[#f1f8f5] dark:bg-[#0d3d2f]/30 rounded-full flex items-center justify-center text-[#008060] dark:text-[#00a876] text-xs font-bold mt-0.5">
                 2
               </div>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-[#6d7175] dark:text-[#8c9196]">
                 Keep your FBR credentials secure and never share them with unauthorized users
               </p>
             </li>
             <li className="flex items-start gap-3">
-              <div className="flex-shrink-0 w-6 h-6 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 text-xs font-bold mt-0.5">
+              <div className="flex-shrink-0 w-6 h-6 bg-[#f1f8f5] dark:bg-[#0d3d2f]/30 rounded-full flex items-center justify-center text-[#008060] dark:text-[#00a876] text-xs font-bold mt-0.5">
                 3
               </div>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-[#6d7175] dark:text-[#8c9196]">
                 Validate your invoice before posting to catch errors early
               </p>
             </li>
             <li className="flex items-start gap-3">
-              <div className="flex-shrink-0 w-6 h-6 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 text-xs font-bold mt-0.5">
+              <div className="flex-shrink-0 w-6 h-6 bg-[#f1f8f5] dark:bg-[#0d3d2f]/30 rounded-full flex items-center justify-center text-[#008060] dark:text-[#00a876] text-xs font-bold mt-0.5">
                 4
               </div>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-[#6d7175] dark:text-[#8c9196]">
                 Check the invoice history regularly to monitor the status of your submissions
               </p>
             </li>

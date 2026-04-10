@@ -1,0 +1,133 @@
+openapi: 3.0.3
+info:
+  title: Invoice Retry API
+  description: API endpoint for manually retrying failed invoices
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local development server
+
+security:
+  - BearerAuth: []
+
+paths:
+  /automation/invoice/{invoice_id}/retry:
+    post:
+      summary: Manually retry failed invoice
+      description: Retry a failed invoice by re-validating and re-submitting to FBR
+      operationId: retryFailedInvoice
+      tags:
+        - Invoice Retry
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          description: Invoice ID to retry
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Retry initiated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - message
+                  - invoice_id
+                  - status
+                properties:
+                  message:
+                    type: string
+                    example: "Invoice retry initiated successfully"
+                  invoice_id:
+                    type: string
+                    format: uuid
+                    description: Invoice ID
+                  status:
+                    type: string
+                    enum: [pending, validated, submitted, failed]
+                    description: New status after retry attempt
+                  result:
+                    type: object
+                    description: Retry result details
+                    properties:
+                      validation_passed:
+                        type: boolean
+                        description: Whether validation passed
+                      submission_success:
+                        type: boolean
+                        description: Whether FBR submission succeeded
+                      fbr_response:
+                        type: object
+                        nullable: true
+                        description: FBR API response if submitted
+                      error_message:
+                        type: string
+                        nullable: true
+                        description: Error message if retry failed
+        '400':
+          description: Bad request - invoice not in failed status or cannot be retried
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                notFailed:
+                  value:
+                    error: "Invalid invoice status"
+                    detail: "Invoice must be in 'failed' status to retry. Current status: submitted"
+                alreadyProcessing:
+                  value:
+                    error: "Retry already in progress"
+                    detail: "A retry operation is already in progress for this invoice"
+        '401':
+          description: Unauthorized - authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden - user does not own this invoice
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Invoice not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error during retry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token from Better Auth
+
+  schemas:
+    Error:
+      type: object
+      required:
+        - error
+        - detail
+      properties:
+        error:
+          type: string
+          description: Error type
+        detail:
+          type: string
+          description: Detailed error message

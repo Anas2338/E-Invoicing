@@ -78,7 +78,7 @@ export function SelectTrigger({ className, children, ...props }: SelectTriggerPr
   return (
     <button
       type="button"
-      className={`flex h-12 w-full items-center justify-between rounded-lg border border-gray-300 bg-white px-4 py-2 text-base text-gray-900 shadow-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 ${className || ''}`}
+      className={`flex h-12 w-full items-center justify-between rounded-xl border-2 border-[#c9cccf] bg-white px-4 py-3 text-base text-[#202223] shadow-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[#008060] focus:border-[#008060] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#2e2e2e] dark:bg-[#1a1a1a] dark:text-[#e3e3e3] dark:focus:ring-[#00a876] dark:focus:border-[#00a876] ${className || ''}`}
       onClick={handleClick}
       {...props}
     >
@@ -109,7 +109,7 @@ export function SelectContent({ children }: SelectContentProps) {
   }
 
   return (
-    <div className="absolute z-50 min-w-[8rem] overflow-hidden rounded-md border bg-white text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95 mt-1 w-full max-h-60 overflow-y-auto">
+    <div className="absolute z-50 min-w-[8rem] overflow-hidden rounded-xl border-2 border-[#e1e3e5] bg-white text-[#202223] shadow-lg animate-in fade-in-0 zoom-in-95 mt-1 w-full max-h-60 overflow-y-auto dark:bg-[#1a1a1a] dark:border-[#2e2e2e] dark:text-[#e3e3e3]">
       <ul className="p-1">
         {children}
       </ul>
@@ -135,7 +135,7 @@ export function SelectItem({ value, children, disabled, className, onClick, ...p
 
   return (
     <li
-      className={`relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none hover:bg-gray-100 focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 ${className || ''}`}
+      className={`relative flex w-full cursor-pointer select-none items-center rounded-lg py-2 pl-8 pr-2 text-sm outline-none hover:bg-[#f6f6f7] focus:bg-[#f6f6f7] data-[disabled]:pointer-events-none data-[disabled]:opacity-50 dark:hover:bg-[#2e2e2e] dark:focus:bg-[#2e2e2e] ${className || ''}`}
       onClick={handleClick}
       {...props}
     >

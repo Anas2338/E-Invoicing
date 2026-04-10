@@ -1,0 +1,403 @@
+openapi: 3.0.3
+info:
+  title: Automation Dashboard API
+  description: API endpoints for automation dashboard statistics and invoice management
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local development server
+
+security:
+  - BearerAuth: []
+
+paths:
+  /automation/dashboard/stats:
+    get:
+      summary: Get dashboard statistics
+      description: Get summary statistics for all automated invoices (total, pending, submitted, failed, etc.)
+      operationId: getDashboardStats
+      tags:
+        - Automation Dashboard
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Dashboard statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - total_invoices
+                  - pending_count
+                  - expired_count
+                  - validated_count
+                  - submitted_count
+                  - failed_count
+                properties:
+                  total_invoices:
+                    type: integer
+                    description: Total number of automated invoices
+                    example: 150
+                  pending_count:
+                    type: integer
+                    description: Number of invoices pending processing
+                    example: 25
+                  expired_count:
+                    type: integer
+                    description: Number of invoices with past scheduled times
+                    example: 5
+                  validated_count:
+                    type: integer
+                    description: Number of validated invoices (not yet submitted)
+                    example: 10
+                  submitted_count:
+                    type: integer
+                    description: Number of successfully submitted invoices
+                    example: 95
+                  failed_count:
+                    type: integer
+                    description: Number of failed invoices
+                    example: 15
+        '401':
+          description: Unauthorized - authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /automation/dashboard/invoices:
+    get:
+      summary: Get paginated invoice list
+      description: Get a paginated list of automated invoices with optional filters
+      operationId: getInvoiceList
+      tags:
+        - Automation Dashboard
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Filter by invoice status
+          schema:
+            type: string
+            enum: [pending, expired, validated, submitted, failed]
+        - name: date_from
+          in: query
+          required: false
+          description: Filter by scheduled date (from)
+          schema:
+            type: string
+            format: date
+            example: "2026-04-01"
+        - name: date_to
+          in: query
+          required: false
+          description: Filter by scheduled date (to)
+          schema:
+            type: string
+            format: date
+            example: "2026-04-30"
+        - name: page
+          in: query
+          required: false
+          description: Page number (1-indexed)
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          required: false
+          description: Number of items per page
+          schema:
+            type: integer
+            minimum: 10
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: Invoice list with pagination
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - invoices
+                  - total
+                  - page
+                  - page_size
+                  - total_pages
+                properties:
+                  invoices:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InvoiceSummary'
+                  total:
+                    type: integer
+                    description: Total number of invoices matching filters
+                    example: 150
+                  page:
+                    type: integer
+                    description: Current page number
+                    example: 1
+                  page_size:
+                    type: integer
+                    description: Number of items per page
+                    example: 50
+                  total_pages:
+                    type: integer
+                    description: Total number of pages
+                    example: 3
+        '401':
+          description: Unauthorized - authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /automation/dashboard/invoice/{invoice_id}:
+    get:
+      summary: Get invoice details
+      description: Get detailed information for a specific automated invoice
+      operationId: getInvoiceDetails
+      tags:
+        - Automation Dashboard
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          description: Invoice ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Invoice details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceDetail'
+        '401':
+          description: Unauthorized - authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden - user does not own this invoice
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Invoice not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /automation/dashboard/download/{session_id}:
+    get:
+      summary: Download updated Excel file
+      description: Download the Excel file with updated status and reason columns
+      operationId: downloadUpdatedExcel
+      tags:
+        - Automation Dashboard
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          description: Upload session ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Updated Excel file
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+                example: attachment; filename="invoices_updated_2026-04-04.xlsx"
+        '401':
+          description: Unauthorized - authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Forbidden - user does not own this session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token from Better Auth
+
+  schemas:
+    InvoiceSummary:
+      type: object
+      required:
+        - id
+        - invoice_number
+        - customer_name
+        - amount
+        - scheduled_date
+        - scheduled_time
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Invoice ID
+        invoice_number:
+          type: string
+          description: Invoice number from Excel
+          example: "INV-001"
+        customer_name:
+          type: string
+          description: Customer name
+          example: "ABC Corporation"
+        amount:
+          type: number
+          format: decimal
+          description: Invoice amount
+          example: 15000.00
+        scheduled_date:
+          type: string
+          format: date
+          description: Scheduled submission date
+          example: "2026-04-04"
+        scheduled_time:
+          type: string
+          format: time
+          description: Scheduled submission time (HH:MM)
+          example: "10:00"
+        status:
+          type: string
+          enum: [pending, expired, validated, submitted, failed]
+          description: Current invoice status
+        reason:
+          type: string
+          nullable: true
+          description: Reason for failure or completion status
+          example: "Successfully submitted to FBR"
+        processed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the invoice was processed
+
+    InvoiceDetail:
+      type: object
+      required:
+        - id
+        - invoice_number
+        - invoice_data
+        - scheduled_date
+        - scheduled_time
+        - status
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Invoice ID
+        invoice_number:
+          type: string
+          description: Invoice number from Excel
+        invoice_data:
+          type: object
+          description: Full invoice data from Excel
+          properties:
+            customer_name:
+              type: string
+            items:
+              type: string
+            amount:
+              type: number
+            tax:
+              type: number
+        scheduled_date:
+          type: string
+          format: date
+          description: Scheduled submission date
+        scheduled_time:
+          type: string
+          format: time
+          description: Scheduled submission time
+        status:
+          type: string
+          enum: [pending, expired, validated, submitted, failed]
+          description: Current invoice status
+        validation_errors:
+          type: string
+          nullable: true
+          description: Validation error details if status is failed
+        fbr_response:
+          type: object
+          nullable: true
+          description: FBR API response if submitted
+        created_at:
+          type: string
+          format: date-time
+          description: When the invoice was created
+        processed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the invoice was processed
+        logs:
+          type: array
+          description: Activity logs for this invoice
+          items:
+            type: object
+            properties:
+              action:
+                type: string
+                enum: [validate, submit, update_excel, retry]
+              status:
+                type: string
+                enum: [success, failure]
+              details:
+                type: object
+              timestamp:
+                type: string
+                format: date-time
+
+    Error:
+      type: object
+      required:
+        - error
+        - detail
+      properties:
+        error:
+          type: string
+          description: Error type
+        detail:
+          type: string
+          description: Detailed error message

@@ -34,9 +34,25 @@ class FBRService:
         "03": "Goods at zero rate",
         "04": "Exempt goods",
         "05": "Services",
-        "06": "Steel Melting and re-rolling",
-        "07": "Ship breaking",
-        "08": "3rd Schedule Goods"
+        "06": "3rd Schedule Goods",
+        "07": "Steel Melting and re-rolling",
+        "08": "Ship breaking",
+        "09": "Cotton Ginners",
+        "10": "Telecommunication services",
+        "11": "Toll Manufacturing",
+        "12": "Petroleum Products",
+        "13": "Electricity Supply to Retailers",
+        "14": "Gas to CNG stations",
+        "15": "Mobile Phones",
+        "16": "Processing/Conversion of Goods",
+        "17": "Goods (FED in ST Mode)",
+        "18": "Services (FED in ST Mode)",
+        "19": "Electric Vehicle",
+        "20": "Cement/Concrete Block",
+        "21": "Potassium Chlorate",
+        "22": "CNG Sales",
+        "23": "Goods as per SRO.297(I)/2023",
+        "24": "Non-Adjustable Supplies"
     }
 
     def __init__(self):

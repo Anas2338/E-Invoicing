@@ -1,0 +1,221 @@
+openapi: 3.0.3
+info:
+  title: Excel Upload API
+  description: API endpoints for Excel template download and upload
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local development server
+
+security:
+  - BearerAuth: []
+
+paths:
+  /automation/template/download:
+    get:
+      summary: Download Excel template
+      description: Download a pre-formatted Excel template with predefined column headers for bulk invoice upload
+      operationId: downloadExcelTemplate
+      tags:
+        - Excel Upload
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Excel template file
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+                example: attachment; filename="invoice_automation_template.xlsx"
+        '401':
+          description: Unauthorized - authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /automation/excel/upload:
+    post:
+      summary: Upload filled Excel file
+      description: Upload a filled Excel file with invoice data for automated processing
+      operationId: uploadExcelFile
+      tags:
+        - Excel Upload
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Excel file (.xlsx) with invoice data
+      responses:
+        '200':
+          description: Upload successful
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - session_id
+                  - total_rows
+                  - message
+                properties:
+                  session_id:
+                    type: string
+                    format: uuid
+                    description: Upload session ID for tracking
+                  total_rows:
+                    type: integer
+                    description: Number of invoice rows in the uploaded file
+                  message:
+                    type: string
+                    example: "Excel file uploaded successfully. 50 invoices scheduled for processing."
+        '400':
+          description: Bad request - invalid file structure or duplicate invoices
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalidStructure:
+                  value:
+                    error: "Invalid Excel structure"
+                    detail: "Missing required columns: scheduled_date, scheduled_time"
+                duplicateInvoices:
+                  value:
+                    error: "Duplicate invoice numbers found"
+                    detail: "Duplicate invoice numbers: INV-001, INV-005, INV-012"
+        '401':
+          description: Unauthorized - authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Conflict - previous upload still processing
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                  - detail
+                  - estimated_completion
+                properties:
+                  error:
+                    type: string
+                    example: "Previous upload still processing"
+                  detail:
+                    type: string
+                    example: "Please wait for the current upload to complete before uploading a new file"
+                  estimated_completion:
+                    type: string
+                    format: date-time
+                    description: Estimated completion time for current upload
+        '413':
+          description: Payload too large - file exceeds size limit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /automation/excel/status/{session_id}:
+    get:
+      summary: Check upload processing status
+      description: Get the current processing status of an uploaded Excel file
+      operationId: getUploadStatus
+      tags:
+        - Excel Upload
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          description: Upload session ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Processing status
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - session_id
+                  - status
+                  - total_rows
+                  - processed_rows
+                properties:
+                  session_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    enum: [uploading, processing, completed, failed]
+                    description: Current processing status
+                  total_rows:
+                    type: integer
+                    description: Total number of invoice rows
+                  processed_rows:
+                    type: integer
+                    description: Number of rows successfully processed
+                  error_message:
+                    type: string
+                    nullable: true
+                    description: Error message if status is 'failed'
+                  upload_timestamp:
+                    type: string
+                    format: date-time
+                    description: When the file was uploaded
+        '401':
+          description: Unauthorized - authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token from Better Auth
+
+  schemas:
+    Error:
+      type: object
+      required:
+        - error
+        - detail
+      properties:
+        error:
+          type: string
+          description: Error type
+        detail:
+          type: string
+          description: Detailed error message

@@ -1,5 +1,5 @@
-from typing import Optional, List
-from datetime import datetime
+from typing import Optional, List, Tuple, Dict
+from datetime import datetime, date
 from sqlmodel import Session, select
 from uuid import UUID
 import logging
@@ -7,6 +7,7 @@ import logging
 from src.models.invoice import Invoice, InvoiceCreate, InvoiceUpdate, InvoiceStatus
 from src.models.user import User
 from src.models.fbr_response import FBRResponse
+from src.models.automation_invoice import AutomationInvoice
 from src.schemas.invoice import InvoiceFilter
 from src.utils.helpers import calculate_hash
 
@@ -349,3 +350,126 @@ class InvoiceService:
             logger.warning(f"Invalid status transition attempted: {current_status} -> {target_status}")
 
         return is_allowed
+
+    def get_unified_invoice_history(
+        self,
+        db: Session,
+        user_id: UUID,
+        source: Optional[str] = None,
+        status: Optional[str] = None,
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None,
+        page: int = 1,
+        page_size: int = 20
+    ) -> Tuple[List[Dict], int]:
+        """
+        Get unified list of manual and automated invoices.
+
+        Args:
+            db: Database session
+            user_id: User UUID
+            source: Filter by source ("manual", "automated", or None for all)
+            status: Filter by status
+            date_from: Filter by date from
+            date_to: Filter by date to
+            page: Page number
+            page_size: Items per page
+
+        Returns:
+            Tuple of (list of normalized invoice dicts, total count)
+        """
+        unified_invoices = []
+
+        # Query manual invoices if not filtering for automated only
+        if source != "automated":
+            manual_query = select(Invoice).where(
+                Invoice.user_id == user_id,
+                Invoice.is_deleted == False
+            )
+
+            # Apply date filters
+            if date_from:
+                manual_query = manual_query.where(Invoice.created_at >= datetime.combine(date_from, datetime.min.time()))
+            if date_to:
+                manual_query = manual_query.where(Invoice.created_at <= datetime.combine(date_to, datetime.max.time()))
+
+            # Apply status filter
+            if status:
+                manual_query = manual_query.where(Invoice.status == status)
+
+            manual_invoices = db.exec(manual_query).all()
+
+            # Normalize manual invoices
+            for invoice in manual_invoices:
+                # Calculate total amount from items
+                total_amount = sum(item.get('total_values', 0) for item in invoice.items) if invoice.items else 0
+
+                unified_invoices.append({
+                    "id": invoice.id,
+                    "source": "manual",
+                    "invoice_number": invoice.external_id,
+                    "invoice_type": invoice.invoice_type,
+                    "invoice_date": invoice.invoice_date,
+                    "buyer_business_name": invoice.buyer_business_name,
+                    "seller_business_name": invoice.seller_business_name,
+                    "total_amount": total_amount,
+                    "status": invoice.status,
+                    "created_at": invoice.created_at,
+                    "environment": invoice.environment if invoice.environment else None,
+                    "scheduled_date": None,
+                    "scheduled_time": None
+                })
+
+        # Query automation invoices if not filtering for manual only
+        if source != "manual":
+            auto_query = select(AutomationInvoice).where(
+                AutomationInvoice.user_id == user_id
+            )
+
+            # Apply date filters
+            if date_from:
+                auto_query = auto_query.where(AutomationInvoice.created_at >= datetime.combine(date_from, datetime.min.time()))
+            if date_to:
+                auto_query = auto_query.where(AutomationInvoice.created_at <= datetime.combine(date_to, datetime.max.time()))
+
+            # Apply status filter
+            if status:
+                auto_query = auto_query.where(AutomationInvoice.status == status)
+
+            auto_invoices = db.exec(auto_query).all()
+
+            # Normalize automation invoices
+            for invoice in auto_invoices:
+                invoice_data = invoice.invoice_data or {}
+                item = invoice_data.get('items', [{}])[0] if invoice_data.get('items') else {}
+
+                unified_invoices.append({
+                    "id": invoice.id,
+                    "source": "automated",
+                    "invoice_number": invoice_data.get('invoice_number', ''),
+                    "invoice_type": invoice_data.get('invoice_type', ''),
+                    "invoice_date": invoice_data.get('invoice_date', ''),
+                    "buyer_business_name": invoice_data.get('buyer_business_name', ''),
+                    "seller_business_name": invoice_data.get('seller_business_name', ''),
+                    "total_amount": item.get('total_values', 0),
+                    "status": invoice.status,
+                    "created_at": invoice.created_at,
+                    "environment": invoice_data.get('environment', ''),
+                    "scheduled_date": invoice.scheduled_date.isoformat() if invoice.scheduled_date else None,
+                    "scheduled_time": invoice.scheduled_time.isoformat() if invoice.scheduled_time else None
+                })
+
+        # Sort by created_at descending (newest first)
+        unified_invoices.sort(key=lambda x: x['created_at'], reverse=True)
+
+        # Get total count before pagination
+        total = len(unified_invoices)
+
+        # Apply pagination
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        paginated_invoices = unified_invoices[start_idx:end_idx]
+
+        logger.info(f"Retrieved {len(paginated_invoices)} unified invoices for user {user_id} (total: {total})")
+
+        return paginated_invoices, total
