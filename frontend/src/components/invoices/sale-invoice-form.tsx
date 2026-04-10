@@ -985,8 +985,8 @@ export function SaleInvoiceForm({
                       <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
                     )}
                   </div>
-                  <Select value={item.rate} onValueChange={(val) => handleTaxRateChange(index, val)} disabled={dynamicTaxRates.length === 0}>
-                    <SelectTrigger>
+                  <Select value={item.rate} onValueChange={(val) => handleTaxRateChange(index, val)}>
+                    <SelectTrigger disabled={dynamicTaxRates.length === 0}>
                       <span className="flex-1 text-left">
                         {item.rate && dynamicTaxRates.length > 0
                           ? dynamicTaxRates.find(r => r.rate === item.rate)?.name || item.rate
