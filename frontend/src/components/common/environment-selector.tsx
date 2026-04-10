@@ -30,7 +30,7 @@ export function EnvironmentSelector({ currentEnv, canAccessProduction, onEnviron
 
   return (
     <div className="flex items-center space-x-2">
-      <span className="text-sm font-medium">Environment:</span>
+      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Environment:</span>
       <Select value={selectedEnv} onValueChange={handleEnvChange}>
         <SelectTrigger className="w-[180px]">
           <SelectValue placeholder="Select environment" />
@@ -46,7 +46,9 @@ export function EnvironmentSelector({ currentEnv, canAccessProduction, onEnviron
         </SelectContent>
       </Select>
       <span className={`text-xs px-2 py-1 rounded ${
-        selectedEnv === 'sandbox' ? 'bg-blue-100 text-blue-800' : 'bg-red-100 text-red-800'
+        selectedEnv === 'sandbox'
+          ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400'
+          : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
       }`}>
         {selectedEnv.toUpperCase()}
       </span>

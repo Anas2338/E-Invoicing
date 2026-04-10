@@ -101,6 +101,26 @@ export const api = {
         method: 'POST',
       });
     },
+
+    getUnifiedHistory: async (params?: {
+      source?: string;
+      status?: string;
+      date_from?: string;
+      date_to?: string;
+      page?: number;
+      page_size?: number;
+    }) => {
+      const queryParams = new URLSearchParams();
+      if (params?.source) queryParams.append('source', params.source);
+      if (params?.status) queryParams.append('status', params.status);
+      if (params?.date_from) queryParams.append('date_from', params.date_from);
+      if (params?.date_to) queryParams.append('date_to', params.date_to);
+      if (params?.page) queryParams.append('page', params.page.toString());
+      if (params?.page_size) queryParams.append('page_size', params.page_size.toString());
+
+      const query = queryParams.toString();
+      return fetchWithAuth(`/invoices/unified-history${query ? `?${query}` : ''}`);
+    },
   },
 
   // Auth endpoints

@@ -9,6 +9,11 @@ from src.config.settings import settings
 from src.models.user import User
 from src.models.invoice import Invoice
 from src.models.fbr_response import FBRResponse
+from src.models.audit_log import AuditLog
+from src.models.idempotency import IdempotencyCache
+from src.models.automation_invoice import AutomationInvoice
+from src.models.automation_log import AutomationLog
+from src.models.excel_upload_session import ExcelUploadSession
 
 
 # Create the database engine

@@ -1,12 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EnvironmentSelector } from '@/components/common/environment-selector';
 import { userService, authService } from '@/lib/api/api-client';
 import { toast } from 'react-toastify';
+import { ArrowLeft } from 'lucide-react';
 
 export default function SettingsPage() {
+  const router = useRouter();
   const [currentEnv, setCurrentEnv] = useState<'sandbox' | 'production'>('sandbox');
   const [canAccessProduction, setCanAccessProduction] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -54,17 +58,33 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <p>Loading settings...</p>
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#008060] dark:border-[#00a876] mx-auto"></div>
+          <p className="mt-4 text-[#6d7175] dark:text-[#8c9196]">Loading settings...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-4xl pb-8">
+      {/* Back to Dashboard Button */}
+      <div className="flex items-center gap-4">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => router.push('/dashboard')}
+          className="flex items-center gap-2"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Dashboard
+        </Button>
+      </div>
+
       <div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Settings</h1>
-        <p className="mt-2 text-sm sm:text-base text-gray-600">Manage your account settings and preferences</p>
+        <h1 className="text-2xl sm:text-3xl font-bold text-[#202223] dark:text-[#e3e3e3]">Settings</h1>
+        <p className="mt-2 text-sm sm:text-base text-[#6d7175] dark:text-[#8c9196]">Manage your account settings and preferences</p>
       </div>
 
       <Card>
@@ -74,20 +94,20 @@ export default function SettingsPage() {
         <CardContent>
           <div className="space-y-3 sm:space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <p className="text-sm font-medium text-gray-500">Email Address</p>
-              <p className="text-gray-900 sm:col-span-2 break-words">{userProfile?.email || 'Not available'}</p>
+              <p className="text-sm font-semibold text-[#6d7175] dark:text-[#8c9196]">Email Address</p>
+              <p className="text-[#202223] dark:text-[#e3e3e3] sm:col-span-2 break-words">{userProfile?.email || 'Not available'}</p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <p className="text-sm font-medium text-gray-500">Name</p>
-              <p className="text-gray-900 sm:col-span-2">{userProfile?.name || 'Not set'}</p>
+              <p className="text-sm font-semibold text-[#6d7175] dark:text-[#8c9196]">Name</p>
+              <p className="text-[#202223] dark:text-[#e3e3e3] sm:col-span-2">{userProfile?.name || 'Not set'}</p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <p className="text-sm font-medium text-gray-500">Production Access</p>
-              <p className="text-gray-900 sm:col-span-2">{canAccessProduction ? 'Enabled' : 'Disabled'}</p>
+              <p className="text-sm font-semibold text-[#6d7175] dark:text-[#8c9196]">Production Access</p>
+              <p className="text-[#202223] dark:text-[#e3e3e3] sm:col-span-2">{canAccessProduction ? 'Enabled' : 'Disabled'}</p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <p className="text-sm font-medium text-gray-500">Current Environment</p>
-              <p className="text-gray-900 capitalize sm:col-span-2">{currentEnv}</p>
+              <p className="text-sm font-semibold text-[#6d7175] dark:text-[#8c9196]">Current Environment</p>
+              <p className="text-[#202223] dark:text-[#e3e3e3] capitalize sm:col-span-2">{currentEnv}</p>
             </div>
           </div>
         </CardContent>
@@ -99,7 +119,7 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            <p className="text-sm sm:text-base text-gray-600">
+            <p className="text-sm sm:text-base text-[#6d7175] dark:text-[#8c9196]">
               Select the environment you want to work with. This affects which API endpoints your actions target.
             </p>
 
@@ -111,9 +131,9 @@ export default function SettingsPage() {
               />
             </div>
 
-            <div className="mt-4 p-4 bg-blue-50 rounded-md">
-              <h3 className="font-medium text-blue-800">Environment Information</h3>
-              <ul className="mt-2 text-sm text-blue-700 list-disc pl-5 space-y-1">
+            <div className="mt-4 p-4 bg-[#dbeafe] dark:bg-[#1e3a8a]/30 border border-[#bfdbfe] dark:border-[#1e3a8a] rounded-xl">
+              <h3 className="font-semibold text-[#1e40af] dark:text-[#60a5fa]">Environment Information</h3>
+              <ul className="mt-2 text-sm text-[#1e40af] dark:text-[#60a5fa] list-disc pl-5 space-y-1">
                 <li><strong>Sandbox:</strong> Safe testing environment that doesn't affect real data</li>
                 <li><strong>Production:</strong> Live environment that affects real business data</li>
                 <li>Switching environments may require re-validation of pending operations</li>

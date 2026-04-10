@@ -5,7 +5,7 @@ interface CheckboxProps extends React.InputHTMLAttributes<HTMLInputElement> {
   onCheckedChange?: (checked: boolean) => void;
 }
 
-export function Checkbox({ checked, onCheckedChange, ...props }: CheckboxProps) {
+export function Checkbox({ checked, onCheckedChange, className, ...props }: CheckboxProps) {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (onCheckedChange) {
       onCheckedChange(e.target.checked);
@@ -20,7 +20,7 @@ export function Checkbox({ checked, onCheckedChange, ...props }: CheckboxProps) 
       type="checkbox"
       checked={checked}
       onChange={handleChange}
-      className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+      className={`h-5 w-5 rounded-md border-2 border-[#c9cccf] text-[#008060] transition-colors focus:ring-2 focus:ring-[#008060] focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#2e2e2e] dark:bg-[#1a1a1a] dark:text-[#00a876] dark:focus:ring-[#00a876] ${className}`}
       {...props}
     />
   );

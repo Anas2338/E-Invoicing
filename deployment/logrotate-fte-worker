@@ -1,0 +1,35 @@
+# Logrotate configuration for FTE Worker
+# Place this file in /etc/logrotate.d/fte-worker
+
+/var/log/fte-worker/*.log {
+    # Rotate daily
+    daily
+
+    # Keep 30 days of logs
+    rotate 30
+
+    # Compress old logs
+    compress
+    delaycompress
+
+    # Don't error if log file is missing
+    missingok
+
+    # Don't rotate if log is empty
+    notifempty
+
+    # Create new log file with these permissions
+    create 0640 www-data www-data
+
+    # Use date as suffix for rotated files
+    dateext
+    dateformat -%Y%m%d
+
+    # Restart service after rotation to reopen log files
+    postrotate
+        systemctl reload fte-worker > /dev/null 2>&1 || true
+    endscript
+
+    # Maximum size before rotation (in addition to daily)
+    size 100M
+}

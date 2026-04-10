@@ -8,6 +8,8 @@ from .base import Base
 
 if TYPE_CHECKING:
     from .invoice import Invoice
+    from .automation_invoice import AutomationInvoice
+    from .excel_upload_session import ExcelUploadSession
 
 
 class UserBase(SQLModel):
@@ -51,6 +53,8 @@ class User(UserBase, Base, table=True):
 
     # Relationships
     invoices: list["Invoice"] = Relationship(back_populates="user")
+    automation_invoices: list["AutomationInvoice"] = Relationship(back_populates="user")
+    excel_upload_sessions: list["ExcelUploadSession"] = Relationship(back_populates="user")
 
 
 # Model for creating new users

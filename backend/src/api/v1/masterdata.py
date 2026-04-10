@@ -39,7 +39,26 @@ FALLBACK_SALE_TYPES = [
     {"code": "02", "name": "Goods at reduced rate"},
     {"code": "03", "name": "Goods at zero rate"},
     {"code": "04", "name": "Exempt goods"},
-    {"code": "05", "name": "Services"}
+    {"code": "05", "name": "Services"},
+    {"code": "06", "name": "3rd Schedule Goods"},
+    {"code": "07", "name": "Steel Melting and re-rolling"},
+    {"code": "08", "name": "Ship breaking"},
+    {"code": "09", "name": "Cotton Ginners"},
+    {"code": "10", "name": "Telecommunication services"},
+    {"code": "11", "name": "Toll Manufacturing"},
+    {"code": "12", "name": "Petroleum Products"},
+    {"code": "13", "name": "Electricity Supply to Retailers"},
+    {"code": "14", "name": "Gas to CNG stations"},
+    {"code": "15", "name": "Mobile Phones"},
+    {"code": "16", "name": "Processing/Conversion of Goods"},
+    {"code": "17", "name": "Goods (FED in ST Mode)"},
+    {"code": "18", "name": "Services (FED in ST Mode)"},
+    {"code": "19", "name": "Electric Vehicle"},
+    {"code": "20", "name": "Cement/Concrete Block"},
+    {"code": "21", "name": "Potassium Chlorate"},
+    {"code": "22", "name": "CNG Sales"},
+    {"code": "23", "name": "Goods as per SRO.297(I)/2023"},
+    {"code": "24", "name": "Non-Adjustable Supplies"}
 ]
 
 FALLBACK_REGISTRATION_TYPES = [
@@ -496,33 +515,71 @@ async def get_sale_type_to_rate(
     environment: str = "SANDBOX"
 ):
     """
-    Get applicable tax rates based on date, transaction type, and supplier type.
+    Get applicable tax rates based on date, transaction type, and province.
 
     FBR API: /pdi/v2/SaleTypeToRate
 
     Args:
         date: Invoice date (format: DD-MMM-YYYY, e.g., "24-Feb-2024")
         trans_type_id: Transaction type ID
-        origination_supplier: Supplier type (1 or 0)
+        origination_supplier: Province ID (e.g., 1 for Punjab, 2 for Sindh)
 
     Returns:
-        List of applicable tax rates
+        List of applicable tax rates in format: [{"rate": "18", "name": "18% - Standard rate"}]
+        Falls back to FALLBACK_TAX_RATES if FBR API fails or no token configured
     """
     token = await get_user_fbr_token(db, user_id, environment)
 
     if not token:
-        logger.info("No FBR token found, returning empty sale type to rate list")
-        return []
+        logger.info("No FBR token found, returning fallback tax rates")
+        return FALLBACK_TAX_RATES
 
     # Build query string - Note: This is v2 API
     endpoint = f"/pdi/v2/SaleTypeToRate?date={date}&transTypeId={trans_type_id}&originationSupplier={origination_supplier}"
     fbr_data = await fetch_from_fbr(endpoint, token, environment)
 
     if not fbr_data:
-        return []
+        logger.warning("FBR API returned no data, returning fallback tax rates")
+        return FALLBACK_TAX_RATES
 
-    logger.info(f"Returning {len(fbr_data)} rates for trans_type_id={trans_type_id}")
-    return fbr_data
+    # Transform FBR response format to our format
+    # FBR: {"ratE_ID": 734, "ratE_DESC": "18% along with rupees 60 per kilogram", "ratE_VALUE": 18}
+    # Our: {"rate": "18", "name": "18% - along with rupees 60 per kilogram"}
+    result = []
+    for item in fbr_data:
+        rate_value = item.get("ratE_VALUE") or item.get("rate_value")
+        rate_desc = item.get("ratE_DESC") or item.get("rate_desc", "")
+
+        if rate_value is not None:
+            # If description is just the percentage (e.g., "5%"), use it as-is
+            # Otherwise, prepend rate value and strip leading percentage from description if present
+            if rate_desc == f"{rate_value}%":
+                name = rate_desc
+            elif rate_desc:
+                # Remove leading percentage from description if it matches rate_value
+                cleaned_desc = rate_desc
+                if rate_desc.startswith(f"{rate_value}%"):
+                    cleaned_desc = rate_desc[len(f"{rate_value}%"):].strip()
+                    # Remove leading dash or space if present
+                    if cleaned_desc.startswith("-"):
+                        cleaned_desc = cleaned_desc[1:].strip()
+
+                # Only add description if there's additional info beyond the percentage
+                name = f"{rate_value}% - {cleaned_desc}" if cleaned_desc else f"{rate_value}%"
+            else:
+                name = f"{rate_value}%"
+
+            result.append({
+                "rate": str(rate_value),
+                "name": name
+            })
+
+    if not result:
+        logger.warning("No valid rates in FBR response, returning fallback tax rates")
+        return FALLBACK_TAX_RATES
+
+    logger.info(f"Returning {len(result)} rates from FBR for trans_type_id={trans_type_id}")
+    return result
 
 
 @router.get("/hs-uom", response_model=List[Dict[str, Any]])

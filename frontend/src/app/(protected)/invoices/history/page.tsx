@@ -8,20 +8,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { InvoiceTable } from '@/components/invoices/invoice-table';
 import { ValidationResultDialog } from '@/components/invoices/validation-result-dialog';
 import { api, ApiError } from '@/lib/api';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, ArrowLeft } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 interface Invoice {
   id: string;
+  source: 'manual' | 'automated';
   invoiceNumber: string;
   date: string;
   buyerName: string;
   sellerName: string;
   totalAmount: number;
-  status: 'DRAFT' | 'VALIDATED' | 'POSTED' | 'FAILED';
-  environment: 'SANDBOX' | 'PRODUCTION';
+  status: string;
+  environment: string;
   invoiceType: string;
   createdAt: string;
+  scheduledDate?: string;
+  scheduledTime?: string;
 }
 
 export default function InvoiceHistoryPage() {
@@ -32,8 +35,11 @@ export default function InvoiceHistoryPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [sourceFilter, setSourceFilter] = useState('all');
   const [selectedInvoices, setSelectedInvoices] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [validatingInvoiceId, setValidatingInvoiceId] = useState<string | null>(null);
+  const [postingInvoiceId, setPostingInvoiceId] = useState<string | null>(null);
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -51,12 +57,23 @@ export default function InvoiceHistoryPage() {
   });
 
   // Filter options
+  const sourceOptions = [
+    { value: 'all', label: 'All Sources' },
+    { value: 'manual', label: 'Manual' },
+    { value: 'automated', label: 'Automated' },
+  ];
+
   const statusOptions = [
     { value: 'all', label: 'All' },
     { value: 'DRAFT', label: 'Draft' },
+    { value: 'pending', label: 'Pending' },
     { value: 'VALIDATED', label: 'Validated' },
+    { value: 'validated', label: 'Validated (Auto)' },
     { value: 'POSTED', label: 'Posted' },
+    { value: 'submitted', label: 'Submitted' },
     { value: 'FAILED', label: 'Failed' },
+    { value: 'failed', label: 'Failed (Auto)' },
+    { value: 'expired', label: 'Expired' },
   ];
 
   useEffect(() => {
@@ -65,36 +82,32 @@ export default function InvoiceHistoryPage() {
 
   useEffect(() => {
     applyFilters();
-  }, [invoices, searchTerm, statusFilter]);
+  }, [invoices, searchTerm, statusFilter, sourceFilter]);
 
   const fetchInvoices = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Fetch all invoices from backend
-      const response = await api.invoices.list({ size: 100 });
+      // Fetch unified invoices from backend (manual + automated)
+      const response = await api.invoices.getUnifiedHistory({ page_size: 100 });
 
       // Transform backend data to match our interface
-      const transformedInvoices: Invoice[] = response.data.map((invoice: any) => {
-        // Calculate total amount from items (backend uses snake_case)
-        const totalAmount = invoice.items?.reduce((sum: number, item: any) =>
-          sum + (item.total_values || 0), 0
-        ) || 0;
-
-        return {
-          id: invoice.id,
-          invoiceNumber: invoice.external_id || 'N/A',
-          date: invoice.invoice_date || new Date(invoice.created_at).toISOString().split('T')[0],
-          buyerName: invoice.buyer_business_name || 'N/A',
-          sellerName: invoice.seller_business_name || 'N/A',
-          totalAmount: totalAmount,
-          status: invoice.status,
-          environment: invoice.environment,
-          invoiceType: invoice.invoice_type || 'Sale Invoice',
-          createdAt: invoice.created_at,
-        };
-      });
+      const transformedInvoices: Invoice[] = response.invoices.map((invoice: any) => ({
+        id: invoice.id,
+        source: invoice.source,
+        invoiceNumber: invoice.invoice_number || 'N/A',
+        date: invoice.invoice_date || new Date(invoice.created_at).toISOString().split('T')[0],
+        buyerName: invoice.buyer_business_name || 'N/A',
+        sellerName: invoice.seller_business_name || 'N/A',
+        totalAmount: invoice.total_amount || 0,
+        status: invoice.status,
+        environment: invoice.environment || '',
+        invoiceType: invoice.invoice_type || 'Sale Invoice',
+        createdAt: invoice.created_at,
+        scheduledDate: invoice.scheduled_date,
+        scheduledTime: invoice.scheduled_time,
+      }));
 
       setInvoices(transformedInvoices);
     } catch (err) {
@@ -123,6 +136,11 @@ export default function InvoiceHistoryPage() {
       );
     }
 
+    // Apply source filter
+    if (sourceFilter !== 'all') {
+      result = result.filter(invoice => invoice.source === sourceFilter);
+    }
+
     // Apply status filter
     if (statusFilter !== 'all') {
       result = result.filter(invoice => invoice.status === statusFilter);
@@ -132,7 +150,15 @@ export default function InvoiceHistoryPage() {
   };
 
   const handleViewInvoice = (id: string) => {
-    router.push(`/invoices/${id}` as any);
+    const invoice = invoices.find(inv => inv.id === id);
+    if (!invoice) return;
+
+    // Route based on source
+    if (invoice.source === 'automated') {
+      router.push(`/automation/dashboard?invoice=${id}` as any);
+    } else {
+      router.push(`/invoices/${id}` as any);
+    }
   };
 
   const handleEditInvoice = (id: string) => {
@@ -147,6 +173,8 @@ export default function InvoiceHistoryPage() {
       if (!confirm(`Validate invoice ${invoice.invoiceNumber} with FBR?`)) {
         return;
       }
+
+      setValidatingInvoiceId(id);
 
       // Call validation API
       const response = await api.invoices.validate(id);
@@ -175,6 +203,8 @@ export default function InvoiceHistoryPage() {
       });
       setDialogOpen(true);
       console.error('Error validating invoice:', err);
+    } finally {
+      setValidatingInvoiceId(null);
     }
   };
 
@@ -186,6 +216,8 @@ export default function InvoiceHistoryPage() {
       if (!confirm(`Post invoice ${invoice.invoiceNumber} to FBR?\n\nThis action will submit the invoice to the Federal Board of Revenue.`)) {
         return;
       }
+
+      setPostingInvoiceId(id);
 
       // Call posting API
       const response = await api.invoices.post(id);
@@ -215,6 +247,8 @@ export default function InvoiceHistoryPage() {
       });
       setDialogOpen(true);
       console.error('Error posting invoice:', err);
+    } finally {
+      setPostingInvoiceId(null);
     }
   };
 
@@ -311,8 +345,8 @@ export default function InvoiceHistoryPage() {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading invoices...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#008060] dark:border-[#00a876] mx-auto"></div>
+          <p className="mt-4 text-[#6d7175] dark:text-[#8c9196]">Loading invoices...</p>
         </div>
       </div>
     );
@@ -322,18 +356,18 @@ export default function InvoiceHistoryPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Invoice History</h1>
+          <h1 className="text-3xl font-bold text-[#202223] dark:text-[#e3e3e3]">Invoice History</h1>
         </div>
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+        <div className="bg-[#fef3f2] dark:bg-[#3d1e1e] border border-[#fecdca] dark:border-[#5c2b2b] rounded-xl p-4">
           <div className="flex">
             <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+              <svg className="h-5 w-5 text-[#d72c0d] dark:text-[#ff6f59]" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
               </svg>
             </div>
             <div className="ml-3">
-              <h3 className="text-sm font-medium text-red-800">Error loading invoices</h3>
-              <p className="mt-1 text-sm text-red-700">{error}</p>
+              <h3 className="text-sm font-semibold text-[#d72c0d] dark:text-[#ff6f59]">Error loading invoices</h3>
+              <p className="mt-1 text-sm text-[#d72c0d] dark:text-[#ff6f59]">{error}</p>
             </div>
           </div>
         </div>
@@ -343,12 +377,25 @@ export default function InvoiceHistoryPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-8">
+      {/* Back to Dashboard Button */}
+      <div className="flex items-center gap-4">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => router.push('/dashboard')}
+          className="flex items-center gap-2"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Dashboard
+        </Button>
+      </div>
+
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Invoice History</h1>
-          <p className="mt-2 text-sm sm:text-base text-gray-600">View and manage all your invoices</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-[#202223] dark:text-[#e3e3e3]">Invoice History</h1>
+          <p className="mt-2 text-sm sm:text-base text-[#6d7175] dark:text-[#8c9196]">View and manage all your invoices</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-3">
           {selectedInvoices.size > 0 && (
@@ -370,10 +417,10 @@ export default function InvoiceHistoryPage() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-lg shadow p-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="bg-white dark:bg-[#1a1a1a] rounded-2xl border border-[#e1e3e5] dark:border-[#2e2e2e] shadow-sm p-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
+            <label className="block text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] mb-1">Search</label>
             <Input
               type="text"
               placeholder="Search by invoice #, buyer, seller..."
@@ -383,16 +430,34 @@ export default function InvoiceHistoryPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+            <label className="block text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] mb-2">Source</label>
+            <Select value={sourceFilter} onValueChange={setSourceFilter}>
+              <SelectTrigger className="h-11 text-[#202223] dark:text-[#e3e3e3] shadow p-4">
+                <span className="text-[#6d7175] dark:text-[#8c9196]">
+                  {sourceOptions.find(opt => opt.value === sourceFilter)?.label || 'All Sources'}
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                {sourceOptions.map(option => (
+                  <SelectItem key={option.value} value={option.value} className="text-[#202223] dark:text-[#e3e3e3]">
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] mb-2">Status</label>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="h-11 text-gray-700 shadow p-4">
-                <span className="text-gray-500">
+              <SelectTrigger className="h-11 text-[#202223] dark:text-[#e3e3e3] shadow p-4">
+                <span className="text-[#6d7175] dark:text-[#8c9196]">
                   {statusOptions.find(opt => opt.value === statusFilter)?.label || 'All'}
                 </span>
               </SelectTrigger>
               <SelectContent>
                 {statusOptions.map(option => (
-                  <SelectItem key={option.value} value={option.value} className="text-gray-700">
+                  <SelectItem key={option.value} value={option.value} className="text-[#202223] dark:text-[#e3e3e3]">
                     {option.label}
                   </SelectItem>
                 ))}
@@ -406,6 +471,7 @@ export default function InvoiceHistoryPage() {
               onClick={() => {
                 setSearchTerm('');
                 setStatusFilter('all');
+                setSourceFilter('all');
               }}
               className="w-full"
             >
@@ -417,32 +483,32 @@ export default function InvoiceHistoryPage() {
 
       {/* Stats Summary */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="text-sm text-gray-600">Total Invoices</div>
-          <div className="text-2xl font-bold text-gray-900">{invoices.length}</div>
+        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-[#e1e3e5] dark:border-[#2e2e2e] shadow-sm p-4">
+          <div className="text-sm text-[#6d7175] dark:text-[#8c9196]">Total Invoices</div>
+          <div className="text-2xl font-bold text-[#202223] dark:text-[#e3e3e3]">{invoices.length}</div>
         </div>
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="text-sm text-gray-600">Draft</div>
-          <div className="text-2xl font-bold text-yellow-600">
+        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-[#e1e3e5] dark:border-[#2e2e2e] shadow-sm p-4">
+          <div className="text-sm text-[#6d7175] dark:text-[#8c9196]">Draft</div>
+          <div className="text-2xl font-bold text-[#92400e] dark:text-[#fbbf24]">
             {invoices.filter(inv => inv.status === 'DRAFT').length}
           </div>
         </div>
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="text-sm text-gray-600">Validated</div>
-          <div className="text-2xl font-bold text-blue-600">
+        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-[#e1e3e5] dark:border-[#2e2e2e] shadow-sm p-4">
+          <div className="text-sm text-[#6d7175] dark:text-[#8c9196]">Validated</div>
+          <div className="text-2xl font-bold text-[#1e40af] dark:text-[#60a5fa]">
             {invoices.filter(inv => inv.status === 'VALIDATED').length}
           </div>
         </div>
-        <div className="bg-white rounded-lg shadow p-4">
-          <div className="text-sm text-gray-600">Posted</div>
-          <div className="text-2xl font-bold text-green-600">
+        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-[#e1e3e5] dark:border-[#2e2e2e] shadow-sm p-4">
+          <div className="text-sm text-[#6d7175] dark:text-[#8c9196]">Posted</div>
+          <div className="text-2xl font-bold text-[#065f46] dark:text-[#34d399]">
             {invoices.filter(inv => inv.status === 'POSTED').length}
           </div>
         </div>
       </div>
 
       {/* Invoice Table */}
-      <div className="bg-white rounded-lg shadow">
+      <div className="bg-white dark:bg-[#1a1a1a] rounded-2xl border border-[#e1e3e5] dark:border-[#2e2e2e] shadow-sm">
         <InvoiceTable
           invoices={filteredInvoices}
           selectedInvoices={selectedInvoices}
@@ -452,6 +518,8 @@ export default function InvoiceHistoryPage() {
           onValidate={handleValidateInvoice}
           onPost={handlePostInvoice}
           onDelete={handleDeleteInvoice}
+          validatingInvoiceId={validatingInvoiceId}
+          postingInvoiceId={postingInvoiceId}
         />
       </div>
 

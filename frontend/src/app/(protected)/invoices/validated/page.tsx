@@ -1,25 +1,31 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { InvoiceTable } from '@/components/invoices/invoice-table';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
+import { ArrowLeft } from 'lucide-react';
 
 interface Invoice {
   id: string;
+  source: 'manual' | 'automated';
   invoiceNumber: string;
   date: string;
   buyerName: string;
   sellerName: string;
   totalAmount: number;
-  status: 'DRAFT' | 'VALIDATED' | 'POSTED' | 'FAILED';
-  environment: 'SANDBOX' | 'PRODUCTION';
+  status: string;
+  environment: string;
   invoiceType: string;
   createdAt: string;
+  scheduledDate?: string;
+  scheduledTime?: string;
 }
 
 export default function ValidatedInvoicesPage() {
+  const router = useRouter();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedInvoices, setSelectedInvoices] = useState<string[]>([]);
@@ -45,6 +51,7 @@ export default function ValidatedInvoicesPage() {
 
         return {
           id: invoice.id,
+          source: 'manual' as const,
           invoiceNumber: invoice.external_id || 'N/A',
           date: invoice.invoice_date || new Date(invoice.created_at).toISOString().split('T')[0],
           buyerName: invoice.buyer_business_name || 'N/A',
@@ -90,18 +97,34 @@ export default function ValidatedInvoicesPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <p>Loading validated invoices...</p>
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#008060] dark:border-[#00a876] mx-auto"></div>
+          <p className="mt-4 text-[#6d7175] dark:text-[#8c9196]">Loading validated invoices...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-8">
+      {/* Back to Dashboard Button */}
+      <div className="flex items-center gap-4">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => router.push('/dashboard')}
+          className="flex items-center gap-2"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Dashboard
+        </Button>
+      </div>
+
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Validated Invoices</h1>
-          <p className="mt-2 text-gray-600">Manage your validated invoices ready for posting</p>
+          <h1 className="text-3xl font-bold text-[#202223] dark:text-[#e3e3e3]">Validated Invoices</h1>
+          <p className="mt-2 text-[#6d7175] dark:text-[#8c9196]">Manage your validated invoices ready for posting</p>
         </div>
         <div>
           {selectedInvoices.length > 0 && (
