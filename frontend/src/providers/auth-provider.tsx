@@ -121,10 +121,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await response.json();
 
       // With httpOnly cookies, token is set automatically by the browser
-      // We only need to store user data
+      // We only need to store user data and CSRF token
       if (data.user) {
         setUser(data.user);
         localStorage.setItem('user', JSON.stringify(data.user));
+      }
+
+      // Store CSRF token for cross-origin requests
+      if (data.csrf_token) {
+        localStorage.setItem('csrf_token', data.csrf_token);
       }
 
       await new Promise(resolve => setTimeout(resolve, 100));
@@ -204,6 +209,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setUser(null);
       localStorage.removeItem('user');
+      localStorage.removeItem('csrf_token');
       router.push('/login');
     }
   };

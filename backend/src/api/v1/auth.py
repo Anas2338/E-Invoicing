@@ -167,6 +167,9 @@ def login_user(request: Request, user_login: UserLogin, db: Session = Depends(ge
             data={"sub": str(user.id), "email": user.email}
         )
 
+        # SECURITY: Generate CSRF token before creating response
+        csrf_token = secrets.token_urlsafe(32)
+
         # Prepare user profile response
         user_profile = {
             "id": str(user.id),
@@ -180,22 +183,19 @@ def login_user(request: Request, user_login: UserLogin, db: Session = Depends(ge
             "can_post_to_production": user.approval_flags.get('can_post_to_production', False) if user.approval_flags else False
         }
 
-        # Create response with httpOnly cookie
-        response = JSONResponse(content={"user": user_profile})
+        # Create response with httpOnly cookie and CSRF token in body for cross-origin support
+        response = JSONResponse(content={"user": user_profile, "csrf_token": csrf_token})
 
-        # SECURITY: Use secure cookies in production, allow HTTP in development
-        # In development, localhost doesn't use HTTPS, so secure=True breaks cookie functionality
+        # SECURITY: Use secure cookies with SameSite=None for cross-origin support
+        # Required for Vercel frontend + Hugging Face backend deployment
         is_production = settings.app_env.lower() == "production"
 
-        # SECURITY: Always use secure cookies, even in development
-        # Use self-signed certificates for local HTTPS instead of disabling security
-        # SameSite=Lax provides good balance between security and usability
         response.set_cookie(
             key="access_token",
             value=access_token,
             httponly=True,  # Prevents JavaScript access (XSS protection)
-            secure=is_production,  # HTTPS only in production, allow HTTP in development
-            samesite="lax",  # Lax works for same-site and top-level navigation
+            secure=True,  # Required for SameSite=None, always use HTTPS
+            samesite="none",  # Allow cross-origin requests
             max_age=7200,  # 2 hours in seconds
             path="/",
             domain=None  # Let browser set domain automatically
@@ -206,21 +206,21 @@ def login_user(request: Request, user_login: UserLogin, db: Session = Depends(ge
             key="refresh_token",
             value=refresh_token,
             httponly=True,
-            secure=is_production,  # HTTPS only in production
-            samesite="lax",
+            secure=True,  # Required for SameSite=None
+            samesite="none",  # Allow cross-origin requests
             max_age=604800,  # 7 days in seconds
             path="/",
             domain=None
         )
 
         # SECURITY: Set CSRF token cookie for subsequent requests
-        csrf_token = secrets.token_urlsafe(32)
+        # Use SameSite=None for cross-origin support (Vercel frontend + HF backend)
         response.set_cookie(
             key="csrf_token",
             value=csrf_token,
             httponly=False,  # Must be readable by JavaScript
-            secure=is_production,  # HTTPS only in production
-            samesite="lax",
+            secure=True,  # Required for SameSite=None, always use HTTPS
+            samesite="none",  # Allow cross-origin requests
             max_age=7200,  # Same as access token (2 hours)
             path="/",
             domain=None
@@ -245,16 +245,28 @@ def logout_user():
     """
     response = JSONResponse(content={"message": "Successfully logged out"})
 
-    # Clear access token cookie
+    # Clear access token cookie with matching SameSite settings
     response.delete_cookie(
         key="access_token",
-        path="/"
+        path="/",
+        secure=True,
+        samesite="none"
     )
 
-    # Clear refresh token cookie
+    # Clear refresh token cookie with matching SameSite settings
     response.delete_cookie(
         key="refresh_token",
-        path="/"
+        path="/",
+        secure=True,
+        samesite="none"
+    )
+
+    # Clear CSRF token cookie
+    response.delete_cookie(
+        key="csrf_token",
+        path="/",
+        secure=True,
+        samesite="none"
     )
 
     return response

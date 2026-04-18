@@ -16,6 +16,18 @@ function getCookie(name: string): string | null {
   return null;
 }
 
+// Helper function to get CSRF token from localStorage or cookie
+function getCsrfToken(): string | null {
+  // Try localStorage first (for cross-origin deployments)
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('csrf_token');
+    if (token) return token;
+  }
+
+  // Fallback to cookie (for same-origin deployments)
+  return getCookie('csrf_token');
+}
+
 // Base API client
 class ApiClient {
   protected baseUrl: string;
@@ -39,7 +51,7 @@ class ApiClient {
     // Add CSRF token for state-changing requests
     const method = options.method?.toUpperCase() || 'GET';
     if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
-      const csrfToken = getCookie('csrf_token');
+      const csrfToken = getCsrfToken();
       if (csrfToken) {
         headers['X-CSRF-Token'] = csrfToken;
       }
