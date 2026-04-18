@@ -24,6 +24,7 @@ load_dotenv()
 from agent import AIAgent
 from config import config
 from validation import validate_environment
+from health_server import start_health_server_thread
 
 # Configure logging
 logging.basicConfig(
@@ -79,6 +80,11 @@ def main():
     logger.info("Validating environment configuration...")
     validate_environment()
     logger.info("[OK] Environment validation complete")
+
+    # Start health server for Hugging Face Spaces status
+    logger.info("Starting health server on port 7860...")
+    start_health_server_thread()
+    logger.info("[OK] Health server started")
 
     # Register signal handlers for graceful shutdown
     signal.signal(signal.SIGINT, signal_handler)   # Ctrl+C
