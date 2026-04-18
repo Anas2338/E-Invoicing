@@ -27,7 +27,9 @@ jobs:
         cp backend/pyproject.toml hf/
         cp backend/uv.lock hf/
         cp backend/Dockerfile hf/
+        cp backend/alembic.ini hf/
         cp -r backend/src hf/
+        cp -r backend/alembic hf/
 
         cd hf
         git add .
