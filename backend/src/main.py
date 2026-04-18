@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -13,12 +15,25 @@ from src.api.v1.masterdata import router as masterdata_router
 from src.api.v1.fbr_reference import router as fbr_reference_router
 from src.api.v1.password_reset import router as password_reset_router
 from src.api.v1.automation import router as automation_router
+from src.api.v1.admin import router as admin_router
+from src.api.v1.dashboard import router as dashboard_router
 
 # Import middleware
 from src.api.middleware.auth_middleware import AuthMiddleware
+from src.middleware.security_headers import SecurityHeadersMiddleware
+from src.middleware.csrf_middleware import CSRFMiddleware
+from src.middleware.request_size_limit import RequestSizeLimitMiddleware
+from src.middleware.session_timeout import SessionTimeoutMiddleware
 
 # Import configuration
 from src.config.settings import settings
+
+# Import custom error handlers
+from src.utils.error_handlers import (
+    http_exception_handler,
+    validation_exception_handler,
+    generic_exception_handler
+)
 
 # Import database session
 from src.database.session import create_db_and_tables
@@ -40,14 +55,43 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Add CORS middleware
+# SECURITY: Add custom error handlers to prevent information disclosure
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(Exception, generic_exception_handler)
+
+# Add CORS middleware with security validation
+# SECURITY: Validate allowed origins and prevent wildcard with credentials
+allowed_origins = settings.allowed_origins
+
+# CRITICAL SECURITY CHECK: Never allow "*" with credentials
+if "*" in allowed_origins and len(allowed_origins) == 1:
+    raise ValueError(
+        "SECURITY ERROR: CORS cannot use wildcard '*' with allow_credentials=True. "
+        "This creates a critical security vulnerability. "
+        "Set ALLOWED_ORIGINS to specific domains in .env file."
+    )
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins,
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],  # Explicit methods
+    allow_headers=["Content-Type", "Authorization", "X-CSRF-Token"],  # Explicit headers
+    max_age=600,  # Cache preflight requests for 10 minutes
 )
+
+# Add security headers middleware
+app.add_middleware(SecurityHeadersMiddleware)
+
+# Add request size limit middleware (10MB max)
+app.add_middleware(RequestSizeLimitMiddleware, max_request_size=10 * 1024 * 1024)
+
+# Add session timeout middleware (30 minutes of inactivity)
+app.add_middleware(SessionTimeoutMiddleware, timeout_minutes=30)
+
+# Add CSRF protection middleware
+app.add_middleware(CSRFMiddleware)
 
 # Add authentication middleware
 app.add_middleware(AuthMiddleware)
@@ -65,6 +109,8 @@ app.include_router(masterdata_router, prefix="/api/v1/masterdata", tags=["master
 app.include_router(fbr_reference_router, prefix="/api/v1/fbr-reference", tags=["fbr-reference"])
 app.include_router(password_reset_router, prefix="/api/v1/password-reset", tags=["password-reset"])
 app.include_router(automation_router, prefix="/api/v1", tags=["automation"])
+app.include_router(admin_router, prefix="/api/v1/admin", tags=["admin"])
+app.include_router(dashboard_router, prefix="/api/v1/dashboard", tags=["dashboard"])
 
 @app.get("/")
 def read_root():

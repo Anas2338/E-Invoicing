@@ -458,7 +458,8 @@ export function SaleInvoiceForm({
       const formattedDate = new Date(invoiceDate).toLocaleDateString('en-GB', {
         day: '2-digit',
         month: 'short',
-        year: 'numeric'
+        year: 'numeric',
+        timeZone: 'Asia/Karachi'
       }).replace(/ /g, '-');
 
       // Assuming origination_supplier_csv = 1 (you may need to make this dynamic)

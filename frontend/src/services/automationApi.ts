@@ -2,7 +2,19 @@
  * Automation API client for Excel upload and dashboard endpoints.
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8001';
+const API_BASE_URL = '/api/v1';
+
+// Helper function to get cookie value by name
+function getCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null;
+
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) {
+    return parts.pop()?.split(';').shift() || null;
+  }
+  return null;
+}
 
 export interface ExcelUploadResponse {
   session_id: string;
@@ -25,6 +37,7 @@ export interface DashboardStats {
   validated_count: number;
   submitted_count: number;
   failed_count: number;
+  blocked_count: number;
 }
 
 export interface AutomationInvoice {
@@ -35,7 +48,7 @@ export interface AutomationInvoice {
   invoice_data: Record<string, any>;
   scheduled_date: string;
   scheduled_time: string;
-  status: 'pending' | 'expired' | 'validated' | 'submitted' | 'failed';
+  status: 'pending' | 'expired' | 'validated' | 'submitted' | 'failed' | 'blocked';
   validation_errors?: string;
   fbr_response?: Record<string, any>;
   created_at: string;
@@ -57,6 +70,23 @@ export interface InvoiceRetryResponse {
   result?: Record<string, any>;
 }
 
+export interface UploadSession {
+  id: string;
+  uploaded_at: string;
+  total_count: number;
+  pending_count: number;
+  submitted_count: number;
+  failed_count: number;
+  blocked_count: number;
+  expired_count: number;
+  can_delete: boolean;
+}
+
+export interface UploadSessionsResponse {
+  sessions: UploadSession[];
+  total: number;
+}
+
 class AutomationApiClient {
   private baseUrl: string;
 
@@ -65,24 +95,21 @@ class AutomationApiClient {
   }
 
   /**
-   * Get authentication token from localStorage.
+   * Get headers for API requests with CSRF token for state-changing methods.
    */
-  private getAuthToken(): string | null {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('access_token');
-    }
-    return null;
-  }
+  private getHeaders(includeContentType: boolean = false): HeadersInit {
+    const headers: Record<string, string> = {};
 
-  /**
-   * Get headers with authentication.
-   */
-  private getHeaders(): HeadersInit {
-    const headers: HeadersInit = {};
-    const token = this.getAuthToken();
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
+    // Add CSRF token
+    const csrfToken = getCookie('csrf_token');
+    if (csrfToken) {
+      headers['X-CSRF-Token'] = csrfToken;
     }
+
+    if (includeContentType) {
+      headers['Content-Type'] = 'application/json';
+    }
+
     return headers;
   }
 
@@ -90,8 +117,9 @@ class AutomationApiClient {
    * Download Excel template.
    */
   async downloadTemplate(): Promise<Blob> {
-    const response = await fetch(`${this.baseUrl}/api/v1/automation/template/download`, {
+    const response = await fetch(`${this.baseUrl}/automation/template/download`, {
       headers: this.getHeaders(),
+      credentials: 'include',
     });
     if (!response.ok) {
       throw new Error('Failed to download template');
@@ -106,9 +134,10 @@ class AutomationApiClient {
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await fetch(`${this.baseUrl}/api/v1/automation/excel/upload`, {
+    const response = await fetch(`${this.baseUrl}/automation/excel/upload`, {
       method: 'POST',
       headers: this.getHeaders(),
+      credentials: 'include',
       body: formData,
     });
 
@@ -125,9 +154,10 @@ class AutomationApiClient {
    */
   async getUploadStatus(sessionId: string): Promise<ExcelUploadStatusResponse> {
     const response = await fetch(
-      `${this.baseUrl}/api/v1/automation/excel/status/${sessionId}`,
+      `${this.baseUrl}/automation/excel/status/${sessionId}`,
       {
         headers: this.getHeaders(),
+        credentials: 'include',
       }
     );
 
@@ -143,8 +173,9 @@ class AutomationApiClient {
    * Get dashboard statistics.
    */
   async getDashboardStats(): Promise<DashboardStats> {
-    const response = await fetch(`${this.baseUrl}/api/v1/automation/dashboard/stats`, {
+    const response = await fetch(`${this.baseUrl}/automation/dashboard/stats`, {
       headers: this.getHeaders(),
+      credentials: 'include',
     });
 
     if (!response.ok) {
@@ -175,9 +206,10 @@ class AutomationApiClient {
     if (params.page_size) queryParams.append('page_size', params.page_size.toString());
 
     const response = await fetch(
-      `${this.baseUrl}/api/v1/automation/dashboard/invoices?${queryParams}`,
+      `${this.baseUrl}/automation/dashboard/invoices?${queryParams}`,
       {
         headers: this.getHeaders(),
+        credentials: 'include',
       }
     );
 
@@ -194,9 +226,10 @@ class AutomationApiClient {
    */
   async getInvoiceDetail(invoiceId: string): Promise<any> {
     const response = await fetch(
-      `${this.baseUrl}/api/v1/automation/dashboard/invoice/${invoiceId}`,
+      `${this.baseUrl}/automation/dashboard/invoice/${invoiceId}`,
       {
         headers: this.getHeaders(),
+        credentials: 'include',
       }
     );
 
@@ -211,11 +244,12 @@ class AutomationApiClient {
   /**
    * Download updated Excel file.
    */
-  async downloadExcel(sessionId: string): Promise<void> {
+  async downloadExcel(sessionId: string): Promise<Blob> {
     const response = await fetch(
-      `${this.baseUrl}/api/v1/automation/dashboard/download/${sessionId}`,
+      `${this.baseUrl}/automation/dashboard/download/${sessionId}`,
       {
         headers: this.getHeaders(),
+        credentials: 'include',
       }
     );
 
@@ -223,15 +257,7 @@ class AutomationApiClient {
       throw new Error('Failed to download Excel file');
     }
 
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `invoices_${sessionId}.xlsx`;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
+    return response.blob();
   }
 
   /**
@@ -239,10 +265,11 @@ class AutomationApiClient {
    */
   async retryInvoice(invoiceId: string): Promise<InvoiceRetryResponse> {
     const response = await fetch(
-      `${this.baseUrl}/api/v1/automation/invoice/${invoiceId}/retry`,
+      `${this.baseUrl}/automation/invoice/${invoiceId}/retry`,
       {
         method: 'POST',
         headers: this.getHeaders(),
+        credentials: 'include',
       }
     );
 
@@ -252,6 +279,185 @@ class AutomationApiClient {
     }
 
     return response.json();
+  }
+
+  /**
+   * Get all upload sessions with invoice counts.
+   */
+  async getUploadSessions(): Promise<UploadSessionsResponse> {
+    const response = await fetch(
+      `${this.baseUrl}/automation/upload-sessions`,
+      {
+        headers: this.getHeaders(),
+        credentials: 'include',
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to get upload sessions');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Delete an upload session and all its invoices.
+   */
+  async deleteUploadSession(sessionId: string): Promise<void> {
+    const response = await fetch(
+      `${this.baseUrl}/automation/upload-session/${sessionId}`,
+      {
+        method: 'DELETE',
+        headers: this.getHeaders(),
+        credentials: 'include',
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to delete upload session');
+    }
+  }
+
+  /**
+   * Block an invoice from FBR submission.
+   */
+  async blockInvoice(invoiceId: string, reason?: string): Promise<void> {
+    const response = await fetch(
+      `${this.baseUrl}/automation/invoice/${invoiceId}/block`,
+      {
+        method: 'POST',
+        headers: this.getHeaders(true),
+        credentials: 'include',
+        body: JSON.stringify({ reason }),
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to block invoice');
+    }
+  }
+
+  /**
+   * Unblock an invoice to allow FBR submission.
+   */
+  async unblockInvoice(invoiceId: string): Promise<void> {
+    const response = await fetch(
+      `${this.baseUrl}/automation/invoice/${invoiceId}/unblock`,
+      {
+        method: 'POST',
+        headers: this.getHeaders(),
+        credentials: 'include',
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to unblock invoice');
+    }
+  }
+
+  /**
+   * Delete a single invoice.
+   */
+  async deleteInvoice(invoiceId: string): Promise<void> {
+    const response = await fetch(
+      `${this.baseUrl}/automation/invoice/${invoiceId}`,
+      {
+        method: 'DELETE',
+        headers: this.getHeaders(),
+        credentials: 'include',
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to delete invoice');
+    }
+  }
+
+  /**
+   * Get simplified statistics for main dashboard.
+   */
+  async getStatistics(): Promise<{
+    pending: number;
+    validated: number;
+    submitted: number;
+    failed: number;
+  }> {
+    const stats = await this.getDashboardStats();
+    return {
+      pending: stats.pending_count,
+      validated: stats.validated_count,
+      submitted: stats.submitted_count,
+      failed: stats.failed_count,
+    };
+  }
+
+  /**
+   * Block multiple invoices at once.
+   */
+  async bulkBlockInvoices(invoiceIds: string[], reason?: string): Promise<{ blocked_count: number }> {
+    const response = await fetch(
+      `${this.baseUrl}/automation/invoices/bulk-block`,
+      {
+        method: 'POST',
+        headers: this.getHeaders(true),
+        credentials: 'include',
+        body: JSON.stringify({ invoice_ids: invoiceIds, reason }),
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to block invoices');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Generate and download PDF for a single invoice.
+   */
+  async printInvoice(invoiceId: string): Promise<Blob> {
+    const response = await fetch(
+      `${this.baseUrl}/automation/invoices/${invoiceId}/pdf`,
+      {
+        headers: this.getHeaders(),
+        credentials: 'include',
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to generate PDF');
+    }
+
+    return response.blob();
+  }
+
+  /**
+   * Generate and download batch PDF for multiple invoices.
+   */
+  async printBatchInvoices(invoiceIds: string[]): Promise<Blob> {
+    const response = await fetch(
+      `${this.baseUrl}/automation/invoices/batch-pdf`,
+      {
+        method: 'POST',
+        headers: this.getHeaders(true),
+        credentials: 'include',
+        body: JSON.stringify({ invoice_ids: invoiceIds }),
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to generate batch PDF');
+    }
+
+    return response.blob();
   }
 }
 

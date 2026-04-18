@@ -39,11 +39,31 @@ class PostingService:
         if invoice.status != InvoiceStatus.VALIDATED:
             raise ValueError(f"Invoice must be validated before posting. Current status: {invoice.status}")
 
+        # Get user's FBR token
+        from src.models.user import User
+        user = db.query(User).filter(User.id == UUID(user_id)).first()
+        if not user:
+            raise ValueError("User not found")
+
+        # Get the appropriate encrypted token based on environment
+        encrypted_token = None
+        if invoice.environment == "SANDBOX":
+            encrypted_token = user.fbr_sandbox_token
+        else:
+            encrypted_token = user.fbr_production_token
+
+        if not encrypted_token:
+            encrypted_token = user.fbr_access_token
+
+        if not encrypted_token:
+            raise ValueError("FBR access token not configured")
+
         try:
-            # Post to FBR
-            is_posted, response_data, reference_number = await self.fbr_client.post_invoice(
+            # Post to FBR using user credentials
+            is_posted, response_data, reference_number = await self.fbr_client.post_invoice_with_user_credentials(
                 invoice.invoice_data,
-                invoice.environment
+                invoice.environment,
+                encrypted_token
             )
 
             if is_posted:

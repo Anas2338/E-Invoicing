@@ -14,10 +14,17 @@ A comprehensive digital invoicing solution for Pakistan's Federal Board of Reven
 ### Automation (NEW)
 - **Bulk Excel Upload**: Upload up to 1,000 invoices at once using Excel templates
 - **Scheduled Processing**: Schedule invoices for automatic submission at specific times
-- **FTE Worker**: Background worker that processes invoices hourly without manual intervention
+- **AI Agent**: Intelligent autonomous agent with 5-minute precision processing (replaces FTE worker)
+  - Continuous monitoring with 1-minute detection
+  - AI-powered error classification (transient vs permanent)
+  - Adaptive retry strategies with exponential backoff
+  - Priority-based processing (time, value, retry count)
+  - Hourly health checks with anomaly detection
+  - Fallback to rule-based logic when AI API unavailable
 - **Dashboard Monitoring**: Real-time statistics and filtering for automated invoices
 - **Status Tracking**: Monitor validation, submission, and failure status for each invoice
 - **Export Results**: Download processed invoices with updated status and error details
+- **Agent Observability**: View AI agent health status and decision logs
 
 ### User Management
 - **Authentication**: Secure JWT-based authentication
@@ -35,6 +42,12 @@ A comprehensive digital invoicing solution for Pakistan's Federal Board of Reven
 - Alembic (Migrations)
 - APScheduler (Background Jobs)
 - Pandas + OpenPyXL (Excel Processing)
+
+**AI Agent**:
+- Claude API / Gemini API (AI-powered decision making)
+- APScheduler (5-minute processing, hourly health checks)
+- SQLModel (Database integration)
+- Rule-based fallback (ensures operation when AI unavailable)
 
 **Frontend**:
 - Next.js 15 (React)
@@ -60,29 +73,50 @@ E-Invoicing/
 │   │   │           ├── excel.py
 │   │   │           ├── dashboard.py
 │   │   │           ├── retry.py
-│   │   │           └── health.py
+│   │   │           ├── health.py
+│   │   │           └── agent_status.py
 │   │   ├── models/         # Database models
 │   │   ├── schemas/        # Pydantic schemas
 │   │   ├── services/       # Business logic
 │   │   │   ├── fbr_client.py
 │   │   │   ├── excel_service.py
-│   │   │   ├── automation_service.py
-│   │   │   └── fte_worker_service.py
-│   │   ├── workers/        # Background workers
-│   │   │   └── fte_worker.py
+│   │   │   └── automation_service.py
+│   │   ├── workers/        # Background workers (deprecated)
+│   │   │   └── fte_worker.py (DEPRECATED)
 │   │   └── utils/          # Utilities
 │   ├── alembic/            # Database migrations
 │   └── tests/              # Unit and integration tests
+├── ai-agent/               # AI Agent (NEW)
+│   ├── main.py            # Entry point
+│   ├── agent.py           # Main orchestrator
+│   ├── config.py          # Configuration
+│   ├── validation.py      # Environment validation
+│   ├── ai_client.py       # AI provider abstraction
+│   ├── claude_client.py   # Claude API client
+│   ├── gemini_client.py   # Gemini API client
+│   ├── fallback_classifier.py  # Rule-based fallback
+│   ├── metrics.py         # Monitoring metrics
+│   ├── database.py        # Database connection
+│   └── skills/            # Agent skills
+│       ├── __init__.py    # Base skill class
+│       ├── error_handler.py
+│       ├── excel_monitor.py
+│       ├── fbr_poster.py
+│       ├── invoice_validator.py
+│       ├── priority_scheduler.py
+│       └── retry_manager.py
 ├── frontend/               # Next.js frontend
 │   ├── src/
 │   │   ├── app/           # App router pages
 │   │   ├── components/    # React components
 │   │   └── services/      # API clients
 ├── docs/                   # Documentation
-│   ├── FTE_WORKER_DEPLOYMENT.md
+│   ├── FTE_WORKER_DEPLOYMENT.md (DEPRECATED)
 │   └── EXCEL_TEMPLATE_SPECS.md
-└── specs/                  # Feature specifications
-    └── 001-invoice-automation/
+├── specs/                  # Feature specifications
+│   └── 001-invoice-automation/
+├── SECURITY_AUDIT.md       # Security audit report
+└── FTE_WORKER_DEPRECATION.md  # Migration guide
 ```
 
 ## Getting Started

@@ -1,5 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from src.database.session import get_db
 from src.api.deps import get_database_session
@@ -10,31 +12,52 @@ from src.schemas.password_reset import (
     PasswordResetResponse
 )
 from src.services.password_reset_service import PasswordResetService
+from src.utils.password_validator import validate_password_strength
 
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 
 @router.post("/request", response_model=PasswordResetResponse)
+@limiter.limit("3/hour")
 def request_password_reset(
-    request: PasswordResetRequest,
+    request: Request,
+    reset_request: PasswordResetRequest,
     db: Session = Depends(get_database_session)
 ):
     """
     Request a password reset. Sends an email with a reset token.
+
+    SECURITY: Uses constant-time response to prevent account enumeration via timing attacks.
     """
+    import time
+    import random
+
+    # Record start time for constant-time response
+    start_time = time.time()
+
     # Create reset token
-    token = PasswordResetService.create_reset_token(db, request.email)
+    token = PasswordResetService.create_reset_token(db, reset_request.email)
 
-    if not token:
-        # For security, don't reveal if email exists or not
-        return PasswordResetResponse(
-            success=True,
-            message="If an account exists with this email, a password reset link has been sent."
-        )
+    if token:
+        # Send reset email only if user exists
+        PasswordResetService.send_reset_email(reset_request.email, token)
+    else:
+        # SECURITY: Perform dummy operation to match timing of real operation
+        # This prevents timing attacks that could reveal if an email exists
+        dummy_token = PasswordResetService.generate_reset_token()
+        # Simulate email sending delay
+        time.sleep(random.uniform(0.05, 0.15))
 
-    # Send reset email
-    PasswordResetService.send_reset_email(request.email, token)
+    # SECURITY: Add constant delay to make all responses take similar time
+    # This prevents attackers from determining if an email exists based on response time
+    elapsed = time.time() - start_time
+    target_time = 0.5  # Target 500ms response time
 
+    if elapsed < target_time:
+        time.sleep(target_time - elapsed + random.uniform(-0.05, 0.05))
+
+    # Always return the same generic message (security best practice)
     return PasswordResetResponse(
         success=True,
         message="If an account exists with this email, a password reset link has been sent."
@@ -72,10 +95,11 @@ def confirm_password_reset(
     Confirm password reset with new password.
     """
     # Validate password strength
-    if len(request.new_password) < 8:
+    is_valid, error_message = validate_password_strength(request.new_password)
+    if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 8 characters long"
+            detail=error_message
         )
 
     # Reset password

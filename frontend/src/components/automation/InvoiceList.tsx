@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { automationApi, AutomationInvoice, InvoiceListResponse } from '@/services/automationApi';
+import { Ban, CheckSquare, Square, Trash2, RefreshCw } from 'lucide-react';
 
 interface InvoiceListProps {
   onInvoiceClick?: (invoice: AutomationInvoice) => void;
@@ -11,6 +12,9 @@ export default function InvoiceList({ onInvoiceClick }: InvoiceListProps) {
   const [data, setData] = useState<InvoiceListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedInvoices, setSelectedInvoices] = useState<Set<string>>(new Set());
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
+  const [retryingInvoiceId, setRetryingInvoiceId] = useState<string | null>(null);
 
   // Filters
   const [status, setStatus] = useState<string>('');
@@ -36,6 +40,7 @@ export default function InvoiceList({ onInvoiceClick }: InvoiceListProps) {
         page_size: 20,
       });
       setData(response);
+      setSelectedInvoices(new Set()); // Clear selection on reload
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load invoices');
     } finally {
@@ -51,6 +56,54 @@ export default function InvoiceList({ onInvoiceClick }: InvoiceListProps) {
     setPage(1);
   };
 
+  const toggleSelectAll = () => {
+    if (!data) return;
+
+    if (selectedInvoices.size === data.invoices.length) {
+      setSelectedInvoices(new Set());
+    } else {
+      setSelectedInvoices(new Set(data.invoices.map(inv => inv.id)));
+    }
+  };
+
+  const toggleSelectInvoice = (invoiceId: string) => {
+    const newSelected = new Set(selectedInvoices);
+    if (newSelected.has(invoiceId)) {
+      newSelected.delete(invoiceId);
+    } else {
+      newSelected.add(invoiceId);
+    }
+    setSelectedInvoices(newSelected);
+  };
+
+  const handleBulkBlock = async () => {
+    if (selectedInvoices.size === 0) return;
+
+    try {
+      setBulkActionLoading(true);
+      await automationApi.bulkBlockInvoices(Array.from(selectedInvoices));
+      await loadInvoices();
+      alert(`Successfully blocked ${selectedInvoices.size} invoice(s)`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to block invoices');
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
+
+  const handleRetry = async (invoiceId: string) => {
+    try {
+      setRetryingInvoiceId(invoiceId);
+      await automationApi.retryInvoice(invoiceId);
+      await loadInvoices();
+      alert('Invoice has been reset to pending status and will be retried by the AI Agent');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to retry invoice');
+    } finally {
+      setRetryingInvoiceId(null);
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending':
@@ -63,10 +116,16 @@ export default function InvoiceList({ onInvoiceClick }: InvoiceListProps) {
         return 'bg-[#fee2e2] text-[#991b1b] border-[#fecaca] dark:bg-[#7f1d1d]/30 dark:text-[#f87171] dark:border-[#7f1d1d]';
       case 'expired':
         return 'bg-[#f6f6f7] text-[#6d7175] border-[#e1e3e5] dark:bg-[#2e2e2e] dark:text-[#8c9196] dark:border-[#404040]';
+      case 'blocked':
+        return 'bg-[#ffedd5] text-[#7c2d12] border-[#fed7aa] dark:bg-[#431407]/30 dark:text-[#fb923c] dark:border-[#431407]';
       default:
         return 'bg-[#f6f6f7] text-[#6d7175] border-[#e1e3e5] dark:bg-[#2e2e2e] dark:text-[#8c9196] dark:border-[#404040]';
     }
   };
+
+  const canBulkBlock = selectedInvoices.size > 0 && data?.invoices.some(inv =>
+    selectedInvoices.has(inv.id) && inv.status === 'pending'
+  );
 
   return (
     <div className="space-y-4">
@@ -86,6 +145,7 @@ export default function InvoiceList({ onInvoiceClick }: InvoiceListProps) {
               <option value="validated">Validated</option>
               <option value="submitted">Submitted</option>
               <option value="failed">Failed</option>
+              <option value="blocked">Blocked</option>
               <option value="expired">Expired</option>
             </select>
           </div>
@@ -135,6 +195,35 @@ export default function InvoiceList({ onInvoiceClick }: InvoiceListProps) {
         </div>
       </div>
 
+      {/* Bulk Actions */}
+      {selectedInvoices.size > 0 && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-blue-900 dark:text-blue-200">
+              {selectedInvoices.size} invoice(s) selected
+            </span>
+            <div className="flex gap-2">
+              {canBulkBlock && (
+                <button
+                  onClick={handleBulkBlock}
+                  disabled={bulkActionLoading}
+                  className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 text-sm"
+                >
+                  <Ban className="w-4 h-4" />
+                  {bulkActionLoading ? 'Blocking...' : 'Block Selected'}
+                </button>
+              )}
+              <button
+                onClick={() => setSelectedInvoices(new Set())}
+                className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 text-sm"
+              >
+                Clear Selection
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Invoice List */}
       {loading ? (
         <div className="flex items-center justify-center p-8">
@@ -160,6 +249,18 @@ export default function InvoiceList({ onInvoiceClick }: InvoiceListProps) {
             <table className="w-full">
               <thead className="bg-[#f6f6f7] dark:bg-[#2e2e2e] border-b border-[#e1e3e5] dark:border-[#404040]">
                 <tr>
+                  <th className="px-4 py-3 text-left">
+                    <button
+                      onClick={toggleSelectAll}
+                      className="flex items-center justify-center"
+                    >
+                      {selectedInvoices.size === data.invoices.length ? (
+                        <CheckSquare className="w-5 h-5 text-[#008060] dark:text-[#00a876]" />
+                      ) : (
+                        <Square className="w-5 h-5 text-[#6d7175] dark:text-[#8c9196]" />
+                      )}
+                    </button>
+                  </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase">
                     Invoice Number
                   </th>
@@ -175,25 +276,54 @@ export default function InvoiceList({ onInvoiceClick }: InvoiceListProps) {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase">
                     Source
                   </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#e1e3e5] dark:divide-[#2e2e2e]">
                 {data.invoices.map((invoice) => (
                   <tr
                     key={invoice.id}
-                    onClick={() => onInvoiceClick?.(invoice)}
-                    className="hover:bg-[#f6f6f7] dark:hover:bg-[#2e2e2e] cursor-pointer transition-colors"
+                    className="hover:bg-[#f6f6f7] dark:hover:bg-[#2e2e2e] transition-colors"
                   >
-                    <td className="px-4 py-3 text-sm text-[#202223] dark:text-[#e3e3e3]">
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleSelectInvoice(invoice.id);
+                        }}
+                        className="flex items-center justify-center"
+                      >
+                        {selectedInvoices.has(invoice.id) ? (
+                          <CheckSquare className="w-5 h-5 text-[#008060] dark:text-[#00a876]" />
+                        ) : (
+                          <Square className="w-5 h-5 text-[#6d7175] dark:text-[#8c9196]" />
+                        )}
+                      </button>
+                    </td>
+                    <td
+                      onClick={() => onInvoiceClick?.(invoice)}
+                      className="px-4 py-3 text-sm text-[#202223] dark:text-[#e3e3e3] cursor-pointer"
+                    >
                       {invoice.invoice_number}
                     </td>
-                    <td className="px-4 py-3 text-sm text-[#6d7175] dark:text-[#8c9196]">
+                    <td
+                      onClick={() => onInvoiceClick?.(invoice)}
+                      className="px-4 py-3 text-sm text-[#6d7175] dark:text-[#8c9196] cursor-pointer"
+                    >
                       {invoice.scheduled_date}
                     </td>
-                    <td className="px-4 py-3 text-sm text-[#6d7175] dark:text-[#8c9196]">
+                    <td
+                      onClick={() => onInvoiceClick?.(invoice)}
+                      className="px-4 py-3 text-sm text-[#6d7175] dark:text-[#8c9196] cursor-pointer"
+                    >
                       {invoice.scheduled_time}
                     </td>
-                    <td className="px-4 py-3">
+                    <td
+                      onClick={() => onInvoiceClick?.(invoice)}
+                      className="px-4 py-3 cursor-pointer"
+                    >
                       <span
                         className={`inline-flex px-2 py-1 text-xs font-semibold rounded-lg border ${getStatusColor(
                           invoice.status
@@ -202,8 +332,26 @@ export default function InvoiceList({ onInvoiceClick }: InvoiceListProps) {
                         {invoice.status}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm text-[#6d7175] dark:text-[#8c9196]">
+                    <td
+                      onClick={() => onInvoiceClick?.(invoice)}
+                      className="px-4 py-3 text-sm text-[#6d7175] dark:text-[#8c9196] cursor-pointer"
+                    >
                       {invoice.invoice_data?.source || 'excel_upload'}
+                    </td>
+                    <td className="px-4 py-3">
+                      {invoice.status === 'pending' && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRetry(invoice.id);
+                          }}
+                          disabled={retryingInvoiceId === invoice.id}
+                          className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-[#0070f3] hover:text-white hover:bg-[#0070f3] border border-[#0070f3] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${retryingInvoiceId === invoice.id ? 'animate-spin' : ''}`} />
+                          {retryingInvoiceId === invoice.id ? 'Retrying...' : 'Retry'}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

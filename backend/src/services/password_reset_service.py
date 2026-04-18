@@ -1,4 +1,5 @@
 import secrets
+import hashlib
 from datetime import datetime, timedelta
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -18,8 +19,25 @@ class PasswordResetService:
     def generate_reset_token() -> str:
         """
         Generate a secure random token for password reset.
+        Returns the raw token (to send to user via email).
         """
         return secrets.token_urlsafe(32)
+
+    @staticmethod
+    def hash_token(token: str) -> str:
+        """
+        Hash a reset token for secure storage.
+
+        SECURITY: Tokens are hashed before storage so that if the database
+        is compromised, attackers cannot use the tokens to reset passwords.
+
+        Args:
+            token: Raw token to hash
+
+        Returns:
+            SHA-256 hash of the token
+        """
+        return hashlib.sha256(token.encode()).hexdigest()
 
     @staticmethod
     def create_reset_token(db: Session, email: str) -> Optional[str]:
@@ -38,34 +56,47 @@ class PasswordResetService:
         if not user:
             return None
 
-        # Generate token
-        token = PasswordResetService.generate_reset_token()
+        # Generate token (raw token to send to user)
+        raw_token = PasswordResetService.generate_reset_token()
+
+        # Hash token for secure storage
+        # SECURITY: Store only the hash, not the raw token
+        token_hash = PasswordResetService.hash_token(raw_token)
 
         # Set token expiration (1 hour from now)
         expires = datetime.utcnow() + timedelta(hours=1)
 
-        # Update user with token
-        user.reset_token = token
+        # Update user with hashed token
+        user.reset_token = token_hash
         user.reset_token_expires = expires
 
         db.add(user)
         db.commit()
 
-        return token
+        # Return raw token (to send via email)
+        # The raw token is never stored in the database
+        return raw_token
 
     @staticmethod
     def verify_reset_token(db: Session, token: str) -> Optional[User]:
         """
         Verify a password reset token.
 
+        SECURITY: Compares hash of provided token with stored hash.
+        Uses constant-time comparison to prevent timing attacks.
+
         Args:
             db: Database session
-            token: Reset token to verify
+            token: Raw reset token to verify (from email link)
 
         Returns:
             User if token is valid, None otherwise
         """
-        user = db.query(User).filter(User.reset_token == token).first()
+        # Hash the provided token
+        token_hash = PasswordResetService.hash_token(token)
+
+        # Find user with matching token hash
+        user = db.query(User).filter(User.reset_token == token_hash).first()
 
         if not user:
             return None
@@ -80,6 +111,7 @@ class PasswordResetService:
     def reset_password(db: Session, token: str, new_password: str) -> bool:
         """
         Reset user's password using a valid token.
+        Increments token_version to invalidate all existing sessions.
 
         Args:
             db: Database session
@@ -101,6 +133,9 @@ class PasswordResetService:
         user.hashed_password = hashed_password
         user.reset_token = None
         user.reset_token_expires = None
+
+        # Increment token version to invalidate all existing sessions
+        user.token_version += 1
 
         db.add(user)
         db.commit()

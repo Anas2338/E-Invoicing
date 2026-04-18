@@ -14,6 +14,10 @@ class AutomationLogAction(str, Enum):
     SUBMIT = "submit"
     UPDATE_EXCEL = "update_excel"
     RETRY = "retry"
+    BLOCK = "block"
+    UNBLOCK = "unblock"
+    DELETE = "delete"
+    DELETE_SESSION = "delete_session"
 
 
 class AutomationLogStatus(str, Enum):
@@ -32,15 +36,16 @@ class AutomationLog(SQLModel, table=True):
     # Primary key
     id: UUID = Field(default_factory=uuid4, primary_key=True)
 
-    # Foreign key
-    automation_invoice_id: UUID = Field(
+    # Foreign key (optional for session-level actions)
+    automation_invoice_id: Optional[UUID] = Field(
+        default=None,
         foreign_key="automation_invoice.id",
         index=True
     )
 
     # Action details
     action: AutomationLogAction = Field(index=True)
-    status: AutomationLogStatus
+    status: Optional[AutomationLogStatus] = Field(default=None)
 
     # Action-specific details (JSON)
     details: dict = Field(sa_column=Column(JSON))

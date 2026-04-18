@@ -5,9 +5,11 @@ from typing import Optional
 import logging
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
+from sqlmodel import Session
 
 from src.config.settings import settings
 from src.utils.jwt_utils import decode_jwt_token
+from src.database.session import get_db
 
 
 logger = logging.getLogger(__name__)
@@ -25,34 +27,61 @@ class AuthMiddleware(BaseHTTPMiddleware):
         """
         Process the incoming request and verify JWT token.
         Extracts user ID and stores it in request.state for downstream handlers.
+
+        Token priority:
+        1. Cookie (httpOnly) - preferred for security
+        2. Authorization header - backward compatibility
         """
-        # Extract token from Authorization header
-        auth_header = request.headers.get("authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            # Allow unauthenticated requests to pass through
-            # Individual endpoints should enforce authentication
+        token = None
+
+        # First, try to get token from httpOnly cookie (preferred)
+        token = request.cookies.get("access_token")
+
+        # Fall back to Authorization header for backward compatibility
+        if not token:
+            auth_header = request.headers.get("authorization")
+            if auth_header and auth_header.startswith("Bearer "):
+                token = auth_header.split(" ")[1]
+
+        # If no token found, allow unauthenticated request
+        if not token:
             request.state.user_id = None
             request.state.current_user = None
         else:
-            token = auth_header.split(" ")[1]
-
             try:
                 # Verify JWT token locally
                 payload = decode_jwt_token(token)
 
                 # Extract user ID from the token
                 user_id = payload.get("sub")
+                token_version = payload.get("token_version", 0)
+
                 if not user_id:
                     # Set user_id to None so endpoints can handle it
                     request.state.user_id = None
                     request.state.current_user = None
                 else:
-                    # Store user ID in request state for downstream handlers
-                    request.state.user_id = user_id
-                    request.state.current_user = None
+                    # Verify token version matches user's current version
+                    # This invalidates all tokens when password changes
+                    from src.models.user import User
+                    db_gen = get_db()
+                    db = next(db_gen)
+                    try:
+                        user = db.get(User, user_id)
+                        if user and user.token_version != token_version:
+                            # Token version mismatch - token has been invalidated
+                            logger.warning(f"Token version mismatch for user {user_id}")
+                            request.state.user_id = None
+                            request.state.current_user = None
+                        else:
+                            # Store user ID in request state for downstream handlers
+                            request.state.user_id = user_id
+                            request.state.current_user = None
 
-                    # Also store other useful claims if needed
-                    request.state.token_payload = payload
+                            # Also store other useful claims if needed
+                            request.state.token_payload = payload
+                    finally:
+                        db.close()
 
             except JWTError as e:
                 logger.warning(f"JWT verification failed: {str(e)}")

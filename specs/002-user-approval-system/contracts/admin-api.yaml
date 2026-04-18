@@ -1,0 +1,403 @@
+openapi: 3.0.3
+info:
+  title: Admin API - User Approval System
+  description: Admin endpoints for managing user registrations and approvals
+  version: 1.0.0
+  contact:
+    name: FBR Invoice Integration Portal
+
+servers:
+  - url: http://localhost:8001/api/v1
+    description: Local development server
+  - url: https://api.example.com/api/v1
+    description: Production server
+
+security:
+  - BearerAuth: []
+
+paths:
+  /admin/users/pending:
+    get:
+      summary: Get pending users
+      description: Retrieve all users with pending approval status
+      operationId: getPendingUsers
+      tags:
+        - Admin
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of pending users
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /admin/users/all:
+    get:
+      summary: Get all users
+      description: Retrieve all users with optional status filter
+      operationId: getAllUsers
+      tags:
+        - Admin
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status_filter
+          in: query
+          description: Filter users by account status
+          required: false
+          schema:
+            type: string
+            enum: [pending, approved, rejected]
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /admin/users/{user_id}/approve:
+    post:
+      summary: Approve user
+      description: Approve a pending user account
+      operationId: approveUser
+      tags:
+        - Admin
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          description: User ID to approve
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: User approved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /admin/users/{user_id}/reject:
+    post:
+      summary: Reject user
+      description: Reject a pending user account with reason
+      operationId: rejectUser
+      tags:
+        - Admin
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          description: User ID to reject
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectionRequest'
+      responses:
+        '200':
+          description: User rejected successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RejectionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /admin/users/{user_id}:
+    delete:
+      summary: Delete user
+      description: Delete a user account (admin only)
+      operationId: deleteUser
+      tags:
+        - Admin
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: user_id
+          in: path
+          description: User ID to delete
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: User deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from /auth/login endpoint
+
+  schemas:
+    UserSummary:
+      type: object
+      required:
+        - id
+        - email
+        - created_at
+        - account_status
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique user identifier
+        email:
+          type: string
+          format: email
+          description: User email address
+        name:
+          type: string
+          nullable: true
+          description: User display name
+        created_at:
+          type: string
+          format: date-time
+          description: Account creation timestamp
+        account_status:
+          type: string
+          enum: [pending, approved, rejected]
+          description: Current approval status
+        approved_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Approval/rejection timestamp
+        rejection_reason:
+          type: string
+          nullable: true
+          description: Reason for rejection (if rejected)
+        is_active:
+          type: boolean
+          description: Account active flag
+
+    UserListResponse:
+      type: object
+      required:
+        - total
+        - users
+      properties:
+        total:
+          type: integer
+          description: Total number of users
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserSummary'
+
+    ApprovalResponse:
+      type: object
+      required:
+        - success
+        - message
+        - user
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "User user@example.com has been approved"
+        user:
+          type: object
+          required:
+            - id
+            - email
+            - account_status
+            - approved_at
+          properties:
+            id:
+              type: string
+              format: uuid
+            email:
+              type: string
+              format: email
+            name:
+              type: string
+              nullable: true
+            account_status:
+              type: string
+              enum: [approved]
+            approved_at:
+              type: string
+              format: date-time
+
+    RejectionRequest:
+      type: object
+      required:
+        - reason
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Reason for rejecting the user
+          example: "Invalid business credentials"
+
+    RejectionResponse:
+      type: object
+      required:
+        - success
+        - message
+        - user
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "User user@example.com has been rejected"
+        user:
+          type: object
+          required:
+            - id
+            - email
+            - account_status
+            - rejection_reason
+          properties:
+            id:
+              type: string
+              format: uuid
+            email:
+              type: string
+              format: email
+            name:
+              type: string
+              nullable: true
+            account_status:
+              type: string
+              enum: [rejected]
+            rejection_reason:
+              type: string
+
+    DeleteResponse:
+      type: object
+      required:
+        - success
+        - message
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "User user@example.com has been deleted"
+
+    ErrorResponse:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: Error message
+
+  responses:
+    BadRequest:
+      description: Bad request - invalid input
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            detail: "User account is not pending (current status: approved)"
+
+    Unauthorized:
+      description: Unauthorized - missing or invalid token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            detail: "Could not validate credentials"
+
+    Forbidden:
+      description: Forbidden - admin access required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            detail: "Admin access required"
+
+    NotFound:
+      description: Not found - user does not exist
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            detail: "User not found"
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            detail: "Failed to approve user: database error"
+
+tags:
+  - name: Admin
+    description: Admin-only endpoints for user management

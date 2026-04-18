@@ -1,0 +1,679 @@
+"""
+AI Agent - Main orchestrator for autonomous invoice processing.
+
+Coordinates all agent skills and manages scheduling for:
+- 5-minute invoice processing cycles
+- Hourly health checks
+"""
+import logging
+import time
+import sys
+from datetime import datetime, timedelta
+from pathlib import Path
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.cron import CronTrigger
+
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
+# Add project root and backend to path (works on both Windows and Docker)
+# Backend must be in path for its relative imports (from src.*)
+project_root = Path(__file__).parent.parent
+backend_path = project_root / "backend"
+sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(backend_path))
+
+# CRITICAL: Import backend models using src.* (not backend.src.*) to match backend's own imports
+# This ensures there's only ONE import path, preventing SQLAlchemy metadata conflicts
+# Import ALL related models to resolve SQLAlchemy relationships
+from src.models.user import User
+from src.models.excel_upload_session import ExcelUploadSession
+from src.models.automation_invoice import AutomationInvoice, AutomationInvoiceStatus
+from src.models.automation_log import AutomationLog, AutomationLogAction, AutomationLogStatus
+from src.models.ai_agent_health_check import AIAgentHealthCheck, HealthStatus
+from sqlalchemy import select, and_, func
+import httpx
+
+# Import skills AFTER models - they will use the already-registered models
+from skills.priority_scheduler import PrioritySchedulerSkill
+from skills.invoice_validator import InvoiceValidatorSkill
+from skills.fbr_poster import FBRPosterSkill
+from skills.error_handler import ErrorHandlerSkill
+from skills.retry_manager import RetryManagerSkill
+
+from config import config
+from database import get_db_session, test_database_connection
+
+logger = logging.getLogger(__name__)
+
+
+class AIAgent:
+    """
+    Main AI Agent orchestrator.
+
+    Manages scheduling and coordination of all agent skills.
+    """
+
+    def __init__(self):
+        """Initialize AI Agent with scheduler and skills."""
+        self.scheduler = BackgroundScheduler()
+        self.start_time = datetime.utcnow()
+        self.is_running = False
+
+        logger.info("AI Agent: Orchestrator initialized")
+
+    def start(self):
+        """
+        Start the AI Agent scheduler.
+
+        Configures and starts:
+        - 5-minute invoice processing job
+        - Hourly health check job
+        """
+        logger.info("AI Agent: Starting scheduler...")
+
+        # Schedule 5-minute invoice processing job
+        self.scheduler.add_job(
+            func=self._process_invoices_job,
+            trigger=IntervalTrigger(seconds=config.AGENT_CHECK_INTERVAL),
+            id='process_invoices',
+            name='Process Pending Invoices',
+            replace_existing=True,
+            max_instances=1,  # Prevent concurrent runs
+            coalesce=True  # Combine missed runs into one
+        )
+        logger.info(f"  Scheduled: Invoice processing every {config.AGENT_CHECK_INTERVAL}s")
+
+        # Schedule hourly health check job
+        self.scheduler.add_job(
+            func=self._health_check_job,
+            trigger=CronTrigger.from_crontab(config.HEALTH_CHECK_CRON),
+            id='health_check',
+            name='Hourly Health Check',
+            replace_existing=True,
+            max_instances=1
+        )
+        logger.info(f"  Scheduled: Health check at {config.HEALTH_CHECK_CRON}")
+
+        # Start scheduler
+        self.scheduler.start()
+        self.is_running = True
+
+        logger.info("AI Agent: Scheduler started successfully")
+        logger.info("AI Agent: Running... (Press Ctrl+C to stop)")
+
+        # Keep main thread alive and update heartbeat
+        try:
+            while self.is_running:
+                self._update_heartbeat()
+                time.sleep(60)  # Update heartbeat every minute
+        except KeyboardInterrupt:
+            logger.info("AI Agent: Keyboard interrupt received")
+            self.shutdown()
+
+    def shutdown(self):
+        """Gracefully shutdown the AI Agent."""
+        logger.info("AI Agent: Shutting down scheduler...")
+
+        if self.scheduler.running:
+            self.scheduler.shutdown(wait=True)
+
+        self.is_running = False
+        logger.info("AI Agent: Scheduler stopped")
+
+    def _process_invoices_job(self):
+        """
+        5-minute invoice processing job.
+
+        Queries pending invoices, applies prioritization, validates,
+        posts to FBR, handles errors, and logs decisions.
+        """
+        logger.info("=" * 80)
+        logger.info("AI Agent: Starting invoice processing cycle")
+        logger.info("=" * 80)
+
+        try:
+            # Update heartbeat at start of job
+            self._update_heartbeat()
+
+            with get_db_session() as db:
+                # Query validated invoices scheduled for processing
+                # These invoices have already been validated during upload
+                # Now we just need to post them to FBR at their scheduled time
+
+                # Convert UTC to PKT (Pakistan Time, UTC+5)
+                now_utc = datetime.utcnow()
+                now_pkt = now_utc + timedelta(hours=5)  # PKT is UTC+5
+
+                logger.info(f"AI Agent: Current time - UTC: {now_utc.strftime('%Y-%m-%d %H:%M:%S')}, PKT: {now_pkt.strftime('%Y-%m-%d %H:%M:%S')}")
+
+                # SECURITY FIX: Process invoices per user to ensure data isolation
+                # Step 1: Get distinct users with validated invoices ready for processing
+                users_with_pending_query = select(AutomationInvoice.user_id).distinct().where(
+                    and_(
+                        AutomationInvoice.status == AutomationInvoiceStatus.VALIDATED,
+                        AutomationInvoice.scheduled_date <= now_pkt.date(),
+                        AutomationInvoice.scheduled_time <= now_pkt.time()
+                    )
+                )
+                users_with_pending = db.execute(users_with_pending_query).scalars().all()
+
+                if not users_with_pending:
+                    logger.info("AI Agent: No validated invoices ready for posting")
+                    return
+
+                logger.info(f"AI Agent: Found {len(users_with_pending)} user(s) with validated invoices ready for posting")
+
+                # Step 2: Process each user's invoices separately with fair batch limits
+                all_validated_invoices = []
+                for user_id in users_with_pending:
+                    # Query this user's validated invoices with per-user limit
+                    user_query = select(AutomationInvoice).where(
+                        and_(
+                            AutomationInvoice.user_id == user_id,  # ✅ USER ISOLATION
+                            AutomationInvoice.status == AutomationInvoiceStatus.VALIDATED,
+                            AutomationInvoice.scheduled_date <= now_pkt.date(),
+                            AutomationInvoice.scheduled_time <= now_pkt.time()
+                        )
+                    ).order_by(
+                        AutomationInvoice.scheduled_date.asc(),
+                        AutomationInvoice.scheduled_time.asc(),
+                        AutomationInvoice.priority.asc()
+                    ).limit(config.BATCH_SIZE_PER_USER)
+
+                    user_invoices = db.execute(user_query).scalars().all()
+                    all_validated_invoices.extend(user_invoices)
+
+                    logger.info(f"AI Agent: User {user_id} - {len(user_invoices)} invoice(s) queued for processing")
+
+                if not all_validated_invoices:
+                    logger.info("AI Agent: No validated invoices ready for posting")
+                    return
+
+                logger.info(f"AI Agent: Total {len(all_validated_invoices)} validated invoice(s) ready for posting across {len(users_with_pending)} user(s)")
+
+                validated_invoices = all_validated_invoices
+
+                # Process each validated invoice - skip validation, go straight to posting
+                stats = {"processed": 0, "submitted": 0, "failed": 0}
+
+                for invoice in validated_invoices:
+                    try:
+                        # Get user's FBR credentials
+                        user = db.get(User, invoice.user_id)
+                        if not user:
+                            logger.error(f"User not found for invoice {invoice.invoice_number}")
+                            invoice.status = AutomationInvoiceStatus.FAILED
+                            invoice.validation_errors = "User not found"
+                            invoice.processed_at = datetime.utcnow()
+                            db.add(invoice)
+                            stats["failed"] += 1
+                            continue
+
+                        # Get user's FBR token based on their environment preference
+                        user_environment = user.fbr_environment or "SANDBOX"
+                        user_fbr_token = user.fbr_sandbox_token if user_environment == "SANDBOX" else user.fbr_production_token
+
+                        if not user_fbr_token:
+                            logger.error(f"FBR credentials not configured for user {user.email}")
+                            invoice.status = AutomationInvoiceStatus.FAILED
+                            invoice.validation_errors = f"FBR {user_environment} credentials not configured"
+                            invoice.processed_at = datetime.utcnow()
+                            db.add(invoice)
+                            stats["failed"] += 1
+                            continue
+
+                        # Post to FBR using user's credentials
+                        poster_skill = FBRPosterSkill()
+                        post_result = poster_skill.run({
+                            "invoice_data": invoice.invoice_data,
+                            "environment": user_environment,
+                            "fbr_token": user_fbr_token
+                        })
+
+                        if post_result.is_success():
+                            # Submission successful
+                            invoice.status = AutomationInvoiceStatus.SUBMITTED
+                            invoice.fbr_response = post_result.data['response_data']
+                            invoice.processed_at = datetime.utcnow()
+                            db.add(invoice)
+                            stats["submitted"] += 1
+
+                            # Log decision
+                            self._log_decision(db, invoice.id, "submission_success", post_result)
+                        else:
+                            # Submission failed - classify error and handle retry
+                            error_handler = ErrorHandlerSkill()
+                            classification_result = error_handler.run({
+                                "error_message": post_result.error,
+                                "error_context": {
+                                    "invoice_number": invoice.invoice_number,
+                                    "retry_count": invoice.retry_count,
+                                    "error_source": "fbr_api"
+                                }
+                            })
+
+                            if classification_result.data.get('is_transient'):
+                                # Transient error - schedule retry
+                                retry_manager = RetryManagerSkill()
+                                retry_result = retry_manager.run({
+                                    "invoice_id": str(invoice.id),
+                                    "retry_count": invoice.retry_count,
+                                    "error_classification": classification_result.data
+                                })
+
+                                if retry_result.data.get('should_retry'):
+                                    invoice.retry_count += 1
+                                    invoice.last_retry_at = datetime.utcnow()
+                                    invoice.validation_errors = f"Retry scheduled: {post_result.error}"
+                                    db.add(invoice)
+
+                                    # Log retry decision
+                                    self._log_decision(db, invoice.id, "retry_scheduled", retry_result)
+                                else:
+                                    # Max retries exceeded
+                                    invoice.status = AutomationInvoiceStatus.FAILED
+                                    invoice.validation_errors = post_result.error
+                                    invoice.processed_at = datetime.utcnow()
+                                    db.add(invoice)
+                                    stats["failed"] += 1
+
+                                    # Log failure
+                                    self._log_decision(db, invoice.id, "max_retries_exceeded", retry_result)
+                            else:
+                                # Permanent error - mark as failed
+                                invoice.status = AutomationInvoiceStatus.FAILED
+                                invoice.validation_errors = post_result.error
+                                invoice.processed_at = datetime.utcnow()
+                                db.add(invoice)
+                                stats["failed"] += 1
+
+                                # Log permanent failure
+                                self._log_decision(db, invoice.id, "permanent_failure", classification_result)
+
+                        stats["processed"] += 1
+
+                    except Exception as e:
+                        logger.error(f"Error processing invoice {invoice.invoice_number}: {str(e)}", exc_info=True)
+                        stats["failed"] += 1
+
+                # Commit all changes
+                db.commit()
+
+                logger.info("AI Agent: Invoice processing cycle completed")
+                logger.info(f"  Processed: {stats['processed']}")
+                logger.info(f"  Submitted: {stats['submitted']}")
+                logger.info(f"  Failed: {stats['failed']}")
+                logger.info("=" * 80)
+
+        except Exception as e:
+            logger.error(f"AI Agent: Error in invoice processing job: {str(e)}", exc_info=True)
+
+    def _health_check_job(self):
+        """
+        Hourly health check job.
+
+        Counts pending/failed invoices, tests FBR API, checks database,
+        detects anomalies, and stores results in ai_agent_health_check table.
+
+        NOTE: Health check queries are intentionally system-wide (not filtered by user_id)
+        to monitor overall agent infrastructure health. This is acceptable for monitoring
+        purposes as it only aggregates counts without exposing individual user data.
+        """
+        logger.info("=" * 80)
+        logger.info("AI Agent: Starting hourly health check")
+        logger.info("=" * 80)
+
+        try:
+            with get_db_session() as db:
+                # Count invoices by status
+                pending_count = db.execute(
+                    select(func.count(AutomationInvoice.id)).where(
+                        AutomationInvoice.status == AutomationInvoiceStatus.PENDING
+                    )
+                ).scalar()
+
+                failed_count = db.execute(
+                    select(func.count(AutomationInvoice.id)).where(
+                        AutomationInvoice.status == AutomationInvoiceStatus.FAILED
+                    )
+                ).scalar()
+
+                # Calculate processing backlog (pending invoices past their scheduled time)
+                now = datetime.utcnow()
+                backlog_count = db.execute(
+                    select(func.count(AutomationInvoice.id)).where(
+                        and_(
+                            AutomationInvoice.status == AutomationInvoiceStatus.PENDING,
+                            AutomationInvoice.scheduled_date < now.date()
+                        )
+                    )
+                ).scalar()
+
+                # Test database connectivity and latency
+                db_healthy, db_latency = test_database_connection()
+                db_status = "healthy" if db_healthy else "unhealthy"
+
+                # Test FBR API connectivity and latency
+                fbr_status, fbr_latency = self._test_fbr_api()
+
+                # Analyze failure patterns (last hour)
+                one_hour_ago = now - timedelta(hours=1)
+                recent_failures = db.execute(
+                    select(AutomationInvoice).where(
+                        and_(
+                            AutomationInvoice.status == AutomationInvoiceStatus.FAILED,
+                            AutomationInvoice.processed_at >= one_hour_ago
+                        )
+                    )
+                ).scalars().all()
+
+                failure_patterns = self._analyze_failure_patterns(recent_failures)
+                common_errors = self._extract_common_errors(recent_failures)
+
+                # Detect anomalies
+                anomalies = self._detect_anomalies(
+                    pending_count=pending_count,
+                    failed_count=failed_count,
+                    backlog_count=backlog_count,
+                    db_latency=db_latency,
+                    fbr_status=fbr_status,
+                    recent_failures=recent_failures
+                )
+
+                # Determine overall health status
+                overall_status = self._determine_health_status(anomalies, db_status, fbr_status)
+
+                # Generate recommended actions
+                recommended_actions = self._generate_recommendations(anomalies, overall_status)
+
+                # Store health check result
+                health_check = AIAgentHealthCheck(
+                    check_timestamp=now,
+                    overall_status=overall_status,
+                    pending_invoice_count=pending_count,
+                    failed_invoice_count=failed_count,
+                    processing_backlog=backlog_count,
+                    failure_patterns=failure_patterns,
+                    common_errors=common_errors,
+                    fbr_api_status=fbr_status,
+                    fbr_api_latency_ms=fbr_latency,
+                    database_status=db_status,
+                    database_latency_ms=db_latency,
+                    agent_cpu_percent=None,  # TODO: Implement CPU monitoring
+                    agent_memory_mb=None,  # TODO: Implement memory monitoring
+                    anomalies_detected=anomalies,
+                    recommended_actions=recommended_actions,
+                    agent_version=config.AGENT_VERSION,
+                    agent_uptime_seconds=self.get_uptime_seconds()
+                )
+
+                db.add(health_check)
+                db.commit()
+
+                logger.info("AI Agent: Health check completed")
+                logger.info(f"  Overall Status: {overall_status}")
+                logger.info(f"  Pending Invoices: {pending_count}")
+                logger.info(f"  Failed Invoices: {failed_count}")
+                logger.info(f"  Processing Backlog: {backlog_count}")
+                logger.info(f"  Database: {db_status} ({db_latency}ms)")
+                logger.info(f"  FBR API: {fbr_status} ({fbr_latency}ms)")
+                logger.info(f"  Anomalies: {len(anomalies)}")
+                logger.info("=" * 80)
+
+        except Exception as e:
+            logger.error(f"AI Agent: Error in health check job: {str(e)}", exc_info=True)
+
+    def _update_heartbeat(self):
+        """
+        Update heartbeat file for Docker health checks.
+
+        Writes current timestamp to heartbeat file.
+        Docker health check verifies file exists and is recent.
+        """
+        try:
+            config.HEARTBEAT_FILE.parent.mkdir(parents=True, exist_ok=True)
+            config.HEARTBEAT_FILE.write_text(str(time.time()))
+        except Exception as e:
+            logger.warning(f"AI Agent: Failed to update heartbeat: {str(e)}")
+
+    def get_uptime_seconds(self) -> int:
+        """
+        Get agent uptime in seconds.
+
+        Returns:
+            Uptime in seconds since agent started
+        """
+        return int((datetime.utcnow() - self.start_time).total_seconds())
+
+    def _log_decision(self, db, invoice_id, decision_type: str, result):
+        """
+        Log AI Agent decision to automation_log table.
+
+        Args:
+            db: Database session
+            invoice_id: Invoice UUID
+            decision_type: Type of decision made
+            result: SkillResult with decision details
+        """
+        action_map = {
+            "validation_failed": AutomationLogAction.VALIDATE,
+            "submission_success": AutomationLogAction.SUBMIT,
+            "retry_scheduled": AutomationLogAction.RETRY,
+            "max_retries_exceeded": AutomationLogAction.RETRY,
+            "permanent_failure": AutomationLogAction.SUBMIT
+        }
+
+        status_map = {
+            "validation_failed": AutomationLogStatus.FAILURE,
+            "submission_success": AutomationLogStatus.SUCCESS,
+            "retry_scheduled": AutomationLogStatus.SUCCESS,
+            "max_retries_exceeded": AutomationLogStatus.FAILURE,
+            "permanent_failure": AutomationLogStatus.FAILURE
+        }
+
+        # Get user_id from invoice for audit trail
+        invoice = db.get(AutomationInvoice, invoice_id)
+        user_id_str = str(invoice.user_id) if invoice else None
+
+        log = AutomationLog(
+            automation_invoice_id=invoice_id,
+            action=action_map.get(decision_type, AutomationLogAction.VALIDATE),
+            status=status_map.get(decision_type, AutomationLogStatus.FAILURE),
+            details={
+                "decision_type": decision_type,
+                "ai_decision": result.data,
+                "rationale": result.error or "Success",
+                "model_used": config.CLAUDE_MODEL,
+                "timestamp": datetime.utcnow().isoformat(),
+                "user_id": user_id_str  # ✅ USER CONTEXT FOR AUDIT
+            }
+        )
+
+        db.add(log)
+
+    def _test_fbr_api(self) -> tuple[str, int]:
+        """
+        Test FBR API connectivity and latency.
+
+        Returns:
+            Tuple of (status, latency_ms)
+        """
+        try:
+            start_time = time.time()
+            response = httpx.get(
+                config.FBR_SANDBOX_BASE_URL,
+                timeout=10.0
+            )
+            latency_ms = int((time.time() - start_time) * 1000)
+
+            if response.status_code < 500:
+                return "healthy", latency_ms
+            else:
+                return "degraded", latency_ms
+
+        except Exception as e:
+            logger.warning(f"FBR API health check failed: {str(e)}")
+            return "unhealthy", 0
+
+    def _analyze_failure_patterns(self, recent_failures) -> dict:
+        """
+        Analyze patterns in recent failures.
+
+        Args:
+            recent_failures: List of failed invoices
+
+        Returns:
+            Dictionary with failure pattern analysis
+        """
+        if not recent_failures:
+            return {}
+
+        # Group failures by error type
+        error_types = {}
+        for invoice in recent_failures:
+            error = invoice.validation_errors or "Unknown error"
+            error_key = error[:50]  # First 50 chars as key
+            error_types[error_key] = error_types.get(error_key, 0) + 1
+
+        return {
+            "total_failures": len(recent_failures),
+            "error_distribution": error_types,
+            "most_common_error": max(error_types.items(), key=lambda x: x[1])[0] if error_types else None
+        }
+
+    def _extract_common_errors(self, recent_failures) -> dict:
+        """
+        Extract common error messages from recent failures.
+
+        Args:
+            recent_failures: List of failed invoices
+
+        Returns:
+            Dictionary with common errors and counts
+        """
+        error_counts = {}
+
+        for invoice in recent_failures:
+            error = invoice.validation_errors or "Unknown error"
+            error_counts[error] = error_counts.get(error, 0) + 1
+
+        # Return top 5 most common errors
+        sorted_errors = sorted(error_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+
+        return {
+            error: count
+            for error, count in sorted_errors
+        }
+
+    def _detect_anomalies(
+        self,
+        pending_count: int,
+        failed_count: int,
+        backlog_count: int,
+        db_latency: int,
+        fbr_status: str,
+        recent_failures
+    ) -> list[str]:
+        """
+        Detect anomalies based on configured thresholds.
+
+        Args:
+            pending_count: Number of pending invoices
+            failed_count: Number of failed invoices
+            backlog_count: Number of backlogged invoices
+            db_latency: Database latency in ms
+            fbr_status: FBR API status
+            recent_failures: List of recent failures
+
+        Returns:
+            List of detected anomalies
+        """
+        anomalies = []
+
+        # Anomaly 1: High failure rate (20% in last hour)
+        total_recent = len(recent_failures)
+        if total_recent > 10:  # Only check if significant sample size
+            failure_rate = total_recent / (total_recent + pending_count) if (total_recent + pending_count) > 0 else 0
+            if failure_rate >= config.ANOMALY_FAILURE_RATE_THRESHOLD:
+                anomalies.append(f"High failure rate: {failure_rate:.1%} in last hour")
+
+        # Anomaly 2: Large backlog
+        if backlog_count >= config.ANOMALY_BACKLOG_THRESHOLD:
+            anomalies.append(f"Large processing backlog: {backlog_count} invoices")
+
+        # Anomaly 3: High database latency
+        if db_latency >= config.ANOMALY_DATABASE_LATENCY_THRESHOLD:
+            anomalies.append(f"High database latency: {db_latency}ms")
+
+        # Anomaly 4: FBR API unhealthy
+        if fbr_status == "unhealthy":
+            anomalies.append("FBR API is unhealthy")
+
+        return anomalies
+
+    def _determine_health_status(self, anomalies: list, db_status: str, fbr_status: str) -> str:
+        """
+        Determine overall health status based on anomalies and service status.
+
+        Args:
+            anomalies: List of detected anomalies
+            db_status: Database status
+            fbr_status: FBR API status
+
+        Returns:
+            Health status: "healthy", "degraded", or "unhealthy"
+        """
+        if db_status == "unhealthy" or fbr_status == "unhealthy":
+            return HealthStatus.UNHEALTHY
+
+        if len(anomalies) >= 2 or fbr_status == "degraded":
+            return HealthStatus.DEGRADED
+
+        if len(anomalies) == 1:
+            return HealthStatus.DEGRADED
+
+        return HealthStatus.HEALTHY
+
+    def _generate_recommendations(self, anomalies: list, overall_status: str) -> list[str]:
+        """
+        Generate recommended actions based on anomalies and health status.
+
+        Args:
+            anomalies: List of detected anomalies
+            overall_status: Overall health status
+
+        Returns:
+            List of recommended actions
+        """
+        recommendations = []
+
+        if not anomalies:
+            return ["System operating normally"]
+
+        for anomaly in anomalies:
+            if "failure rate" in anomaly.lower():
+                recommendations.append("Investigate common error patterns and consider pausing processing")
+            elif "backlog" in anomaly.lower():
+                recommendations.append("Review processing capacity and consider scaling resources")
+            elif "database latency" in anomaly.lower():
+                recommendations.append("Check database connection pool and query performance")
+            elif "fbr api" in anomaly.lower():
+                recommendations.append("Monitor FBR API status and consider retry backoff")
+
+        if overall_status == "unhealthy":
+            recommendations.append("CRITICAL: Manual intervention required")
+
+        return recommendations
+
+
+if __name__ == "__main__":
+    """
+    Main entry point for AI Agent.
+
+    Creates and starts the agent scheduler.
+    """
+    agent = AIAgent()
+    agent.start()

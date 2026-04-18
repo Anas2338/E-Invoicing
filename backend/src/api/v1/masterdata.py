@@ -70,6 +70,7 @@ FALLBACK_REGISTRATION_TYPES = [
 async def get_user_fbr_token(db, user_id: str, environment: str = "SANDBOX") -> Optional[str]:
     """
     Get user's FBR access token based on environment.
+    Decrypts the token before returning.
 
     Args:
         db: Database session
@@ -77,17 +78,33 @@ async def get_user_fbr_token(db, user_id: str, environment: str = "SANDBOX") -> 
         environment: SANDBOX or PRODUCTION
 
     Returns:
-        FBR access token or None
+        Decrypted FBR access token or None
     """
     try:
+        from src.utils.encryption import get_encryption_service
+
         user = db.query(User).filter(User.id == UUID(user_id)).first()
         if not user:
             return None
 
+        encrypted_token = None
         if environment == "SANDBOX":
-            return user.fbr_sandbox_token or user.fbr_access_token
+            encrypted_token = user.fbr_sandbox_token or user.fbr_access_token
         else:
-            return user.fbr_production_token or user.fbr_access_token
+            encrypted_token = user.fbr_production_token or user.fbr_access_token
+
+        if not encrypted_token:
+            return None
+
+        # Decrypt the token before returning
+        encryption_service = get_encryption_service()
+        try:
+            decrypted_token = encryption_service.decrypt(encrypted_token)
+            return decrypted_token
+        except Exception as decrypt_error:
+            logger.error(f"Failed to decrypt FBR token for user {user_id}: {decrypt_error}")
+            return None
+
     except Exception as e:
         logger.error(f"Error getting user FBR token: {str(e)}")
         return None

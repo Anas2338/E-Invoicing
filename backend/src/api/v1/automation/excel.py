@@ -9,15 +9,21 @@ from typing import Annotated
 from io import BytesIO
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+import logging
 
 from src.database.session import get_db
 from src.schemas.excel import ExcelUploadResponse, ExcelUploadStatusResponse
 from src.services.excel_service import ExcelService
 from src.services.automation_service import AutomationService
+from src.services.validation_service import ValidationService
+from src.models.automation_invoice import AutomationInvoiceStatus
 from src.utils.excel_validator import ExcelValidator
+from src.utils.secure_file_validator import SecureFileValidator
 from src.api.middleware.auth_middleware import require_authentication
+from src.config.settings import settings
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # Rate limiter: 5 uploads per hour per IP
 limiter = Limiter(key_func=get_remote_address)
@@ -73,13 +79,6 @@ async def upload_excel(
     # Convert user_id string to UUID
     user_uuid = UUID(user_id)
 
-    # Validate file extension
-    if not file.filename or not ExcelValidator.validate_file_extension(file.filename):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid file type. Only .xlsx files are allowed."
-        )
-
     # Initialize services
     excel_service = ExcelService(db)
     automation_service = AutomationService(db)
@@ -97,24 +96,29 @@ async def upload_excel(
         file_content = await file.read()
         file_bytes = BytesIO(file_content)
 
-        # Validate file size (in-memory)
-        try:
-            ExcelValidator.validate_file_size(file_bytes)
-        except Exception as e:
+        # SECURITY: Comprehensive file validation
+        # Validates: extension, size, magic bytes, zip bombs, Excel structure, malicious content
+        is_valid, error_message = SecureFileValidator.validate_file_comprehensive(
+            file_bytes=file_bytes,
+            filename=file.filename or ""
+        )
+
+        if not is_valid:
+            logger.warning(f"File validation failed for user {user_id}: {error_message}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(e)
+                detail=error_message
             )
 
-        # Reset BytesIO position after size validation
+        # Reset BytesIO position after validation
         file_bytes.seek(0)
 
-        # Validate Excel structure (in-memory)
+        # Additional business logic validation (column structure, data format)
         is_valid, errors = ExcelValidator.validate_excel_file(file_bytes)
         if not is_valid:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid Excel file: {'; '.join(errors)}"
+                detail=f"Invalid Excel file structure: {'; '.join(errors)}"
             )
 
         # Reset BytesIO position after validation
@@ -144,17 +148,154 @@ async def upload_excel(
         )
 
         # Store invoices in database
-        automation_service.store_invoices_from_excel(
+        stored_invoices = automation_service.store_invoices_from_excel(
             user_id=user_uuid,
             session_id=upload_session.id,
             invoices=invoices
         )
 
-        # Mark past invoices as expired
-        automation_service.mark_past_invoices_as_expired(
-            user_id=user_uuid,
-            session_id=upload_session.id
-        )
+        # Check current time for expiration check
+        from datetime import datetime
+        from src.services.fbr_client import FBRClient
+        from src.schemas.fbr import FBREnvironment
+        from src.models.user import User
+
+        now = datetime.utcnow()
+        current_date = now.date()
+        current_time = now.time()
+
+        # Get user's FBR credentials
+        user = db.get(User, user_uuid)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        # Check if user has FBR credentials configured
+        user_fbr_token = user.fbr_sandbox_token if user.fbr_environment == "SANDBOX" else user.fbr_production_token
+        if not user_fbr_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"FBR credentials not configured. Please configure your FBR {user.fbr_environment} credentials in settings."
+            )
+
+        # Process each invoice: check expiration first, then validate locally, then validate with FBR
+        validation_service = ValidationService()
+        fbr_client = FBRClient()
+
+        validated_count = 0
+        failed_count = 0
+        expired_count = 0
+
+        try:
+            for invoice in stored_invoices:
+                # Check if invoice is already expired
+                is_expired = False
+                if invoice.scheduled_date < current_date:
+                    is_expired = True
+                elif invoice.scheduled_date == current_date and invoice.scheduled_time < current_time:
+                    is_expired = True
+
+                if is_expired:
+                    # Mark as expired, skip validation
+                    invoice.status = AutomationInvoiceStatus.EXPIRED
+                    invoice.validation_errors = "Scheduled time is in the past"
+                    expired_count += 1
+                else:
+                    # Step 1: Local validation
+                    is_valid_locally, validation_errors = validation_service.validate_invoice_locally(invoice.invoice_data)
+
+                    if not is_valid_locally:
+                        # Mark as PENDING with validation errors (user can retry)
+                        invoice.status = AutomationInvoiceStatus.PENDING
+                        invoice.validation_errors = f"Validation failed: {str(validation_errors)}"
+                        failed_count += 1
+                    else:
+                        # Step 2: FBR validation (only if local validation passed)
+                        try:
+                            # Use user's FBR environment preference
+                            environment = FBREnvironment.SANDBOX if user.fbr_environment == "SANDBOX" else FBREnvironment.PRODUCTION
+
+                            # DRY RUN MODE - Simulate FBR validation without actual API call
+                            if settings.dry_run:
+                                import random
+                                import time
+
+                                logger.info(f"[DRY RUN] Simulating FBR validation for invoice {invoice.invoice_number}")
+
+                                # Simulate 98% validation success rate (2% random failures for testing)
+                                is_valid_fbr = random.random() < 0.98
+
+                                if is_valid_fbr:
+                                    fbr_response = {
+                                        "dated": time.strftime("%Y-%m-%d %H:%M:%S"),
+                                        "validationResponse": {
+                                            "statusCode": "00",
+                                            "status": "Valid",
+                                            "error": "",
+                                            "invoiceStatuses": [{
+                                                "itemSNo": "1",
+                                                "statusCode": "00",
+                                                "status": "Valid",
+                                                "invoiceNo": "",
+                                                "errorCode": "",
+                                                "error": ""
+                                            }]
+                                        }
+                                    }
+                                    reference_number = None
+                                    logger.info(f"[DRY RUN] Simulated validation SUCCESS for invoice {invoice.invoice_number}")
+                                else:
+                                    # Simulate random validation error
+                                    error_scenarios = [
+                                        {"code": "0052", "msg": "HS Code does not match with provided sale type"},
+                                        {"code": "0078", "msg": "Valid Item Sr. No. is mandatory where SRO/Schedule No. is provided"}
+                                    ]
+                                    error = random.choice(error_scenarios)
+                                    fbr_response = {
+                                        "dated": time.strftime("%Y-%m-%d %H:%M:%S"),
+                                        "validationResponse": {
+                                            "statusCode": "01",
+                                            "status": "Invalid",
+                                            "error": f"[{error['code']}] {error['msg']}",
+                                            "invoiceStatuses": []
+                                        }
+                                    }
+                                    reference_number = None
+                                    logger.warning(f"[DRY RUN] Simulated validation FAILURE for invoice {invoice.invoice_number}: {error['msg']}")
+                            else:
+                                # REAL MODE - Actual FBR API call
+                                is_valid_fbr, fbr_response, reference_number = await fbr_client.validate_invoice_with_user_credentials(
+                                    invoice_data=invoice.invoice_data,
+                                    environment=environment,
+                                    fbr_token=user_fbr_token
+                                )
+
+                            if is_valid_fbr:
+                                # Mark as validated and ready for posting
+                                invoice.status = AutomationInvoiceStatus.VALIDATED
+                                invoice.fbr_response = fbr_response
+                                validated_count += 1
+                            else:
+                                # Mark as PENDING with FBR validation errors (user can retry)
+                                invoice.status = AutomationInvoiceStatus.PENDING
+                                invoice.validation_errors = f"FBR validation failed: {str(fbr_response)}"
+                                invoice.fbr_response = fbr_response
+                                failed_count += 1
+
+                        except Exception as e:
+                            # FBR API call failed (network error, timeout, etc.) - mark as PENDING
+                            invoice.status = AutomationInvoiceStatus.PENDING
+                            invoice.validation_errors = f"FBR validation error: {str(e)}"
+                            failed_count += 1
+
+                db.add(invoice)
+
+            db.commit()
+        finally:
+            # Always close the FBR client
+            await fbr_client.client.aclose()
 
         # Update session status to completed
         upload_session.processing_status = "completed"
@@ -162,10 +303,19 @@ async def upload_excel(
         db.add(upload_session)
         db.commit()
 
+        # Build detailed response message
+        message_parts = [f"Excel file uploaded and validated with FBR."]
+        if validated_count > 0:
+            message_parts.append(f"{validated_count} invoice(s) validated and ready for posting.")
+        if failed_count > 0:
+            message_parts.append(f"{failed_count} invoice(s) failed validation.")
+        if expired_count > 0:
+            message_parts.append(f"{expired_count} invoice(s) expired (scheduled time in the past).")
+
         return ExcelUploadResponse(
             session_id=upload_session.id,
             total_rows=len(invoices),
-            message=f"Excel file uploaded successfully. {len(invoices)} invoices scheduled for processing."
+            message=" ".join(message_parts)
         )
 
     except HTTPException:

@@ -12,36 +12,45 @@ RUN apk add --no-cache \
     libffi-dev \
     openssl-dev \
     cargo \
-    curl
+    rust
 
 # Install uv
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.local/bin:$PATH"
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # Copy dependency files
 COPY pyproject.toml uv.lock ./
 
-# Install Python dependencies using uv sync
-RUN uv sync --no-dev --no-install-project
+# Install dependencies with uv (no cache, no dev dependencies)
+RUN uv sync --no-cache --no-dev --no-install-project
 
-# Aggressive cleanup to reduce size
+# Aggressive cleanup in builder stage
 RUN find /app/.venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
     find /app/.venv -type f -name "*.pyc" -delete && \
     find /app/.venv -type f -name "*.pyo" -delete && \
     find /app/.venv -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
     find /app/.venv -type d -name "test" -exec rm -rf {} + 2>/dev/null || true && \
-    find /app/.venv -type d -name "*.dist-info" -exec sh -c 'rm -f "$1"/RECORD "$1"/INSTALLER "$1"/direct_url.json' _ {} \; && \
     find /app/.venv -type f -name "*.md" -delete 2>/dev/null || true && \
     find /app/.venv -type f -name "*.txt" ! -name "requirements.txt" -delete 2>/dev/null || true && \
     find /app/.venv -type f -name "*.rst" -delete 2>/dev/null || true && \
     find /app/.venv -type f -name "*.pyi" -delete 2>/dev/null || true && \
-    find /app/.venv -type f -name "*.typed" -delete 2>/dev/null || true && \
-    find /app/.venv -name "*.so" -exec strip --strip-all {} \; 2>/dev/null || true && \
-    rm -rf /app/.venv/lib/python3.11/site-packages/pip* 2>/dev/null || true && \
-    rm -rf /app/.venv/lib/python3.11/site-packages/setuptools* 2>/dev/null || true && \
-    rm -rf /app/.venv/lib/python3.11/site-packages/wheel* 2>/dev/null || true
+    find /app/.venv -name "*.so" -exec strip --strip-unneeded {} \; 2>/dev/null || true && \
+    find /app/.venv -name "*.a" -delete 2>/dev/null || true && \
+    find /app/.venv -type f -name "*.c" -delete 2>/dev/null || true && \
+    find /app/.venv -type f -name "*.h" -delete 2>/dev/null || true && \
+    find /app/.venv -type d -name "locale" -exec rm -rf {} + 2>/dev/null || true && \
+    find /app/.venv -type d -name "examples" -exec rm -rf {} + 2>/dev/null || true && \
+    find /app/.venv -type d -name "docs" -exec rm -rf {} + 2>/dev/null || true && \
+    rm -rf /app/.venv/lib/python3.11/site-packages/pip* && \
+    rm -rf /app/.venv/lib/python3.11/site-packages/setuptools* && \
+    rm -rf /app/.venv/lib/python3.11/site-packages/wheel* && \
+    rm -rf /app/.venv/lib/python3.11/site-packages/numpy/tests && \
+    rm -rf /app/.venv/lib/python3.11/site-packages/pandas/tests && \
+    rm -rf /app/.venv/lib/python3.11/site-packages/*/test && \
+    rm -rf /app/.venv/lib/python3.11/site-packages/pygments/styles && \
+    rm -rf /app/.venv/lib/python3.11/site-packages/pygments/lexers && \
+    rm -rf /app/.venv/lib/python3.11/site-packages/pygments/formatters
 
-# Production stage
+# Production stage - minimal runtime image
 FROM python:3.11-alpine
 
 # Set working directory
@@ -51,11 +60,12 @@ WORKDIR /app
 RUN apk add --no-cache \
     libpq \
     libffi \
-    openssl && \
+    openssl \
+    libmagic && \
     rm -rf /var/cache/apk/*
 
-# Copy virtual environment from builder
-COPY --from=builder /app/.venv /app/.venv
+# Create non-root user first
+RUN adduser -D -u 1000 appuser
 
 # Set environment variables
 ENV PATH="/app/.venv/bin:$PATH" \
@@ -63,12 +73,13 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONOPTIMIZE=2
 
-# Create non-root user
-RUN adduser -D -u 1000 appuser && \
-    chown -R appuser:appuser /app
+# Copy virtual environment from builder with correct ownership
+COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
 
-# Copy application code
+# Copy application code and migration files
 COPY --chown=appuser:appuser src/ ./src/
+COPY --chown=appuser:appuser alembic/ ./alembic/
+COPY --chown=appuser:appuser alembic.ini ./
 
 # Switch to non-root user
 USER appuser
@@ -80,5 +91,5 @@ EXPOSE 7860
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:7860/health')" || exit 1
 
-# Run the application with proxy headers support for Hugging Face Spaces
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "7860", "--proxy-headers", "--forwarded-allow-ips", "*"]
+# Run the application directly with uvicorn
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "7860"]

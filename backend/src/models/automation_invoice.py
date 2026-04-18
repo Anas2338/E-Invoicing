@@ -18,6 +18,7 @@ class AutomationInvoiceStatus(str, Enum):
     VALIDATED = "validated"
     SUBMITTED = "submitted"
     FAILED = "failed"
+    BLOCKED = "blocked"
 
 
 class InvoiceSource(str, Enum):
@@ -70,8 +71,17 @@ class AutomationInvoice(SQLModel, table=True):
     validation_errors: Optional[str] = Field(default=None, max_length=5000)
     fbr_response: Optional[dict] = Field(default=None, sa_column=Column(JSON))
 
+    # AI Agent retry tracking
+    retry_count: int = Field(default=0, ge=0)
+    last_retry_at: Optional[datetime] = Field(default=None)
+    priority: int = Field(default=5, ge=1, le=10)  # 1=highest, 10=lowest
+
+    # Blocking reason (for blocked status)
+    reason: Optional[str] = Field(default=None, max_length=1000)
+
     # Timestamps
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
     processed_at: Optional[datetime] = Field(default=None)
 
     # Relationships
@@ -96,6 +106,20 @@ class AutomationInvoice(SQLModel, table=True):
         Index(
             "idx_pending_scheduled",
             "status",
+            "scheduled_date",
+            "scheduled_time"
+        ),
+        # AI Agent retry tracking index
+        Index(
+            "idx_retry_tracking",
+            "status",
+            "last_retry_at",
+            "retry_count"
+        ),
+        # AI Agent priority processing index
+        Index(
+            "idx_priority_processing",
+            "priority",
             "scheduled_date",
             "scheduled_time"
         ),

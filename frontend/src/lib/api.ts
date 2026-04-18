@@ -1,4 +1,5 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8001/api/v1';
+// Use relative path to leverage Next.js proxy
+const API_BASE_URL = '/api/v1';
 
 class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -7,33 +8,43 @@ class ApiError extends Error {
   }
 }
 
-async function fetchWithAuth(url: string, options: RequestInit = {}) {
-  const token = localStorage.getItem('access_token');
+// Helper function to get cookie value by name
+function getCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null;
 
-  if (!token) {
-    // Clear any stale data and redirect to login
-    localStorage.removeItem('user');
-    localStorage.removeItem('access_token');
-    window.location.href = '/login';
-    throw new ApiError(401, 'No authentication token found');
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) {
+    return parts.pop()?.split(';').shift() || null;
   }
+  return null;
+}
 
-  const headers = {
+async function fetchWithAuth(url: string, options: RequestInit = {}) {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${token}`,
-    ...options.headers,
+    ...options.headers as Record<string, string>,
   };
+
+  // Add CSRF token for state-changing requests
+  const method = options.method?.toUpperCase() || 'GET';
+  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+    const csrfToken = getCookie('csrf_token');
+    if (csrfToken) {
+      headers['X-CSRF-Token'] = csrfToken;
+    }
+  }
 
   const response = await fetch(`${API_BASE_URL}${url}`, {
     ...options,
     headers,
+    credentials: 'include', // Important: send httpOnly cookies with request
   });
 
   if (!response.ok) {
     // Handle 401 Unauthorized - token expired or invalid
     if (response.status === 401) {
       localStorage.removeItem('user');
-      localStorage.removeItem('access_token');
       window.location.href = '/login';
       throw new ApiError(401, 'Session expired. Please login again.');
     }

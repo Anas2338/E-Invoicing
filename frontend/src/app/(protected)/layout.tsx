@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useAuth } from '@/providers/auth-provider';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 import { Navigation } from '@/components/navigation';
 
 export default function ProtectedLayout({
@@ -9,27 +10,16 @@ export default function ProtectedLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const { user, loading } = useAuth();
   const router = useRouter();
-  const pathname = usePathname();
-  const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
-    try {
-      const token = localStorage.getItem('access_token');
-      const user = localStorage.getItem('user');
-
-      if (token && user) {
-        setIsChecking(false);
-      } else {
-        router.push('/login');
-      }
-    } catch (error) {
-      console.error('Error in protected layout:', error);
+    if (!loading && !user) {
       router.push('/login');
     }
-  }, []);
+  }, [user, loading, router]);
 
-  if (isChecking) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50 dark:bg-[#0a0a0a]">
         <div className="text-center">
@@ -38,6 +28,10 @@ export default function ProtectedLayout({
         </div>
       </div>
     );
+  }
+
+  if (!user) {
+    return null;
   }
 
   return (

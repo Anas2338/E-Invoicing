@@ -42,7 +42,7 @@ export function RecentInvoices({ invoices }: RecentInvoicesProps) {
                 </div>
                 <div className="hidden md:block">
                   <div className="text-sm text-[#202223] dark:text-[#e3e3e3]">
-                    {new Date(invoice.date).toLocaleDateString()}
+                    {new Date(invoice.date).toLocaleDateString('en-US', { timeZone: 'Asia/Karachi' })}
                   </div>
                 </div>
                 <div className="hidden md:block">
