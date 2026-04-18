@@ -52,6 +52,7 @@ USER agent
 
 # Environment variables
 ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONPATH="/app/backend:$PYTHONPATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
