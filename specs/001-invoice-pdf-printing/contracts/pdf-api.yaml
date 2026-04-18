@@ -1,0 +1,231 @@
+openapi: 3.0.3
+info:
+  title: Invoice PDF Printing API
+  description: API endpoints for generating PDF documents of submitted invoices with FBR compliance elements
+  version: 1.0.0
+  contact:
+    name: FBR Invoice Integration Portal
+
+servers:
+  - url: /api/v1
+    description: API v1 base path
+
+security:
+  - BearerAuth: []
+
+paths:
+  /automation/invoices/{invoice_id}/pdf:
+    get:
+      summary: Generate single invoice PDF
+      description: |
+        Generates a PDF document for a single submitted invoice. The PDF includes:
+        - Complete invoice data (header, line items, totals)
+        - FBR Digital Invoicing System logo
+        - QR code containing the FBR-issued USIN
+
+        **Requirements**:
+        - Invoice must belong to the authenticated user
+        - Invoice status must be "submitted"
+        - Invoice must have a valid FBR response with USIN
+      operationId: generateInvoicePdf
+      tags:
+        - PDF Generation
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          description: UUID of the invoice to print
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: PDF generated successfully
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+          headers:
+            Content-Disposition:
+              description: Suggests filename for download
+              schema:
+                type: string
+                example: 'attachment; filename="Invoice-INV001-2025-04-21.pdf"'
+            Content-Type:
+              description: MIME type
+              schema:
+                type: string
+                example: application/pdf
+        '400':
+          description: Bad request - invoice not in valid state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalidStatus:
+                  value:
+                    detail: "Invoice must be submitted before printing"
+                missingUsin:
+                  value:
+                    detail: "Invoice does not have a valid FBR submission response"
+        '403':
+          description: Forbidden - user does not own this invoice
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                detail: "You do not have permission to access this invoice"
+        '404':
+          description: Invoice not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                detail: "Invoice not found"
+        '500':
+          description: Internal server error - PDF generation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                logoMissing:
+                  value:
+                    detail: "FBR logo file not found"
+                generationFailed:
+                  value:
+                    detail: "Failed to generate PDF"
+
+  /automation/invoices/batch-pdf:
+    post:
+      summary: Generate batch invoice PDF
+      description: |
+        Generates a single PDF document containing multiple invoices with page breaks.
+        Invoices are ordered by selection order (the order of IDs in the request array).
+
+        **Requirements**:
+        - Maximum 50 invoices per request
+        - All invoices must belong to the authenticated user
+        - All invoices must have status "submitted"
+        - All invoices must have valid FBR responses with USIN
+      operationId: generateBatchPdf
+      tags:
+        - PDF Generation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchPdfRequest'
+            example:
+              invoice_ids:
+                - "550e8400-e29b-41d4-a716-446655440000"
+                - "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+                - "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+      responses:
+        '200':
+          description: Batch PDF generated successfully
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+          headers:
+            Content-Disposition:
+              description: Suggests filename for download
+              schema:
+                type: string
+                example: 'attachment; filename="Invoices-Batch-2025-04-14T10-30-00.pdf"'
+            Content-Type:
+              description: MIME type
+              schema:
+                type: string
+                example: application/pdf
+        '400':
+          description: Bad request - validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                emptyBatch:
+                  value:
+                    detail: "At least one invoice ID required"
+                limitExceeded:
+                  value:
+                    detail: "Maximum 50 invoices allowed per batch"
+                invalidStatus:
+                  value:
+                    detail: "All invoices must be submitted before printing"
+                missingUsin:
+                  value:
+                    detail: "One or more invoices do not have valid FBR submission responses"
+        '403':
+          description: Forbidden - user does not own one or more invoices
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                detail: "You do not have permission to access one or more invoices"
+        '404':
+          description: One or more invoices not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                detail: "One or more invoices not found"
+        '500':
+          description: Internal server error - PDF generation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                detail: "Failed to generate batch PDF"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from authentication endpoint
+
+  schemas:
+    BatchPdfRequest:
+      type: object
+      required:
+        - invoice_ids
+      properties:
+        invoice_ids:
+          type: array
+          description: Array of invoice UUIDs to include in batch PDF (max 50)
+          minItems: 1
+          maxItems: 50
+          items:
+            type: string
+            format: uuid
+          example:
+            - "550e8400-e29b-41d4-a716-446655440000"
+            - "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+
+    Error:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: Human-readable error message
+          example: "Invoice not found"
+
+tags:
+  - name: PDF Generation
+    description: Endpoints for generating invoice PDFs with FBR compliance

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import { useAuth } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Home, FileText, User, LogOut, Menu, X, Zap } from 'lucide-react';
@@ -9,12 +10,11 @@ import { Home, FileText, User, LogOut, Menu, X, Zap } from 'lucide-react';
 export function Navigation() {
   const router = useRouter();
   const pathname = usePathname();
+  const { signOut } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const handleLogout = () => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('user');
-    router.push('/login');
+  const handleLogout = async () => {
+    await signOut();
   };
 
   const navItems = [

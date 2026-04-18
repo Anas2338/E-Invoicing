@@ -182,6 +182,18 @@ class AutomationService:
         )
         return self.db.exec(statement).all()
 
+    def get_invoice_by_id(self, invoice_id: UUID) -> Optional[AutomationInvoice]:
+        """
+        Get invoice by ID.
+
+        Args:
+            invoice_id: Invoice UUID
+
+        Returns:
+            AutomationInvoice or None if not found
+        """
+        return self.db.get(AutomationInvoice, invoice_id)
+
     def update_invoice_status(
         self,
         invoice_id: UUID,
@@ -266,6 +278,7 @@ class AutomationService:
             func.sum(func.cast(AutomationInvoice.status == AutomationInvoiceStatus.VALIDATED, sa.Integer)).label('validated'),
             func.sum(func.cast(AutomationInvoice.status == AutomationInvoiceStatus.SUBMITTED, sa.Integer)).label('submitted'),
             func.sum(func.cast(AutomationInvoice.status == AutomationInvoiceStatus.FAILED, sa.Integer)).label('failed'),
+            func.sum(func.cast(AutomationInvoice.status == 'blocked', sa.Integer)).label('blocked'),
         ).where(AutomationInvoice.user_id == user_id)
 
         result = self.db.exec(statement).first()
@@ -277,11 +290,12 @@ class AutomationService:
             "validated_count": result.validated or 0,
             "submitted_count": result.submitted or 0,
             "failed_count": result.failed or 0,
+            "blocked_count": result.blocked or 0,
         }
 
     def retry_failed_invoice(self, invoice_id: UUID, user_id: UUID) -> AutomationInvoice:
         """
-        Reset failed invoice to pending for retry.
+        Retry a pending invoice by re-validating it immediately.
 
         Args:
             invoice_id: Invoice UUID
@@ -291,7 +305,7 @@ class AutomationService:
             Updated AutomationInvoice
 
         Raises:
-            ValueError: If invoice is not found, not owned by user, or not in failed status
+            ValueError: If invoice is not found, not owned by user, or not in pending status
         """
         invoice = self.db.get(AutomationInvoice, invoice_id)
         if not invoice:
@@ -301,26 +315,51 @@ class AutomationService:
         if invoice.user_id != user_id:
             raise ValueError(f"Invoice {invoice_id} not found")  # Don't reveal existence
 
-        if invoice.status != AutomationInvoiceStatus.FAILED:
-            raise ValueError(f"Invoice must be in 'failed' status to retry. Current status: {invoice.status}")
+        if invoice.status != AutomationInvoiceStatus.PENDING:
+            raise ValueError(f"Invoice must be in 'pending' status to retry. Current status: {invoice.status}")
 
-        # Reset to pending
-        invoice.status = AutomationInvoiceStatus.PENDING
-        invoice.validation_errors = None
-        invoice.fbr_response = None
-        invoice.processed_at = None
+        # Re-validate invoice data
+        from src.utils.invoice_validator import InvoiceValidator
+        is_valid, validation_error = InvoiceValidator.validate_invoice_data(invoice.invoice_data)
 
-        self.db.add(invoice)
-        self.db.commit()
-        self.db.refresh(invoice)
+        if is_valid:
+            # Validation passed - set to VALIDATED so AI agent will process it
+            invoice.status = AutomationInvoiceStatus.VALIDATED
+            invoice.validation_errors = None
+            invoice.fbr_response = None
+            invoice.processed_at = None
 
-        # Log retry action
-        self.log_automation_activity(
-            invoice_id=invoice_id,
-            action=AutomationLogAction.RETRY,
-            status=AutomationLogStatus.SUCCESS,
-            details={"message": "Invoice reset to pending for retry"}
-        )
+            self.db.add(invoice)
+            self.db.commit()
+            self.db.refresh(invoice)
+
+            # Log successful retry
+            self.log_automation_activity(
+                invoice_id=invoice_id,
+                action=AutomationLogAction.RETRY,
+                status=AutomationLogStatus.SUCCESS,
+                details={"message": "Invoice re-validated successfully and ready for AI agent processing"}
+            )
+        else:
+            # Validation failed - keep as PENDING with updated error message
+            invoice.validation_errors = validation_error
+            invoice.fbr_response = None
+            invoice.processed_at = None
+
+            self.db.add(invoice)
+            self.db.commit()
+            self.db.refresh(invoice)
+
+            # Log failed retry
+            self.log_automation_activity(
+                invoice_id=invoice_id,
+                action=AutomationLogAction.RETRY,
+                status=AutomationLogStatus.FAILED,
+                details={"message": f"Invoice validation failed: {validation_error}"}
+            )
+
+            # Raise error to inform user
+            raise ValueError(f"Invoice validation failed: {validation_error}")
 
         return invoice
 

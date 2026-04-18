@@ -1,8 +1,20 @@
 // API Service Layer for FBR Invoice Portal
 
-// Configuration
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8001/api/v1';
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8001';
+// Configuration - use relative path to leverage Next.js proxy
+const API_BASE_URL = '/api/v1';
+const BACKEND_URL = '';
+
+// Helper function to get cookie value by name
+function getCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null;
+
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) {
+    return parts.pop()?.split(';').shift() || null;
+  }
+  return null;
+}
 
 // Base API client
 class ApiClient {
@@ -19,22 +31,25 @@ class ApiClient {
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
 
-    const config: RequestInit = {
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-      ...options,
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...options.headers as Record<string, string>,
     };
 
-    // Add auth token if available (exclude only login/register endpoints)
-    const token = this.getAuthToken();
-    const publicEndpoints = ['/auth/login', '/auth/register', '/auth/refresh'];
-    const isPublicEndpoint = publicEndpoints.some(path => endpoint.startsWith(path));
-
-    if (token && !isPublicEndpoint) {
-      (config.headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+    // Add CSRF token for state-changing requests
+    const method = options.method?.toUpperCase() || 'GET';
+    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+      const csrfToken = getCookie('csrf_token');
+      if (csrfToken) {
+        headers['X-CSRF-Token'] = csrfToken;
+      }
     }
+
+    const config: RequestInit = {
+      headers,
+      credentials: 'include', // Important: send httpOnly cookies with request
+      ...options,
+    };
 
     const response = await fetch(url, config);
 
@@ -53,29 +68,6 @@ class ApiClient {
     }
 
     return {} as T;
-  }
-
-  protected getAuthToken(): string | null {
-    // In a real app, you'd get this from a secure store
-    // For now, we'll use localStorage as a placeholder
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('access_token');
-    }
-    return null;
-  }
-
-  // Set auth token
-  public setAuthToken(token: string): void {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('access_token', token);
-    }
-  }
-
-  // Remove auth token
-  public removeAuthToken(): void {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('access_token');
-    }
   }
 }
 
@@ -99,7 +91,7 @@ export class AuthService extends ApiClient {
     await this.request('/auth/logout', {
       method: 'POST',
     });
-    this.removeAuthToken();
+    // Cookies are cleared by the backend
   }
 
   async getCurrentUser(): Promise<any> {
@@ -178,12 +170,9 @@ export class InvoiceService extends ApiClient {
 
   async getInvoicePdf(id: string): Promise<Blob> {
     const url = `${this.baseUrl}/invoices/${id}/pdf`;
-    const token = this.getAuthToken();
 
     const response = await fetch(url, {
-      headers: {
-        ...(token && { 'Authorization': `Bearer ${token}` }),
-      },
+      credentials: 'include', // Important: send httpOnly cookies with request
     });
 
     if (!response.ok) {
@@ -212,6 +201,16 @@ export class UserService extends ApiClient {
 
   async getEnvironmentPreference(): Promise<{ environment: string; canAccessProduction: boolean }> {
     return this.request('/auth/users/me/environment');
+  }
+
+  async updateFbrCredentials(credentials: {
+    fbr_sandbox_token?: string;
+    fbr_production_token?: string;
+  }): Promise<{ success: boolean; message: string }> {
+    return this.request('/auth/profile/fbr-credentials', {
+      method: 'PUT',
+      body: JSON.stringify(credentials),
+    });
   }
 }
 

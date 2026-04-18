@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fbr_invoice_portal}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - einvoicing-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - FBR_SANDBOX_BASE_URL=${FBR_SANDBOX_BASE_URL}
+      - FBR_PRODUCTION_BASE_URL=${FBR_PRODUCTION_BASE_URL}
+    ports:
+      - "8000:8001"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - einvoicing-network
+    restart: unless-stopped
+
+  ai-agent:
+    build:
+      context: ./ai-agent
+      dockerfile: Dockerfile
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - FBR_SANDBOX_BASE_URL=${FBR_SANDBOX_BASE_URL}
+      - FBR_PRODUCTION_BASE_URL=${FBR_PRODUCTION_BASE_URL}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - AGENT_CHECK_INTERVAL=300
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "from pathlib import Path; import sys; from datetime import datetime, timedelta; heartbeat = Path('/tmp/agent_heartbeat.txt'); sys.exit(0 if heartbeat.exists() and (datetime.now() - datetime.fromtimestamp(heartbeat.stat().st_mtime)) < timedelta(minutes=10) else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - einvoicing-network
+    volumes:
+      - agent_logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+networks:
+  einvoicing-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  agent_logs:

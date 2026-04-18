@@ -76,7 +76,8 @@ export function InvoiceDetailModal({ invoice, onClose, onRetry }: InvoiceDetailM
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
+      timeZone: 'Asia/Karachi'
     });
   };
 
@@ -103,7 +104,7 @@ export function InvoiceDetailModal({ invoice, onClose, onRetry }: InvoiceDetailM
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {inv.status === 'failed' && (
+            {inv.status === 'pending' && (
               <Button onClick={() => onRetry(inv.id)} size="sm" variant="outline">
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Retry

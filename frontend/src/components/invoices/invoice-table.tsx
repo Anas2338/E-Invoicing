@@ -2,6 +2,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Eye, Edit, CheckCircle, Send, Trash2, Loader2 } from 'lucide-react';
+import { PrintInvoiceButton } from '@/components/automation/PrintInvoiceButton';
 
 interface Invoice {
   id: string;
@@ -83,10 +84,10 @@ export function InvoiceTable({
     if (!onSelectionChange) return;
 
     if (checked) {
-      // Select all deletable invoices (DRAFT or FAILED)
+      // Select all deletable invoices (DRAFT, VALIDATED, or FAILED)
       const deletableIds = new Set(
         invoices
-          .filter(inv => inv.status === 'DRAFT' || inv.status === 'FAILED')
+          .filter(inv => inv.status === 'DRAFT' || inv.status === 'VALIDATED' || inv.status === 'FAILED')
           .map(inv => inv.id)
       );
       onSelectionChange(deletableIds);
@@ -107,7 +108,7 @@ export function InvoiceTable({
     onSelectionChange(newSelection);
   };
 
-  const deletableInvoices = invoices.filter(inv => inv.status === 'DRAFT' || inv.status === 'FAILED');
+  const deletableInvoices = invoices.filter(inv => inv.status === 'DRAFT' || inv.status === 'VALIDATED' || inv.status === 'FAILED');
   const allDeletableSelected = deletableInvoices.length > 0 &&
     deletableInvoices.every(inv => selectedInvoices.has(inv.id));
   const someDeletableSelected = deletableInvoices.some(inv => selectedInvoices.has(inv.id));
@@ -141,7 +142,7 @@ export function InvoiceTable({
       {/* Mobile Card View */}
       <div className="block lg:hidden space-y-4">
         {invoices.map((invoice) => {
-          const isDeletable = invoice.status === 'DRAFT' || invoice.status === 'FAILED';
+          const isDeletable = invoice.status === 'DRAFT' || invoice.status === 'VALIDATED' || invoice.status === 'FAILED';
           const isSelected = selectedInvoices.has(invoice.id);
 
           return (
@@ -186,7 +187,8 @@ export function InvoiceTable({
                     {new Date(invoice.date).toLocaleDateString('en-US', {
                       year: 'numeric',
                       month: 'short',
-                      day: 'numeric'
+                      day: 'numeric',
+                      timeZone: 'Asia/Karachi'
                     })}
                   </span>
                 </div>
@@ -271,6 +273,16 @@ export function InvoiceTable({
                     {postingInvoiceId === invoice.id ? 'Posting...' : 'Post'}
                   </Button>
                 )}
+                {(invoice.status === 'POSTED' || invoice.status === 'submitted') && (
+                  <div className="flex-1 min-w-[80px]">
+                    <PrintInvoiceButton
+                      invoiceId={invoice.id}
+                      invoiceNumber={invoice.invoiceNumber}
+                      status={invoice.status}
+                      className="w-full h-9"
+                    />
+                  </div>
+                )}
                 {onDelete && isDeletable && (
                   <Button
                     variant="outline"
@@ -334,7 +346,7 @@ export function InvoiceTable({
         </thead>
         <tbody className="bg-white dark:bg-[#1a1a1a] divide-y divide-[#e1e3e5] dark:divide-[#2e2e2e]">
           {invoices.map((invoice) => {
-            const isDeletable = invoice.status === 'DRAFT' || invoice.status === 'FAILED';
+            const isDeletable = invoice.status === 'DRAFT' || invoice.status === 'VALIDATED' || invoice.status === 'FAILED';
             const isSelected = selectedInvoices.has(invoice.id);
 
             return (
@@ -451,6 +463,15 @@ export function InvoiceTable({
                         <Send className="h-4 w-4" />
                       )}
                     </Button>
+                  )}
+
+                  {/* Print Button - Only for POSTED or submitted */}
+                  {(invoice.status === 'POSTED' || invoice.status === 'submitted') && (
+                    <PrintInvoiceButton
+                      invoiceId={invoice.id}
+                      invoiceNumber={invoice.invoiceNumber}
+                      status={invoice.status}
+                    />
                   )}
 
                   {/* Delete Button - Only for DRAFT or FAILED */}

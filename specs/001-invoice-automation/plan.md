@@ -140,9 +140,11 @@ backend/
 │   │       └── config.py              # Agent configuration
 │   ├── api/v1/
 │   │   └── automation/
-│   │       └── agent_status.py        # NEW: AI Agent status endpoint
+│   │       ├── agent_status.py        # NEW: AI Agent status endpoint
+│   │       └── file_management.py     # NEW: Upload session & invoice management endpoints
 │   └── schemas/
-│       └── agent.py                   # NEW: AI Agent schemas
+│       ├── agent.py                   # NEW: AI Agent schemas
+│       └── file_management.py         # NEW: File management schemas
 └── tests/
     └── unit/
         └── workers/
@@ -150,18 +152,40 @@ backend/
 
 ai-agent/                              # NEW: Docker container for AI Agent
 ├── Dockerfile                         # AI Agent container definition
-├── requirements.txt                   # AI Agent dependencies
+├── pyproject.toml                     # AI Agent dependencies
 ├── main.py                            # AI Agent entry point
 └── config/
     └── ralph_loop.yaml                # Ralph Loop configuration
 
 docker-compose.yml                     # EXTEND: add ai-agent service
 
-frontend/                              # NO CHANGES
-└── (existing structure unchanged)
+frontend/                              # MINOR UPDATES: Text changes + file management + optional observability
+├── src/
+│   ├── app/(protected)/automation/
+│   │   ├── page.tsx                   # UPDATE: Change "FTE worker" to "AI Agent"
+│   │   ├── upload/
+│   │   │   └── page.tsx               # UPDATE: Change "FTE worker" to "AI Agent"
+│   │   ├── uploads/                   # NEW: Upload history page
+│   │   │   └── page.tsx               # NEW: View and delete upload sessions
+│   │   ├── dashboard/
+│   │   │   └── page.tsx               # EXISTING: Already implemented
+│   │   └── agent/                     # NEW (OPTIONAL): AI Agent observability
+│   │       └── page.tsx               # NEW: Agent health + decisions log
+│   ├── components/automation/
+│   │   ├── ExcelUploadForm.tsx        # EXISTING: Already implemented
+│   │   ├── AutomationDashboard.tsx    # EXISTING: Already implemented
+│   │   ├── InvoiceList.tsx            # UPDATE: Add bulk selection, block/unblock, delete
+│   │   ├── InvoiceDetail.tsx          # UPDATE: Add block/unblock/delete buttons
+│   │   ├── InvoiceDetailModal.tsx     # EXISTING: Already implemented
+│   │   ├── InvoiceTable.tsx           # EXISTING: Already implemented
+│   │   ├── AutomationStats.tsx        # UPDATE: Add "blocked" count
+│   │   ├── UploadHistory.tsx          # NEW: Upload sessions table with delete
+│   │   └── AgentStatus.tsx            # NEW (OPTIONAL): Agent health component
+│   └── services/
+│       └── automationApi.ts           # EXTEND: Add file management methods + agent methods
 ```
 
-**Structure Decision**: Web application with backend + AI agent container. The AI Agent runs as a separate Docker container managed by docker-compose, communicating with the PostgreSQL database and reusing backend services. The existing FTE worker (fte_worker.py, fte_worker_service.py) will be deprecated and replaced by the AI Agent. Frontend remains unchanged as all automation is backend-driven.
+**Structure Decision**: Web application with backend + AI agent container + frontend UI. The AI Agent runs as a separate Docker container managed by docker-compose, communicating with the PostgreSQL database and reusing backend services. The existing FTE worker (fte_worker.py, fte_worker_service.py) will be deprecated and replaced by the AI Agent. Frontend automation UI is already 95% implemented - only requires minor text updates and optional AI Agent observability page.
 
 ## Complexity Tracking
 
@@ -219,7 +243,321 @@ frontend/                              # NO CHANGES
 
 ---
 
-## Phase 2: Implementation Tasks
+## Phase 3: Frontend Changes
+
+**Status**: 95% COMPLETE (Already Implemented)
+
+**Discovery**: Frontend automation UI was already built in previous work. Only minor updates needed.
+
+### Already Implemented (No Changes Required)
+
+**Pages** (3/3 core pages):
+1. ✅ `/automation` - Landing page with feature overview
+2. ✅ `/automation/upload` - Excel template download + file upload
+3. ✅ `/automation/dashboard` - Statistics + invoice list + detail view
+
+**Components** (7 components, 1,451 lines):
+1. ✅ `ExcelUploadForm.tsx` - Template download + file upload with validation
+2. ✅ `AutomationDashboard.tsx` - Statistics cards (6 metrics)
+3. ✅ `InvoiceList.tsx` - Invoice table with filters and pagination
+4. ✅ `InvoiceDetail.tsx` - Full invoice details with retry button
+5. ✅ `InvoiceDetailModal.tsx` - Modal version of detail view
+6. ✅ `InvoiceTable.tsx` - Reusable table component
+7. ✅ `AutomationStats.tsx` - Reusable stats component
+
+**API Client** (Complete):
+- ✅ `automationApi.ts` - All 8 methods implemented:
+  - downloadTemplate()
+  - uploadExcel(file)
+  - getUploadStatus(sessionId)
+  - getDashboardStats()
+  - getInvoiceList(filters)
+  - getInvoiceDetail(id)
+  - downloadExcel(sessionId)
+  - retryInvoice(id)
+
+**Features Working**:
+- ✅ Excel template download
+- ✅ File upload with client-side validation
+- ✅ Dashboard statistics (6 cards)
+- ✅ Invoice list with status/date filters
+- ✅ Pagination (20 per page)
+- ✅ Invoice detail view with logs
+- ✅ Manual retry for failed invoices
+- ✅ Excel export
+- ✅ Dark mode support
+- ✅ Responsive design
+- ✅ Loading states and error handling
+
+### Required Changes
+
+#### 1. Text Updates (REQUIRED - 5 minutes)
+
+**File**: `frontend/src/app/(protected)/automation/page.tsx`
+
+**Change 1** (Line 29):
+```typescript
+// FROM:
+<h2>Welcome to Digital FTE</h2>
+<p>Automate your invoice submissions with our Excel-based bulk upload system.</p>
+
+// TO:
+<h2>Welcome to AI-Powered Invoice Automation</h2>
+<p>Automate your invoice submissions with our intelligent AI Agent and Excel-based bulk upload system.
+Schedule invoices to be automatically validated and submitted to FBR with 5-minute precision and smart error handling.</p>
+```
+
+**Change 2** (Line 84):
+```typescript
+// FROM:
+<span>Our FTE worker automatically processes invoices at scheduled times</span>
+
+// TO:
+<span>Our AI Agent automatically processes invoices at scheduled times with 5-minute precision</span>
+```
+
+**File**: `frontend/src/app/(protected)/automation/upload/page.tsx`
+
+**Change 3** (Line 66):
+```typescript
+// FROM:
+<span>FTE worker processes invoices hourly at the top of each hour</span>
+
+// TO:
+<span>AI Agent processes invoices every 5 minutes with intelligent error handling and adaptive retry</span>
+```
+
+#### 2. File Management Features (REQUIRED - User Story 6)
+
+**New Page**: `frontend/src/app/(protected)/automation/uploads/page.tsx`
+
+**Purpose**: Display upload history with ability to delete upload sessions
+
+**Features**:
+- Upload sessions table with columns: upload date, invoice count, status breakdown (pending/submitted/failed/blocked)
+- Delete button for each session (disabled if any invoices submitted)
+- Confirmation dialog before deletion
+- Real-time status updates
+
+**New Component**: `frontend/src/components/automation/UploadHistory.tsx`
+
+**Updated Component**: `frontend/src/components/automation/InvoiceList.tsx`
+
+**Add Features**:
+- Bulk selection checkboxes for invoices
+- "Block Selected" button (only for pending invoices)
+- "Unblock" button for blocked invoices
+- "Delete" button for individual invoices (only pending/failed/blocked)
+
+**Updated Component**: `frontend/src/components/automation/InvoiceDetail.tsx`
+
+**Add Features**:
+- "Block from FBR" button (for pending invoices)
+- "Unblock" button (for blocked invoices)
+- "Delete Invoice" button (for pending/failed/blocked invoices)
+- Confirmation dialogs for destructive actions
+
+**API Methods to Add** (in `automationApi.ts`):
+```typescript
+async getUploadSessions(): Promise<UploadSessionsResponse> {
+  const response = await fetch(
+    `${this.baseUrl}/api/v1/automation/upload-sessions`,
+    { headers: this.getHeaders() }
+  );
+  if (!response.ok) throw new Error('Failed to get upload sessions');
+  return response.json();
+}
+
+async deleteUploadSession(sessionId: string): Promise<void> {
+  const response = await fetch(
+    `${this.baseUrl}/api/v1/automation/upload-session/${sessionId}`,
+    { method: 'DELETE', headers: this.getHeaders() }
+  );
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to delete upload session');
+  }
+}
+
+async blockInvoice(invoiceId: string): Promise<void> {
+  const response = await fetch(
+    `${this.baseUrl}/api/v1/automation/invoice/${invoiceId}/block`,
+    { method: 'POST', headers: this.getHeaders() }
+  );
+  if (!response.ok) throw new Error('Failed to block invoice');
+}
+
+async unblockInvoice(invoiceId: string): Promise<void> {
+  const response = await fetch(
+    `${this.baseUrl}/api/v1/automation/invoice/${invoiceId}/unblock`,
+    { method: 'POST', headers: this.getHeaders() }
+  );
+  if (!response.ok) throw new Error('Failed to unblock invoice');
+}
+
+async deleteInvoice(invoiceId: string): Promise<void> {
+  const response = await fetch(
+    `${this.baseUrl}/api/v1/automation/invoice/${invoiceId}`,
+    { method: 'DELETE', headers: this.getHeaders() }
+  );
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to delete invoice');
+  }
+}
+
+async bulkBlockInvoices(invoiceIds: string[]): Promise<void> {
+  const response = await fetch(
+    `${this.baseUrl}/api/v1/automation/invoices/bulk-block`,
+    {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify({ invoice_ids: invoiceIds })
+    }
+  );
+  if (!response.ok) throw new Error('Failed to block invoices');
+}
+```
+
+**TypeScript Interfaces**:
+```typescript
+export interface UploadSession {
+  id: string;
+  uploaded_at: string;
+  total_count: number;
+  pending_count: number;
+  submitted_count: number;
+  failed_count: number;
+  blocked_count: number;
+  can_delete: boolean;
+}
+
+export interface UploadSessionsResponse {
+  sessions: UploadSession[];
+  total: number;
+}
+```
+
+#### 3. AI Agent Observability Page (OPTIONAL - 4-6 hours)
+
+**New Page**: `frontend/src/app/(protected)/automation/agent/page.tsx`
+
+**Purpose**: Display AI Agent health status and decision logs for monitoring
+
+**Features**:
+- Agent health status card (healthy/warning/error)
+- Recent AI decisions table with pagination
+- Metrics display (latency, accuracy, fallback rate)
+- Last health check timestamp
+
+**New Component**: `frontend/src/components/automation/AgentStatus.tsx`
+
+**API Methods to Add** (in `automationApi.ts`):
+```typescript
+async getAgentHealth(): Promise<AgentHealthResponse> {
+  const response = await fetch(
+    `${this.baseUrl}/api/v1/automation/agent/health`,
+    { headers: this.getHeaders() }
+  );
+  if (!response.ok) {
+    if (response.status === 404) {
+      return { status: 'no_data', message: 'No health check data yet' };
+    }
+    throw new Error('Failed to get agent health');
+  }
+  return response.json();
+}
+
+async getAgentDecisions(page: number = 1): Promise<AgentDecisionsResponse> {
+  const response = await fetch(
+    `${this.baseUrl}/api/v1/automation/agent/decisions?page=${page}`,
+    { headers: this.getHeaders() }
+  );
+  if (!response.ok) {
+    throw new Error('Failed to get agent decisions');
+  }
+  return response.json();
+}
+```
+
+**TypeScript Interfaces**:
+```typescript
+export interface AgentHealthResponse {
+  status: 'healthy' | 'warning' | 'error' | 'no_data';
+  message?: string;
+  last_check?: string;
+  pending_count?: number;
+  failed_count?: number;
+  fbr_api_status?: string;
+  database_latency_ms?: number;
+  anomalies?: string[];
+}
+
+export interface AgentDecision {
+  id: string;
+  timestamp: string;
+  decision_type: string;
+  invoice_id?: string;
+  classification?: string;
+  confidence?: number;
+  reasoning?: string;
+  model_used?: string;
+}
+
+export interface AgentDecisionsResponse {
+  decisions: AgentDecision[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+```
+
+### Implementation Priority
+
+**Phase 3A: Text Updates (REQUIRED)**
+- Priority: HIGH
+- Effort: 5 minutes
+- Blocks: User-facing documentation accuracy
+- Dependencies: None
+
+**Phase 3B: AI Agent Observability (OPTIONAL)**
+- Priority: LOW (nice to have)
+- Effort: 4-6 hours
+- Blocks: Nothing (monitoring feature)
+- Dependencies: Backend API already exists
+- Can be deferred to post-MVP
+
+### Testing Checklist
+
+**Text Updates**:
+- [ ] Verify "AI Agent" appears instead of "FTE worker"
+- [ ] Verify "5-minute precision" messaging is clear
+- [ ] Check dark mode rendering
+
+**Observability Page** (if implemented):
+- [ ] Agent health status displays correctly
+- [ ] Decisions table loads with pagination
+- [ ] Handles "no data yet" state gracefully
+- [ ] Refresh button works
+- [ ] Mobile responsive
+
+### Success Criteria
+
+**Minimum (Text Updates Only)**:
+- ✅ All references to "FTE worker" replaced with "AI Agent"
+- ✅ Messaging reflects 5-minute precision (not hourly)
+- ✅ No broken links or UI issues
+
+**Complete (With Observability)**:
+- ✅ Text updates complete
+- ✅ Agent health status visible to users
+- ✅ Decision log accessible for debugging
+- ✅ Metrics help identify issues
+
+---
+
+## Phase 4: Implementation Tasks
 
 **Status**: NOT STARTED
 

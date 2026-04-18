@@ -1,7 +1,7 @@
 'use client';
 
 import { Card } from '@/components/ui/card';
-import { FileText, Clock, CheckCircle, XCircle, AlertCircle, Calendar } from 'lucide-react';
+import { FileText, Clock, CheckCircle, XCircle, AlertCircle, Calendar, Ban } from 'lucide-react';
 
 interface StatsProps {
   stats: {
@@ -11,6 +11,7 @@ interface StatsProps {
     validated_count: number;
     submitted_count: number;
     failed_count: number;
+    blocked_count: number;
   };
 }
 
@@ -45,6 +46,13 @@ export function AutomationStats({ stats }: StatsProps) {
       bgColor: 'bg-[#fee2e2] dark:bg-[#7f1d1d]/30'
     },
     {
+      label: 'Blocked',
+      value: stats.blocked_count,
+      icon: Ban,
+      color: 'text-[#7c2d12] dark:text-[#fb923c]',
+      bgColor: 'bg-[#ffedd5] dark:bg-[#431407]/30'
+    },
+    {
       label: 'Validated',
       value: stats.validated_count,
       icon: AlertCircle,
@@ -61,7 +69,7 @@ export function AutomationStats({ stats }: StatsProps) {
   ];
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-4">
       {statCards.map((stat) => {
         const Icon = stat.icon;
         return (

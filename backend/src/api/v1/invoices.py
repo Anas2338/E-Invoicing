@@ -3,6 +3,8 @@ from typing import List, Dict, Any, Optional
 from uuid import UUID
 from datetime import date
 import logging
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from src.database.session import get_db
 from src.services.invoice_service import InvoiceService
@@ -16,20 +18,25 @@ from src.api.deps import get_database_session, get_pagination_params
 from src.models.user import User
 from src.models.invoice import Invoice, InvoiceStatus
 from src.models.fbr_response import FBRResponse
+from src.utils.rate_limits import RateLimits
 
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
 
 
 @router.post("/", response_model=InvoiceResponse)
+@limiter.limit(RateLimits.INVOICE_CREATE)
 def create_invoice(
+    request: Request,
     invoice_create: InvoiceCreate,
     db = Depends(get_database_session),
     user_id: str = Depends(require_authentication)
 ):
     """
     Create a new invoice in draft status.
+    Rate limit: 30 invoices per hour.
     """
     service = InvoiceService()
 
@@ -456,21 +463,35 @@ async def validate_invoice_with_fbr(
             detail="User not found"
         )
 
-    # Select the appropriate token based on invoice environment
+    # Select the appropriate encrypted token based on invoice environment
+    encrypted_token = None
     if invoice.environment == "SANDBOX":
-        access_token = user.fbr_sandbox_token or user.fbr_access_token
-        if not access_token:
+        encrypted_token = user.fbr_sandbox_token or user.fbr_access_token
+        if not encrypted_token:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="FBR Sandbox token not configured. Please update your profile with FBR Sandbox credentials."
             )
     else:  # PRODUCTION
-        access_token = user.fbr_production_token or user.fbr_access_token
-        if not access_token:
+        encrypted_token = user.fbr_production_token or user.fbr_access_token
+        if not encrypted_token:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="FBR Production token not configured. Please update your profile with FBR Production credentials."
             )
+
+    # Decrypt the token before using it
+    from src.utils.encryption import get_encryption_service
+    encryption_service = get_encryption_service()
+
+    try:
+        access_token = encryption_service.decrypt(encrypted_token)
+    except Exception as decrypt_error:
+        logger.error(f"Failed to decrypt FBR token: {decrypt_error}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to decrypt FBR token: {str(decrypt_error)}"
+        )
 
     try:
         # Call FBR validation API
@@ -582,21 +603,35 @@ async def post_invoice_to_fbr(
             detail="User not found"
         )
 
-    # Select the appropriate token based on invoice environment
+    # Select the appropriate encrypted token based on invoice environment
+    encrypted_token = None
     if invoice.environment == "SANDBOX":
-        access_token = user.fbr_sandbox_token or user.fbr_access_token
-        if not access_token:
+        encrypted_token = user.fbr_sandbox_token or user.fbr_access_token
+        if not encrypted_token:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="FBR Sandbox token not configured. Please update your profile with FBR Sandbox credentials."
             )
     else:  # PRODUCTION
-        access_token = user.fbr_production_token or user.fbr_access_token
-        if not access_token:
+        encrypted_token = user.fbr_production_token or user.fbr_access_token
+        if not encrypted_token:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="FBR Production token not configured. Please update your profile with FBR Production credentials."
             )
+
+    # Decrypt the token before using it
+    from src.utils.encryption import get_encryption_service
+    encryption_service = get_encryption_service()
+
+    try:
+        access_token = encryption_service.decrypt(encrypted_token)
+    except Exception as decrypt_error:
+        logger.error(f"Failed to decrypt FBR token: {decrypt_error}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to decrypt FBR token: {str(decrypt_error)}"
+        )
 
     try:
         # Call FBR posting API

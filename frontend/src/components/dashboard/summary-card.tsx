@@ -5,9 +5,10 @@ interface SummaryCardProps {
   count: number;
   icon: string;
   color: string;
+  subtitle?: string;
 }
 
-export function SummaryCard({ title, count, icon, color }: SummaryCardProps) {
+export function SummaryCard({ title, count, icon, color, subtitle }: SummaryCardProps) {
   return (
     <Card className="hover:shadow-lg transition-shadow duration-150">
       <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
@@ -18,6 +19,9 @@ export function SummaryCard({ title, count, icon, color }: SummaryCardProps) {
       </CardHeader>
       <CardContent>
         <div className="text-3xl font-bold text-[#202223] dark:text-[#e3e3e3]">{count}</div>
+        {subtitle && (
+          <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">{subtitle}</p>
+        )}
       </CardContent>
     </Card>
   );

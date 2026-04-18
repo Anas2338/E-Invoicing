@@ -23,15 +23,19 @@ async def retry_failed_invoice(
     db: Session = Depends(get_db)
 ):
     """
-    Retry a failed invoice by resetting it to pending status.
+    Retry a pending invoice by re-validating it immediately.
 
-    Only invoices with 'failed' status can be retried.
-    The invoice will be picked up by the FTE worker in the next scheduled run.
+    Only invoices with 'pending' status can be retried.
+    If validation passes, invoice status becomes 'validated' and will be picked up by AI agent.
+    If validation fails, invoice remains 'pending' with updated error message.
 
     Row-level security: Only allows retry if invoice belongs to authenticated user.
 
     Returns:
-        Updated invoice with pending status
+        Updated invoice with validated status (if validation passes) or pending (if validation fails)
+
+    Raises:
+        HTTPException 400: If validation fails or invoice cannot be retried
     """
     # Retry invoice with user_id check (row-level security)
     automation_service = AutomationService(db)
@@ -39,16 +43,29 @@ async def retry_failed_invoice(
     try:
         updated_invoice = automation_service.retry_failed_invoice(invoice_id, UUID(user_id))
 
+        # Success - invoice was re-validated and is now VALIDATED
         return InvoiceRetryResponse(
-            message="Invoice reset to pending status and will be retried in the next scheduled run",
+            message="Invoice re-validated successfully and will be processed by AI agent in the next cycle",
             invoice_id=updated_invoice.id,
             status=updated_invoice.status,
             result={
                 "invoice_number": updated_invoice.invoice_number,
                 "scheduled_date": updated_invoice.scheduled_date.isoformat(),
-                "scheduled_time": updated_invoice.scheduled_time.isoformat()
+                "scheduled_time": updated_invoice.scheduled_time.isoformat(),
+                "validation_status": "passed"
             }
         )
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        # Validation failed or other error
+        error_message = str(e)
+
+        # Check if it's a validation error (invoice still exists but validation failed)
+        if "validation failed" in error_message.lower():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Retry failed: {error_message}. Please fix the invoice data and try again."
+            )
+        else:
+            # Other errors (not found, wrong status, etc.)
+            raise HTTPException(status_code=400, detail=error_message)

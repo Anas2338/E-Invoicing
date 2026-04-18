@@ -8,9 +8,12 @@ from io import BytesIO
 from pathlib import Path
 from uuid import UUID
 from sqlmodel import Session, select
+import logging
 
 from src.models.excel_upload_session import ExcelUploadSession, ExcelUploadProcessingStatus
 from src.utils.excel_validator import ExcelValidator
+
+logger = logging.getLogger(__name__)
 
 
 class ExcelService:
@@ -100,13 +103,13 @@ class ExcelService:
             # Seller information
             "seller_ntn_cnic": "1234567",
             "seller_business_name": "ABC Company",
-            "seller_province": "Punjab",
+            "seller_province": "PUNJAB",
             "seller_address": "123 Main Street, Lahore",
 
             # Buyer information
             "buyer_ntn_cnic": "7654321",
             "buyer_business_name": "XYZ Corporation",
-            "buyer_province": "Sindh",
+            "buyer_province": "SINDH",
             "buyer_address": "456 Business Ave, Karachi",
             "buyer_registration_type": "Registered",
 
@@ -262,8 +265,9 @@ class ExcelService:
 
             # Convert to list of dictionaries
             invoices = []
-            for _, row in df.iterrows():
-                # Parse item fields directly from Excel columns
+            validation_errors = []  # Collect all validation errors
+            for row_idx, row in df.iterrows():
+                # Parse numeric fields
                 quantity = float(row['quantity']) if pd.notna(row['quantity']) else 0
                 total_values = float(row['total_values']) if pd.notna(row['total_values']) else 0
                 value_sales_excluding_st = float(row['value_sales_excluding_st']) if pd.notna(row['value_sales_excluding_st']) else 0
@@ -275,11 +279,20 @@ class ExcelService:
                 fed_payable = float(row['fed_payable']) if pd.notna(row['fed_payable']) else 0
                 discount = float(row['discount']) if pd.notna(row['discount']) else 0
 
+                # Parse invoice_date to YYYY-MM-DD format
+                invoice_date_str = ""
+                if pd.notna(row['invoice_date']):
+                    try:
+                        invoice_date_parsed = pd.to_datetime(row['invoice_date'])
+                        invoice_date_str = invoice_date_parsed.strftime('%Y-%m-%d')
+                    except:
+                        invoice_date_str = str(row['invoice_date']).strip()
+
                 # Build FBR-compliant invoice data structure
                 invoice_data = {
                     "invoice_number": str(row['invoice_number']).strip(),
                     "invoice_type": str(row['invoice_type']).strip() if pd.notna(row['invoice_type']) else "Sale Invoice",
-                    "invoice_date": str(row['invoice_date']).strip() if pd.notna(row['invoice_date']) else "",
+                    "invoice_date": invoice_date_str,
 
                     # Seller information
                     "seller_ntn_cnic": str(row['seller_ntn_cnic']).strip() if pd.notna(row['seller_ntn_cnic']) else "",
@@ -323,6 +336,16 @@ class ExcelService:
                     "environment": str(row['environment']).strip() if pd.notna(row['environment']) else "SANDBOX",
                 }
 
+                # SECURITY: Validate invoice data before adding to list
+                from src.utils.invoice_validator import InvoiceValidator
+                is_valid, validation_error = InvoiceValidator.validate_invoice_data(invoice_data)
+
+                if not is_valid:
+                    logger.warning(f"Invoice validation failed for {invoice_data['invoice_number']}: {validation_error}")
+                    # Collect validation error with row number (Excel row = pandas index + 2, accounting for header)
+                    validation_errors.append(f"Row {row_idx + 2} (Invoice {invoice_data['invoice_number']}): {validation_error}")
+                    continue
+
                 # Parse scheduling information
                 scheduled_date = pd.to_datetime(row['scheduled_date']).date() if pd.notna(row['scheduled_date']) else None
                 scheduled_time_str = str(row['scheduled_time']).strip() if pd.notna(row['scheduled_time']) else "00:00"
@@ -341,6 +364,13 @@ class ExcelService:
                     "scheduled_date": scheduled_date,
                     "scheduled_time": scheduled_time,
                 })
+
+            # If we have validation errors, report them to the user
+            if validation_errors:
+                error_summary = f"Found {len(validation_errors)} validation error(s):\n" + "\n".join(validation_errors[:5])
+                if len(validation_errors) > 5:
+                    error_summary += f"\n... and {len(validation_errors) - 5} more errors"
+                raise ValueError(error_summary)
 
             return invoices
 

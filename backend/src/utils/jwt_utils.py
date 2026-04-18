@@ -10,12 +10,13 @@ from src.config.settings import settings
 logger = logging.getLogger(__name__)
 
 
-def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(data: Dict[str, Any], user_token_version: int = 0, expires_delta: Optional[timedelta] = None) -> str:
     """
     Create a new access token with the provided data.
 
     Args:
         data: Dictionary containing the claims to include in the token
+        user_token_version: User's current token version for session invalidation
         expires_delta: Optional timedelta for token expiration (defaults to 1 hour)
 
     Returns:
@@ -32,7 +33,8 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
     to_encode.update({
         "exp": expire,
         "iss": settings.auth_issuer,
-        "aud": settings.auth_audience
+        "aud": settings.auth_audience,
+        "token_version": user_token_version
     })
 
     encoded_jwt = jwt.encode(

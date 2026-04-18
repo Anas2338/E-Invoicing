@@ -15,6 +15,7 @@ class AutomationInvoiceStatus(str, Enum):
     VALIDATED = "validated"
     SUBMITTED = "submitted"
     FAILED = "failed"
+    BLOCKED = "blocked"
 
 
 class InvoiceSource(str, Enum):
@@ -70,6 +71,7 @@ class DashboardStatsResponse(BaseModel):
     validated_count: int
     submitted_count: int
     failed_count: int
+    blocked_count: int
 
 
 class InvoiceListRequest(BaseModel):
@@ -137,3 +139,13 @@ class InvoiceDetailResponse(BaseModel):
     """Schema for invoice detail response with logs."""
     invoice: AutomationInvoiceRead
     logs: list[AutomationLogRead]
+
+
+class BatchPdfRequest(BaseModel):
+    """Schema for batch PDF generation request."""
+    invoice_ids: list[UUID] = Field(
+        ...,
+        min_length=1,
+        max_length=50,
+        description="List of invoice IDs to include in batch PDF (1-50 invoices)"
+    )

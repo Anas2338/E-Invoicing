@@ -87,6 +87,27 @@ As a user who has uploaded invoices for automation, I want to view a dashboard s
 
 ---
 
+### User Story 6 - File and Invoice Management (Priority: P2)
+
+As a user who has uploaded multiple Excel files with invoices, I want to manage my uploaded files and control which invoices are submitted to FBR, so that I can delete old uploads, remove incorrect data, and prevent specific invoices from being posted.
+
+**Why this priority**: Users need control over their automation data. They should be able to correct mistakes by deleting entire upload sessions or blocking specific invoices from submission without losing all their work.
+
+**Independent Test**: Can be fully tested by uploading multiple Excel files, then deleting one upload session, blocking specific invoices, and verifying the AI Agent respects these changes.
+
+**Acceptance Scenarios**:
+
+1. **Given** I have uploaded multiple Excel files, **When** I navigate to the Upload History section, **Then** I see a list of all my upload sessions with upload date, invoice count, and status summary (pending/submitted/failed counts)
+2. **Given** I am viewing my upload history, **When** I click "Delete" on an upload session, **Then** the system prompts for confirmation and upon confirmation deletes all invoices from that session that have not yet been submitted to FBR
+3. **Given** I attempt to delete an upload session, **When** some invoices from that session have already been submitted to FBR, **Then** the system prevents deletion and displays a message: "Cannot delete upload session - X invoices already submitted to FBR. You can only delete pending or failed invoices."
+4. **Given** I am viewing the invoice list on the dashboard, **When** I select one or more pending invoices and click "Block from FBR", **Then** the system updates those invoices' status to "blocked" and the AI Agent will not process them
+5. **Given** I have blocked invoices, **When** I view them on the dashboard, **Then** I see a "Unblock" button that allows me to change their status back to "pending" for processing
+6. **Given** I am viewing an individual invoice detail, **When** the invoice status is "pending" or "failed", **Then** I see a "Delete Invoice" button that removes this single invoice from the system
+7. **Given** I attempt to delete an invoice, **When** the invoice has already been submitted to FBR, **Then** the system prevents deletion and displays: "Cannot delete submitted invoice. Submitted invoices are permanent for audit purposes."
+8. **Given** I have deleted an upload session or blocked invoices, **When** the AI Agent runs its processing cycle, **Then** it skips deleted and blocked invoices and only processes invoices with "pending" status
+
+---
+
 ### User Story 4 - Integration with Existing Manual Invoice System (Priority: P3)
 
 As a user of the existing manual invoice portal, I want the automation system to coexist seamlessly with my current manual invoice creation workflow, so that I can choose to use automation for bulk submissions while still creating individual invoices manually when needed.
@@ -161,6 +182,16 @@ As a user who uploads Excel files with scheduled invoices, I want an AI Agent po
 - **FR-019**: System MUST handle FBR API failures (network errors, timeouts, service unavailable, rate limit exceeded) by marking invoices as "failed" with specific error reason (e.g., "FBR portal unreachable", "FBR rate limit exceeded"). Failed invoices MUST be retryable manually from the dashboard (no automatic retries in initial version)
 - **FR-020**: System MUST associate all uploaded invoice data and automation records with the authenticated user's ID for data isolation
 
+### File and Invoice Management Requirements
+
+- **FR-034**: System MUST provide an upload history view showing all Excel upload sessions for the authenticated user with: upload timestamp, total invoice count, pending count, submitted count, failed count, blocked count
+- **FR-035**: System MUST allow users to delete entire upload sessions. When deleting an upload session, the system MUST check if any invoices from that session have status "submitted". If any submitted invoices exist, deletion MUST be blocked with error message "Cannot delete upload session - X invoices already submitted to FBR. You can only delete pending or failed invoices." If no submitted invoices exist, all invoices from that session MUST be permanently deleted from the database
+- **FR-036**: System MUST allow users to block individual invoices from FBR submission. When an invoice is blocked, its status MUST be updated to "blocked" and the AI Agent MUST skip it during processing. Blocked invoices can be unblocked by changing status back to "pending"
+- **FR-037**: System MUST allow users to delete individual invoices. Deletion is only permitted for invoices with status "pending", "failed", "expired", or "blocked". Invoices with status "submitted" or "validated" MUST NOT be deletable, returning error "Cannot delete submitted invoice. Submitted invoices are permanent for audit purposes."
+- **FR-038**: AI Agent MUST exclude invoices with status "blocked" or "deleted" from processing queries. Only invoices with status "pending" are eligible for processing
+- **FR-039**: System MUST log all file management actions (upload session deletion, invoice blocking/unblocking, invoice deletion) to automation_log table with action type, affected invoice IDs, and user ID for audit trail
+- **FR-040**: Dashboard statistics MUST include "blocked" count alongside existing status counts (pending, expired, validated, submitted, failed)
+
 ### AI Agent Requirements
 
 - **FR-021**: System MUST run an AI Agent powered by Claude Code that operates continuously 24/7 as a Docker container. Ralph Loop hook triggers the agent hourly to perform health checks and ensure the agent process remains active. Between hourly triggers, the AI Agent maintains its own internal monitoring loop for fine-grained invoice processing. The agent container is managed via docker-compose alongside the backend service
@@ -179,7 +210,7 @@ As a user who uploads Excel files with scheduled invoices, I want an AI Agent po
 
 ### Key Entities
 
-- **Automated Invoice**: Represents a single invoice from an uploaded Excel file. Contains invoice details (number, customer, items, amounts, tax), scheduling information (date and time), processing status (pending, expired, validated, submitted, failed), validation errors if any, FBR submission response, AI Agent retry tracking (retry_count, last_retry_at), priority level for processing, and timestamps for creation and processing. All data is stored in PostgreSQL automation_invoice table
+- **Automated Invoice**: Represents a single invoice from an uploaded Excel file. Contains invoice details (number, customer, items, amounts, tax), scheduling information (date and time), processing status (pending, expired, validated, submitted, failed, blocked), validation errors if any, FBR submission response, AI Agent retry tracking (retry_count, last_retry_at), priority level for processing, and timestamps for creation and processing. Status "blocked" indicates user has prevented this invoice from being submitted to FBR. All data is stored in PostgreSQL automation_invoice table
 - **Automation Activity Log**: Represents an audit trail entry tracking what happened during automation. Records the action performed (validation, submission, status update), whether it succeeded or failed, relevant details about the action, AI Agent decision rationale (stored in action_details JSON field), and when it occurred. Each log entry is associated with a specific automated invoice. Stored in automation_log table
 - **Excel Upload Session**: Represents metadata about an Excel file upload. Tracks when the upload occurred, how many invoice rows were parsed, and how many have been processed. Each upload session contains multiple automated invoices. The original Excel file is not stored; only the parsed data is retained in the database. Stored in excel_upload_session table
 - **AI Agent Decision**: Represents a decision made by the AI Agent during invoice processing. Contains decision type (prioritization, retry strategy, error classification), decision rationale (why this decision was made), input factors considered (invoice data, error history, system state), output action taken, confidence score, and timestamp. Stored as entries in automation_log table with action_details containing decision metadata. Used for audit trail and continuous improvement of agent logic
@@ -197,6 +228,9 @@ As a user who uploads Excel files with scheduled invoices, I want an AI Agent po
 - **SC-006**: Users can filter and view invoice details on the dashboard without any errors or performance degradation
 - **SC-007**: System maintains 100% data isolation between users (no user can see or access another user's automation data)
 - **SC-008**: All automation activities are logged with complete audit trail (100% of actions have corresponding log entries)
+- **SC-018**: Users can delete upload sessions with only pending/failed invoices in under 5 seconds
+- **SC-019**: Users can block/unblock individual invoices with status update reflected in dashboard within 2 seconds
+- **SC-020**: AI Agent respects blocked status and never processes blocked invoices (0% blocked invoice processing rate)
 - **SC-009**: Existing manual invoice creation workflow continues to function without any disruption or performance impact
 - **SC-010**: System handles Excel files with up to 1,000 invoice rows without memory errors or timeouts during in-memory parsing
 - **SC-011**: AI Agent detects new Excel uploads within 1 minute of upload completion 95% of the time
@@ -234,7 +268,7 @@ As a user who uploads Excel files with scheduled invoices, I want an AI Agent po
 - Integration with accounting software or ERP systems
 - Mobile app for dashboard access
 - Advanced scheduling (recurring invoices, conditional submission)
-- Bulk deletion or cancellation of pending invoices
+- Bulk deletion of submitted invoices (only pending/failed/blocked invoices can be deleted)
 - Storing uploaded Excel files on disk (files are parsed in memory only)
 - Version history or audit trail of Excel file uploads (only parsed invoice data is retained)
 - Machine learning models for predictive failure analysis (AI Agent uses rule-based decision logic)

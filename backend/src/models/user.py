@@ -2,14 +2,22 @@ from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, TYPE_CHECKING
 from datetime import datetime
 import uuid
-from sqlalchemy import Column, DateTime, String, JSON
+from sqlalchemy import Column, DateTime, String, JSON, Enum as SQLEnum
 from sqlalchemy.types import Uuid
+from enum import Enum
 from .base import Base
 
 if TYPE_CHECKING:
     from .invoice import Invoice
     from .automation_invoice import AutomationInvoice
     from .excel_upload_session import ExcelUploadSession
+
+
+class UserRole(str, Enum):
+    """User role enumeration for RBAC."""
+    ADMIN = "admin"
+    USER = "user"
+    VIEWER = "viewer"
 
 
 class UserBase(SQLModel):
@@ -19,7 +27,23 @@ class UserBase(SQLModel):
     email: str = Field(sa_column=Column(String, unique=True, index=True, nullable=False))
     name: Optional[str] = Field(default=None)
     is_active: bool = Field(default=True)
+    role: str = Field(default=UserRole.USER.value, sa_column=Column(String, nullable=False))
     approval_flags: Optional[dict] = Field(default=None, sa_column=Column(JSON))
+
+    # Account approval fields
+    account_status: str = Field(default="pending", sa_column=Column(String, nullable=False))  # pending, approved, rejected
+    approved_by: Optional[uuid.UUID] = Field(default=None, sa_column=Column(Uuid, nullable=True))
+    approved_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
+    rejection_reason: Optional[str] = Field(default=None, sa_column=Column(String, nullable=True))
+
+    # Account lockout fields
+    failed_login_attempts: int = Field(default=0)
+    locked_until: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
+    last_login_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
+    last_failed_login_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
+
+    # Session invalidation field
+    token_version: int = Field(default=0)
 
     # FBR Integration fields
     fbr_access_token: Optional[str] = Field(default=None, sa_column=Column(String, nullable=True))  # Deprecated, kept for backward compatibility

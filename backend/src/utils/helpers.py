@@ -8,6 +8,7 @@ import time
 import random
 import logging
 from enum import Enum
+from html import escape
 
 
 logger = logging.getLogger(__name__)
@@ -76,16 +77,27 @@ def validate_fbr_invoice_structure(invoice_data: Dict[str, Any]) -> bool:
 
 def sanitize_input(input_data: str) -> str:
     """
-    Sanitize input to prevent injection attacks.
+    Sanitize input to prevent XSS and injection attacks.
+
+    Properly escapes all HTML special characters including:
+    - < (less than) -> &lt;
+    - > (greater than) -> &gt;
+    - & (ampersand) -> &amp;
+    - " (double quote) -> &quot;
+    - ' (single quote) -> &#x27;
 
     Args:
         input_data: Raw input string to sanitize
 
     Returns:
-        Sanitized string
+        Sanitized string with all HTML entities escaped
     """
-    # Remove or escape potentially dangerous characters
-    sanitized = input_data.replace('<script', '&lt;script').replace('javascript:', 'javascript_')
+    if not input_data:
+        return ""
+
+    # Use Python's built-in HTML escaping which properly handles all HTML entities
+    # This prevents XSS via <script>, <img>, <svg>, event handlers, etc.
+    sanitized = escape(input_data, quote=True)
     return sanitized.strip()
 
 

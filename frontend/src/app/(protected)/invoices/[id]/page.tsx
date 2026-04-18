@@ -172,7 +172,8 @@ export default function InvoiceDetailsPage() {
                 {invoice?.invoice_date ? new Date(invoice.invoice_date).toLocaleDateString('en-US', {
                   year: 'numeric',
                   month: 'long',
-                  day: 'numeric'
+                  day: 'numeric',
+                  timeZone: 'Asia/Karachi'
                 }) : 'N/A'}
               </div>
             </div>
@@ -188,7 +189,8 @@ export default function InvoiceDetailsPage() {
                   month: 'long',
                   day: 'numeric',
                   hour: '2-digit',
-                  minute: '2-digit'
+                  minute: '2-digit',
+                  timeZone: 'Asia/Karachi'
                 }) : 'N/A'}
               </div>
             </div>
@@ -390,7 +392,8 @@ export default function InvoiceDetailsPage() {
                       month: 'long',
                       day: 'numeric',
                       hour: '2-digit',
-                      minute: '2-digit'
+                      minute: '2-digit',
+                      timeZone: 'Asia/Karachi'
                     })}
                   </div>
                 </div>

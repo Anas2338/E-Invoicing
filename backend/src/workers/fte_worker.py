@@ -1,10 +1,48 @@
 """
 FTE Worker - Hourly background worker for automated invoice processing.
 
+⚠️ DEPRECATED - DO NOT USE ⚠️
+
+This worker has been REPLACED by the AI Agent (ai-agent/ directory).
+
+MIGRATION COMPLETE:
+- Old FTE Worker: Hourly batch processing with limited intelligence
+- New AI Agent: Continuous monitoring with AI-powered decision making
+
+AI Agent Advantages:
+✓ Continuous monitoring (1-minute detection vs hourly)
+✓ 5-minute processing precision (vs hourly batches)
+✓ Intelligent error classification (transient vs permanent)
+✓ Adaptive retry strategies with exponential backoff
+✓ Priority-based processing (time, value, retry count)
+✓ Hourly health checks with anomaly detection
+✓ Gemini/Claude-powered decision making
+✓ Circuit breaker pattern for preventing retry storms
+✓ Rate limiting with token bucket algorithm
+
+DEPRECATION DATE: 2026-04-11
+REPLACEMENT: ai-agent/main.py
+
+To start the AI Agent:
+    cd ai-agent
+    uv run python main.py
+
+For more information, see:
+- ai-agent/README_AI_PROVIDERS.md
+- ai-agent/TEST_SUMMARY.md
+- specs/001-invoice-automation/plan.md
+
+This file is kept for reference only. Do not run this worker.
+If you need to process invoices, use the AI Agent instead.
+
+---
+
+Legacy Documentation (for reference only):
+
 This worker runs every hour and processes pending invoices scheduled for that hour.
 It validates invoices, submits them to FBR, and updates Excel files with results.
 
-Usage:
+Usage (DEPRECATED):
     uv run python -m src.workers.fte_worker
 """
 import asyncio

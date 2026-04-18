@@ -87,13 +87,38 @@ async def validate_invoice(
             error_details=local_validation_errors
         )
 
-    # Proceed with FBR validation
+    # Get user's FBR token
+    user = db.query(User).filter(User.id == user_uuid).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    # Get the appropriate encrypted token based on environment
+    encrypted_token = None
+    if invoice.environment == "SANDBOX":
+        encrypted_token = user.fbr_sandbox_token
+    else:
+        encrypted_token = user.fbr_production_token
+
+    if not encrypted_token:
+        encrypted_token = user.fbr_access_token
+
+    if not encrypted_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="FBR access token not configured. Please set up your FBR credentials first."
+        )
+
+    # Proceed with FBR validation using user credentials
     fbr_client = FBRClient()
 
     try:
-        is_valid, fbr_response_data, reference_number = await fbr_client.validate_invoice(
+        is_valid, fbr_response_data, reference_number = await fbr_client.validate_invoice_with_user_credentials(
             invoice.invoice_data,
-            invoice.environment
+            invoice.environment,
+            encrypted_token
         )
 
         # Process the validation result
@@ -351,20 +376,32 @@ async def verify_buyer_registration(
         )
 
     # Get the appropriate token based on environment
-    access_token = None
+    encrypted_token = None
     if request.environment == "SANDBOX":
-        access_token = user.fbr_sandbox_token
+        encrypted_token = user.fbr_sandbox_token
     else:
-        access_token = user.fbr_production_token
+        encrypted_token = user.fbr_production_token
 
     # Fallback to deprecated fbr_access_token if new tokens not set
-    if not access_token:
-        access_token = user.fbr_access_token
+    if not encrypted_token:
+        encrypted_token = user.fbr_access_token
 
-    if not access_token:
+    if not encrypted_token:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="FBR access token not configured. Please set up your FBR credentials first."
+        )
+
+    # Decrypt the token before using it
+    from src.utils.encryption import get_encryption_service
+    encryption_service = get_encryption_service()
+
+    try:
+        access_token = encryption_service.decrypt(encrypted_token)
+    except Exception as decrypt_error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to decrypt FBR token: {str(decrypt_error)}"
         )
 
     try:

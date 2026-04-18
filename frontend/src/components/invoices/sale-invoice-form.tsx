@@ -458,7 +458,8 @@ export function SaleInvoiceForm({
       const formattedDate = new Date(invoiceDate).toLocaleDateString('en-GB', {
         day: '2-digit',
         month: 'short',
-        year: 'numeric'
+        year: 'numeric',
+        timeZone: 'Asia/Karachi'
       }).replace(/ /g, '-');
 
       // Assuming origination_supplier_csv = 1 (you may need to make this dynamic)
@@ -985,8 +986,8 @@ export function SaleInvoiceForm({
                       <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
                     )}
                   </div>
-                  <Select value={item.rate} onValueChange={(val) => handleTaxRateChange(index, val)} disabled={dynamicTaxRates.length === 0}>
-                    <SelectTrigger>
+                  <Select value={item.rate} onValueChange={(val) => handleTaxRateChange(index, val)}>
+                    <SelectTrigger disabled={dynamicTaxRates.length === 0}>
                       <span className="flex-1 text-left">
                         {item.rate && dynamicTaxRates.length > 0
                           ? dynamicTaxRates.find(r => r.rate === item.rate)?.name || item.rate

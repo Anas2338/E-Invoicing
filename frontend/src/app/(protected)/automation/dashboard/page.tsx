@@ -1,17 +1,97 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import AutomationDashboard from '@/components/automation/AutomationDashboard';
-import InvoiceList from '@/components/automation/InvoiceList';
+import { InvoiceTable } from '@/components/automation/InvoiceTable';
 import InvoiceDetail from '@/components/automation/InvoiceDetail';
-import { AutomationInvoice } from '@/services/automationApi';
+import { automationApi } from '@/services/automationApi';
 import { ArrowLeft } from 'lucide-react';
+import { toast } from 'sonner';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [selectedInvoice, setSelectedInvoice] = useState<AutomationInvoice | null>(null);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
+  const [invoices, setInvoices] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [pagination, setPagination] = useState({
+    total: 0,
+    page: 1,
+    page_size: 20,
+    total_pages: 0
+  });
+  const [filters, setFilters] = useState({
+    status: null,
+    source: null,
+    date_from: null,
+    date_to: null
+  });
+
+  useEffect(() => {
+    loadInvoices();
+  }, [pagination.page, filters]);
+
+  const loadInvoices = async () => {
+    try {
+      setLoading(true);
+      const response = await automationApi.getInvoiceList({
+        page: pagination.page,
+        page_size: pagination.page_size,
+        status: filters.status || undefined,
+        source: filters.source || undefined,
+        date_from: filters.date_from || undefined,
+        date_to: filters.date_to || undefined
+      });
+      setInvoices(response.invoices);
+      setPagination({
+        total: response.total,
+        page: response.page,
+        page_size: response.page_size,
+        total_pages: response.total_pages
+      });
+    } catch (error) {
+      toast.error('Failed to load invoices');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFilterChange = (newFilters: any) => {
+    setFilters(newFilters);
+    setPagination({ ...pagination, page: 1 });
+  };
+
+  const handlePageChange = (page: number) => {
+    setPagination({ ...pagination, page });
+  };
+
+  const handleDownload = async (sessionId: string) => {
+    try {
+      const blob = await automationApi.downloadExcel(sessionId);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `invoice_session_${sessionId}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(link);
+      toast.success('Excel file downloaded successfully');
+    } catch (error) {
+      toast.error('Failed to download Excel file');
+    }
+  };
+
+  const handleRetry = async (invoiceId: string) => {
+    try {
+      await automationApi.retryInvoice(invoiceId);
+      toast.success('Invoice reset to pending status');
+      loadInvoices();
+    } catch (error) {
+      toast.error('Failed to retry invoice');
+    }
+  };
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-7xl">
@@ -19,11 +99,11 @@ export default function DashboardPage() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => router.push('/dashboard')}
+          onClick={() => router.push('/automation')}
           className="flex items-center gap-2"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to Dashboard
+          Back to Automation
         </Button>
       </div>
 
@@ -36,23 +116,34 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {selectedInvoice ? (
+      {selectedInvoiceId ? (
         <div className="mb-8">
           <button
-            onClick={() => setSelectedInvoice(null)}
+            onClick={() => setSelectedInvoiceId(null)}
             className="mb-4 text-sm text-[#008060] dark:text-[#00a876] hover:text-[#006e52] dark:hover:text-[#008f64] font-semibold flex items-center gap-1"
           >
             ← Back to list
           </button>
           <InvoiceDetail
-            invoiceId={selectedInvoice.id}
-            onClose={() => setSelectedInvoice(null)}
+            invoiceId={selectedInvoiceId}
+            onClose={() => setSelectedInvoiceId(null)}
+            onUpdate={loadInvoices}
           />
         </div>
       ) : (
         <div className="space-y-8">
           <AutomationDashboard />
-          <InvoiceList onInvoiceClick={setSelectedInvoice} />
+          <InvoiceTable
+            invoices={invoices}
+            loading={loading}
+            pagination={pagination}
+            filters={filters}
+            onFilterChange={handleFilterChange}
+            onPageChange={handlePageChange}
+            onInvoiceClick={setSelectedInvoiceId}
+            onDownload={handleDownload}
+            onRetry={handleRetry}
+          />
         </div>
       )}
     </div>

@@ -1,0 +1,267 @@
+openapi: 3.0.3
+info:
+  title: Auth API - User Approval System Updates
+  description: Updated authentication endpoints with approval workflow
+  version: 1.0.0
+  contact:
+    name: FBR Invoice Integration Portal
+
+servers:
+  - url: http://localhost:8001/api/v1
+    description: Local development server
+  - url: https://api.example.com/api/v1
+    description: Production server
+
+paths:
+  /auth/register:
+    post:
+      summary: Register new user
+      description: Create new user account with pending approval status
+      operationId: registerUser
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '200':
+          description: Registration successful, pending approval
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /auth/login:
+    post:
+      summary: Login user
+      description: Authenticate user and return JWT token (only for approved users)
+      operationId: loginUser
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  schemas:
+    RegisterRequest:
+      type: object
+      required:
+        - email
+        - password
+        - name
+      properties:
+        email:
+          type: string
+          format: email
+          description: User email address
+          example: "user@example.com"
+        password:
+          type: string
+          format: password
+          minLength: 8
+          description: User password (min 8 characters)
+          example: "SecurePass123!"
+        name:
+          type: string
+          minLength: 1
+          description: User display name
+          example: "John Doe"
+
+    RegisterResponse:
+      type: object
+      required:
+        - message
+        - email
+        - status
+      properties:
+        message:
+          type: string
+          description: Success message
+          example: "Registration successful! Your account is pending admin approval. You will receive an email once your account is approved."
+        email:
+          type: string
+          format: email
+          description: Registered email address
+          example: "user@example.com"
+        status:
+          type: string
+          enum: [pending_approval]
+          description: Account status
+          example: "pending_approval"
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          description: User email address
+          example: "user@example.com"
+        password:
+          type: string
+          format: password
+          description: User password
+          example: "SecurePass123!"
+
+    LoginResponse:
+      type: object
+      required:
+        - access_token
+        - token_type
+        - user
+      properties:
+        access_token:
+          type: string
+          description: JWT access token
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        token_type:
+          type: string
+          enum: [bearer]
+          description: Token type
+          example: "bearer"
+        user:
+          $ref: '#/components/schemas/UserProfile'
+
+    UserProfile:
+      type: object
+      required:
+        - id
+        - email
+        - is_active
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: User ID
+        email:
+          type: string
+          format: email
+          description: User email
+        name:
+          type: string
+          nullable: true
+          description: User name
+        is_active:
+          type: boolean
+          description: Account active status
+        created_at:
+          type: string
+          format: date-time
+          description: Account creation timestamp
+        updated_at:
+          type: string
+          format: date-time
+          description: Last update timestamp
+        approval_flags:
+          type: object
+          description: User permissions
+          properties:
+            has_production_access:
+              type: boolean
+            can_post_to_production:
+              type: boolean
+        has_production_access:
+          type: boolean
+          description: Production access flag
+        can_post_to_production:
+          type: boolean
+          description: Production posting permission
+
+    ErrorResponse:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: Error message
+
+  responses:
+    BadRequest:
+      description: Bad request - invalid input or duplicate email
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            duplicate_email:
+              value:
+                detail: "Email already registered"
+            invalid_input:
+              value:
+                detail: "Registration failed: invalid email format"
+
+    Unauthorized:
+      description: Unauthorized - invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            detail: "Incorrect email or password"
+
+    Forbidden:
+      description: Forbidden - account not approved
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            pending_approval:
+              value:
+                detail: "Your account is pending admin approval. Please wait for approval before logging in."
+            rejected:
+              value:
+                detail: "Your account has been rejected. Reason: Invalid business credentials"
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            detail: "Authentication failed: database error"
+
+tags:
+  - name: Authentication
+    description: User authentication and registration endpoints
+
+x-changes:
+  - version: 1.0.0
+    date: 2026-04-13
+    description: |
+      Updated authentication flow for user approval system:
+      - /auth/register now returns pending_approval status instead of access token
+      - /auth/login blocks pending users with 403 Forbidden
+      - /auth/login blocks rejected users with 403 Forbidden and rejection reason
+      - Only approved users can successfully login and receive access token
