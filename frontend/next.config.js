@@ -21,10 +21,11 @@ const nextConfig = {
   },
   // Proxy API requests to backend to avoid CORS and cookie issues
   async rewrites() {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8001';
     return [
       {
         source: '/api/v1/:path*',
-        destination: 'http://localhost:8001/api/v1/:path*',
+        destination: `${backendUrl}/api/v1/:path*`,
       },
     ];
   },
