@@ -1,7 +1,0 @@
-uv run uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload
-
-Kaka100%
-Anastoufiq233%
-Anastoufiq211%
-
-Anastoufiq233%
