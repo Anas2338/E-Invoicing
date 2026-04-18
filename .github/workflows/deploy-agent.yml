@@ -24,20 +24,20 @@ jobs:
         git clone https://huggingface.co/spaces/$HF_USERNAME/$HF_SPACE_NAME hf
 
         # Copy ai-agent files
-        cp ai-agent/main.py hf/ai-agent/
-        cp ai-agent/agent.py hf/ai-agent/
-        cp ai-agent/config.py hf/ai-agent/
-        cp ai-agent/validation.py hf/ai-agent/
-        cp ai-agent/ai_client.py hf/ai-agent/
-        cp ai-agent/claude_client.py hf/ai-agent/
-        cp ai-agent/gemini_client.py hf/ai-agent/
-        cp ai-agent/database.py hf/ai-agent/
-        cp ai-agent/fallback_classifier.py hf/ai-agent/
-        cp ai-agent/metrics.py hf/ai-agent/
-        cp ai-agent/pyproject.toml hf/ai-agent/
-        cp ai-agent/uv.lock hf/ai-agent/
-        cp ai-agent/.env.example hf/ai-agent/
-        cp -r ai-agent/skills hf/ai-agent/ 2>/dev/null || true
+        cp ai-agent/main.py hf/
+        cp ai-agent/agent.py hf/
+        cp ai-agent/config.py hf/
+        cp ai-agent/validation.py hf/
+        cp ai-agent/ai_client.py hf/
+        cp ai-agent/claude_client.py hf/
+        cp ai-agent/gemini_client.py hf/
+        cp ai-agent/database.py hf/
+        cp ai-agent/fallback_classifier.py hf/
+        cp ai-agent/metrics.py hf/
+        cp ai-agent/pyproject.toml hf/
+        cp ai-agent/uv.lock hf/
+        cp ai-agent/.env.example hf/
+        cp -r ai-agent/skills hf/ 2>/dev/null || true
 
         # Copy backend/src (required for imports)
         mkdir -p hf/backend
