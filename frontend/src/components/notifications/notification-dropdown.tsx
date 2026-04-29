@@ -197,17 +197,17 @@ export function NotificationDropdown({ isOpen, onClose, onCountChange }: Notific
       ref={dropdownRef}
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
-      className="absolute right-0 mt-2 w-96 max-w-[calc(100vw-2rem)] bg-white dark:bg-[#1a1a1a] rounded-lg shadow-2xl border border-gray-200 dark:border-gray-700 z-50 max-h-[600px] flex flex-col"
+      className="fixed sm:absolute inset-x-2 sm:inset-x-auto sm:right-0 mt-2 sm:w-96 bg-white dark:bg-[#1a1a1a] rounded-lg shadow-2xl border border-gray-200 dark:border-gray-700 z-50 max-h-[80vh] sm:max-h-[600px] flex flex-col"
     >
       {/* Header */}
-      <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-        <div className="flex items-center justify-between mb-3">
+      <div className="p-3 sm:p-4 border-b border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between mb-2 sm:mb-3">
           <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-lg text-[#202223] dark:text-[#e3e3e3]">
+            <h3 className="font-semibold text-base sm:text-lg text-[#202223] dark:text-[#e3e3e3]">
               Notifications
             </h3>
             {unreadCount > 0 && (
-              <Badge className="bg-red-600 text-white">
+              <Badge className="bg-red-600 text-white text-xs">
                 {unreadCount}
               </Badge>
             )}
@@ -219,16 +219,17 @@ export function NotificationDropdown({ isOpen, onClose, onCountChange }: Notific
               onClose();
             }}
             onMouseDown={(e) => e.stopPropagation()}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors touch-manipulation"
+            aria-label="Close notifications"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4 sm:h-5 sm:w-5" />
           </button>
         </div>
 
-        <div className="flex items-center justify-between">
-          <div className="flex gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex gap-1.5 sm:gap-2">
             <button
-              className={`h-7 px-3 text-xs font-medium rounded-md transition-colors ${
+              className={`h-8 sm:h-7 px-3 sm:px-3 text-xs font-medium rounded-md transition-colors touch-manipulation ${
                 filter === 'all'
                   ? 'bg-[#008060] text-white dark:bg-[#00a876]'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
@@ -248,7 +249,7 @@ export function NotificationDropdown({ isOpen, onClose, onCountChange }: Notific
               All
             </button>
             <button
-              className={`h-7 px-3 text-xs font-medium rounded-md transition-colors ${
+              className={`h-8 sm:h-7 px-3 sm:px-3 text-xs font-medium rounded-md transition-colors touch-manipulation ${
                 filter === 'unread'
                   ? 'bg-[#008060] text-white dark:bg-[#00a876]'
                   : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
@@ -271,7 +272,7 @@ export function NotificationDropdown({ isOpen, onClose, onCountChange }: Notific
 
           {unreadCount > 0 && (
             <button
-              className="h-7 px-2 text-xs font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 rounded-md transition-colors flex items-center gap-1"
+              className="h-8 sm:h-7 px-2.5 sm:px-2 text-xs font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 rounded-md transition-colors flex items-center gap-1 touch-manipulation"
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -284,8 +285,8 @@ export function NotificationDropdown({ isOpen, onClose, onCountChange }: Notific
                 e.nativeEvent.stopImmediatePropagation();
               }}
             >
-              <CheckCheck className="h-3 w-3" />
-              Mark all
+              <CheckCheck className="h-3.5 w-3.5 sm:h-3 sm:w-3" />
+              <span className="hidden sm:inline">Mark all</span>
             </button>
           )}
         </div>
@@ -294,12 +295,12 @@ export function NotificationDropdown({ isOpen, onClose, onCountChange }: Notific
       {/* Notifications List */}
       <div className="overflow-y-auto flex-1">
         {loading ? (
-          <div className="flex items-center justify-center py-12">
+          <div className="flex items-center justify-center py-8 sm:py-12">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#008060] dark:border-[#00a876]"></div>
           </div>
         ) : filteredNotifications.length === 0 ? (
-          <div className="text-center py-12 px-4">
-            <Bell className="h-12 w-12 mx-auto text-gray-400 dark:text-gray-600 mb-3" />
+          <div className="text-center py-8 sm:py-12 px-4">
+            <Bell className="h-10 w-10 sm:h-12 sm:w-12 mx-auto text-gray-400 dark:text-gray-600 mb-3" />
             <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
               No notifications
             </p>
@@ -314,21 +315,21 @@ export function NotificationDropdown({ isOpen, onClose, onCountChange }: Notific
             {filteredNotifications.map((notification) => (
               <div
                 key={notification.id}
-                className={`p-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors ${
+                className={`p-3 sm:p-4 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors ${
                   !notification.read ? 'bg-blue-50/50 dark:bg-blue-950/20' : ''
                 }`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h4 className="font-medium text-sm text-[#202223] dark:text-[#e3e3e3] truncate">
+                    <div className="flex items-start sm:items-center gap-2 mb-1 flex-wrap">
+                      <h4 className="font-medium text-sm text-[#202223] dark:text-[#e3e3e3] break-words">
                         {notification.title}
                       </h4>
-                      <Badge className={`${getTypeColor(notification.type)} text-xs px-1.5 py-0`}>
+                      <Badge className={`${getTypeColor(notification.type)} text-xs px-1.5 py-0 shrink-0`}>
                         {notification.type}
                       </Badge>
                     </div>
-                    <p className="text-xs text-[#6d7175] dark:text-[#8c9196] line-clamp-2 mb-1">
+                    <p className="text-xs text-[#6d7175] dark:text-[#8c9196] line-clamp-2 mb-1 break-words">
                       {notification.message}
                     </p>
                     <p className="text-xs text-[#8c9196] dark:text-[#6d7175]">
@@ -336,7 +337,7 @@ export function NotificationDropdown({ isOpen, onClose, onCountChange }: Notific
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 shrink-0">
                     {!notification.read && (
                       <button
                         onClick={(e) => {
@@ -345,10 +346,11 @@ export function NotificationDropdown({ isOpen, onClose, onCountChange }: Notific
                           markAsRead(notification.id);
                         }}
                         onMouseDown={(e) => e.stopPropagation()}
-                        className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
+                        className="p-1.5 sm:p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors touch-manipulation"
                         title="Mark as read"
+                        aria-label="Mark as read"
                       >
-                        <CheckCheck className="h-3.5 w-3.5" />
+                        <CheckCheck className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                       </button>
                     )}
                   </div>
@@ -360,7 +362,7 @@ export function NotificationDropdown({ isOpen, onClose, onCountChange }: Notific
       </div>
 
       {/* Footer */}
-      <div className="p-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+      <div className="p-3 sm:p-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
         <button
           onClick={(e) => {
             e.preventDefault();
@@ -369,10 +371,10 @@ export function NotificationDropdown({ isOpen, onClose, onCountChange }: Notific
             onClose();
           }}
           onMouseDown={(e) => e.stopPropagation()}
-          className="w-full text-center text-sm text-[#008060] dark:text-[#00a876] hover:text-[#006e52] dark:hover:text-[#008f64] font-medium flex items-center justify-center gap-1 py-1"
+          className="w-full text-center text-sm text-[#008060] dark:text-[#00a876] hover:text-[#006e52] dark:hover:text-[#008f64] font-medium flex items-center justify-center gap-1.5 py-2 sm:py-1 touch-manipulation"
         >
           View all notifications
-          <ExternalLink className="h-3.5 w-3.5" />
+          <ExternalLink className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
         </button>
         <p className="text-xs text-center text-gray-500 dark:text-gray-400 mt-2">
           Auto-removed after 2 days
