@@ -19,7 +19,7 @@ Ensure the following variables are set in your `.env` file:
 
 ```bash
 # Database
-DATABASE_URL=postgresql://user:password@localhost:5432/einvoicing
+DATABASE_URL=postgresql://....
 
 # FBR API
 FBR_SANDBOX_URL=https://sandbox.fbr.gov.pk/api

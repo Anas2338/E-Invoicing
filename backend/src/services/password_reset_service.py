@@ -1,13 +1,14 @@
 import secrets
-import hashlib
 from datetime import datetime, timedelta
 from typing import Optional
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 
 from src.models.user import User
+from src.utils.email_utils import send_password_reset_email
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Use same bcrypt context as password hashing for consistency
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=10)
 
 
 class PasswordResetService:
@@ -26,18 +27,20 @@ class PasswordResetService:
     @staticmethod
     def hash_token(token: str) -> str:
         """
-        Hash a reset token for secure storage.
+        Hash a reset token for secure storage using bcrypt.
 
-        SECURITY: Tokens are hashed before storage so that if the database
-        is compromised, attackers cannot use the tokens to reset passwords.
+        SECURITY: Tokens are hashed with bcrypt (slow hash) before storage so that
+        if the database is compromised, attackers cannot easily brute-force the tokens.
+
+        Using bcrypt instead of SHA-256 makes brute-force attacks computationally expensive.
 
         Args:
             token: Raw token to hash
 
         Returns:
-            SHA-256 hash of the token
+            Bcrypt hash of the token
         """
-        return hashlib.sha256(token.encode()).hexdigest()
+        return pwd_context.hash(token)
 
     @staticmethod
     def create_reset_token(db: Session, email: str) -> Optional[str]:
@@ -82,8 +85,8 @@ class PasswordResetService:
         """
         Verify a password reset token.
 
-        SECURITY: Compares hash of provided token with stored hash.
-        Uses constant-time comparison to prevent timing attacks.
+        SECURITY: Uses bcrypt's verify method for constant-time comparison
+        to prevent timing attacks.
 
         Args:
             db: Database session
@@ -92,20 +95,18 @@ class PasswordResetService:
         Returns:
             User if token is valid, None otherwise
         """
-        # Hash the provided token
-        token_hash = PasswordResetService.hash_token(token)
+        # Find all users with non-null reset tokens
+        users = db.query(User).filter(User.reset_token.isnot(None)).all()
 
-        # Find user with matching token hash
-        user = db.query(User).filter(User.reset_token == token_hash).first()
+        # Check each user's token using bcrypt verify (constant-time)
+        for user in users:
+            if user.reset_token and pwd_context.verify(token, user.reset_token):
+                # Check if token has expired
+                if user.reset_token_expires and user.reset_token_expires < datetime.utcnow():
+                    return None
+                return user
 
-        if not user:
-            return None
-
-        # Check if token has expired
-        if user.reset_token_expires and user.reset_token_expires < datetime.utcnow():
-            return None
-
-        return user
+        return None
 
     @staticmethod
     def reset_password(db: Session, token: str, new_password: str) -> bool:
@@ -145,7 +146,7 @@ class PasswordResetService:
     @staticmethod
     def send_reset_email(email: str, token: str, frontend_url: str = "http://localhost:3000") -> bool:
         """
-        Send password reset email to user.
+        Send password reset email to user using Resend.
 
         Args:
             email: User's email address
@@ -153,22 +154,15 @@ class PasswordResetService:
             frontend_url: Frontend URL for reset link
 
         Returns:
-            True if email was sent successfully, False otherwise
+            True (always returns True to prevent account enumeration via timing)
         """
-        # In a production environment, you would use a proper email service
-        # For now, we'll just log the reset link
-        reset_link = f"{frontend_url}/auth/reset-password?token={token}"
+        try:
+            # Send email using Resend via email_utils
+            send_password_reset_email(email, token, frontend_url)
+        except Exception as e:
+            # Log error but don't expose it to prevent account enumeration
+            print(f"⚠️ Error sending password reset email: {str(e)}")
 
-        print(f"\n{'='*60}")
-        print(f"PASSWORD RESET EMAIL")
-        print(f"{'='*60}")
-        print(f"To: {email}")
-        print(f"Subject: Password Reset Request")
-        print(f"\nReset Link: {reset_link}")
-        print(f"\nThis link will expire in 1 hour.")
-        print(f"{'='*60}\n")
-
-        # TODO: Implement actual email sending using SMTP or email service
-        # Example with SendGrid, AWS SES, or similar service
-
+        # Always return True to prevent account enumeration
+        # (Don't reveal whether email exists or sending succeeded)
         return True

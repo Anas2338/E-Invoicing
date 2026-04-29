@@ -6,9 +6,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Trash2, Plus, Loader2 } from 'lucide-react';
+import { Trash2, Plus, Loader2, AlertCircle, Info } from 'lucide-react';
 import { masterDataService, fbrIntegrationService, type AllMasterData } from '@/lib/api/api-client';
 import { api } from '@/lib/api';
+import { toast } from 'react-toastify';
 
 interface InvoiceItem {
   hsCode: string;
@@ -107,6 +108,13 @@ export function SaleInvoiceForm({
   const [taxRateError, setTaxRateError] = useState<string | null>(null);
   const [hasSelectedTransactionType, setHasSelectedTransactionType] = useState(false);
 
+  // Saved HS codes and descriptions state
+  const [savedHSCodes, setSavedHSCodes] = useState<Array<any>>([]);
+  const [savedDescriptions, setSavedDescriptions] = useState<Array<any>>([]);
+  const [savedUOMs, setSavedUOMs] = useState<Array<any>>([]);
+  const [savedTaxRates, setSavedTaxRates] = useState<Array<any>>([]);
+  const [loadingSavedData, setLoadingSavedData] = useState(false);
+
   // Fetch master data on component mount
   useEffect(() => {
     const fetchMasterData = async () => {
@@ -131,6 +139,42 @@ export function SaleInvoiceForm({
 
     fetchMasterData();
   }, []);
+
+  // Fetch saved HS codes, descriptions, UOMs, and tax rates on component mount
+  useEffect(() => {
+    const fetchSavedData = async () => {
+      // Only fetch if not in edit mode
+      if (isEditMode) return;
+
+      try {
+        setLoadingSavedData(true);
+
+        // Fetch validated HS codes
+        const hsCodesResponse = await api.auth.getSavedHSCodes(true);
+        const validatedHSCodes = (hsCodesResponse || []).filter((h: any) => h.fbr_validated === true);
+        setSavedHSCodes(validatedHSCodes);
+
+        // Fetch product descriptions
+        const descriptionsResponse = await api.auth.getSavedProductDescriptions(true);
+        setSavedDescriptions(descriptionsResponse || []);
+
+        // Fetch UOMs
+        const uomsResponse = await api.auth.getSavedUOMs(true);
+        setSavedUOMs(uomsResponse || []);
+
+        // Fetch tax rates
+        const taxRatesResponse = await api.auth.getSavedTaxRates(true);
+        setSavedTaxRates(taxRatesResponse || []);
+      } catch (error) {
+        console.error('Failed to fetch saved data:', error);
+        // Don't show error to user, just log it
+      } finally {
+        setLoadingSavedData(false);
+      }
+    };
+
+    fetchSavedData();
+  }, [isEditMode]);
 
   // Auto-fill seller information from user profile
   useEffect(() => {
@@ -167,6 +211,27 @@ export function SaleInvoiceForm({
 
     fetchUserProfile();
   }, [isEditMode, masterData]);
+
+  // Auto-generate invoice number (only in create mode)
+  useEffect(() => {
+    const fetchNextInvoiceNumber = async () => {
+      // Only auto-generate if NOT in edit mode and invoice number is empty
+      if (isEditMode || invoiceNo) return;
+
+      try {
+        const response = await api.auth.getNextInvoiceNumber();
+        if (response.invoice_number) {
+          setInvoiceNo(response.invoice_number);
+        }
+      } catch (error) {
+        console.error('Failed to fetch next invoice number:', error);
+        // Fallback to timestamp-based number if API fails
+        setInvoiceNo(`INV-${Date.now().toString().slice(-6)}`);
+      }
+    };
+
+    fetchNextInvoiceNumber();
+  }, [isEditMode, invoiceNo]);
 
   // Populate form with initial data when in edit mode
   useEffect(() => {
@@ -292,21 +357,21 @@ export function SaleInvoiceForm({
     }
   }, [environment]);
 
-  // Debounced buyer NTN/CNIC change handler
-  useEffect(() => {
-    // Only verify if buyer NTN is provided and has minimum length
-    if (!buyerNTNCNIC || buyerNTNCNIC.trim().length < 7) {
-      setBuyerVerificationMessage(null);
-      return;
-    }
+  // Debounced buyer NTN/CNIC change handler - DISABLED
+  // useEffect(() => {
+  //   // Only verify if buyer NTN is provided and has minimum length
+  //   if (!buyerNTNCNIC || buyerNTNCNIC.trim().length < 7) {
+  //     setBuyerVerificationMessage(null);
+  //     return;
+  //   }
 
-    // Debounce the verification call
-    const timeoutId = setTimeout(() => {
-      verifyBuyerRegistration(buyerNTNCNIC);
-    }, 1000); // Wait 1 second after user stops typing
+  //   // Debounce the verification call
+  //   const timeoutId = setTimeout(() => {
+  //     verifyBuyerRegistration(buyerNTNCNIC);
+  //   }, 1000); // Wait 1 second after user stops typing
 
-    return () => clearTimeout(timeoutId);
-  }, [buyerNTNCNIC, verifyBuyerRegistration]);
+  //   return () => clearTimeout(timeoutId);
+  // }, [buyerNTNCNIC, verifyBuyerRegistration]);
 
   // Fetch dynamic tax rates from FBR API
   const fetchTaxRates = useCallback(async () => {
@@ -360,7 +425,45 @@ export function SaleInvoiceForm({
     fetchTaxRates();
   }, [fetchTaxRates]);
 
+  // Auto-calculate Further Tax for all items when buyer registration type changes
+  useEffect(() => {
+    setItems(prevItems => {
+      return prevItems.map(item => {
+        const valueExclTax = parseFloat(String(item.valueSalesExcludingST)) || 0;
+        const salesTax = parseFloat(String(item.salesTaxApplicable)) || 0;
+
+        if (buyerRegistrationType === 'Unregistered') {
+          // Calculate 4% of Value Excl. Sales Tax
+          if (valueExclTax > 0) {
+            const furtherTax = valueExclTax * 0.04;
+            // Recalculate Total Value = Value Excl. Tax + Sales Tax + Further Tax
+            const totalValue = valueExclTax + salesTax + furtherTax;
+            return {
+              ...item,
+              furtherTax: parseFloat(furtherTax.toFixed(2)),
+              totalValues: parseFloat(totalValue.toFixed(2))
+            };
+          }
+        } else {
+          // Clear Further Tax for Registered buyers and recalculate Total Value
+          // Total Value = Value Excl. Tax + Sales Tax (no Further Tax)
+          const totalValue = valueExclTax + salesTax;
+          return {
+            ...item,
+            furtherTax: 0,
+            totalValues: parseFloat(totalValue.toFixed(2))
+          };
+        }
+        return item;
+      });
+    });
+  }, [buyerRegistrationType]);
+
   const addItem = () => {
+    // Find the transaction type name from the code
+    const selectedTransactionType = masterData?.transaction_types.find(t => t.code === transactionTypeId);
+    const transactionTypeName = selectedTransactionType?.name?.trim() || 'Goods at standard rate (default)';
+
     setItems([...items, {
       hsCode: '',
       productDescription: '',
@@ -377,7 +480,7 @@ export function SaleInvoiceForm({
       sroScheduleNo: '',
       fedPayable: 0,
       discount: 0,
-      saleType: '01',
+      saleType: transactionTypeName, // Use current Transaction Type NAME
       sroItemSerialNo: ''
     }]);
   };
@@ -393,29 +496,36 @@ export function SaleInvoiceForm({
       const updatedItems = [...prevItems];
       updatedItems[index] = { ...updatedItems[index], [field]: value };
 
-      // Auto-calculate when Total Value (Inc. Tax) is updated
-      if (field === 'totalValues' && value) {
-        const totalValue = parseFloat(value) || 0;
+      // Auto-calculate when Value Excl. Sales Tax is updated
+      if (field === 'valueSalesExcludingST' && value) {
+        const valueExclTax = parseFloat(value) || 0;
         const taxRate = parseFloat(updatedItems[index].rate) || 0;
 
-        if (totalValue > 0 && taxRate >= 0) {
-          // Calculate Sales Tax Applicable = Total Value × (Tax Rate / 100)
-          const salesTax = totalValue * (taxRate / 100);
-          // Calculate Value Excl. Sales Tax = Total Value - Sales Tax
-          const valueExclTax = totalValue - salesTax;
+        if (valueExclTax > 0 && taxRate >= 0) {
+          // Calculate Sales Tax Applicable = Value Excl. Tax × (Tax Rate / 100)
+          const salesTax = valueExclTax * (taxRate / 100);
 
-          updatedItems[index].valueSalesExcludingST = parseFloat(valueExclTax.toFixed(2));
+          // Calculate Further Tax (4%) for Unregistered buyers
+          let furtherTax = 0;
+          if (buyerRegistrationType === 'Unregistered') {
+            furtherTax = valueExclTax * 0.04;
+          }
+
+          // Calculate Total Value (Inc. Tax) = Value Excl. Tax + Sales Tax + Further Tax
+          const totalValue = valueExclTax + salesTax + furtherTax;
+
           updatedItems[index].salesTaxApplicable = parseFloat(salesTax.toFixed(2));
+          updatedItems[index].furtherTax = parseFloat(furtherTax.toFixed(2));
+          updatedItems[index].totalValues = parseFloat(totalValue.toFixed(2));
         }
       }
 
       return updatedItems;
     });
-  }, []);
+  }, [buyerRegistrationType]);
 
   // State to track which items are fetching HS code descriptions
   const [fetchingHSCode, setFetchingHSCode] = useState<{ [key: number]: boolean }>({});
-  const [hsCodeSuggestions, setHsCodeSuggestions] = useState<{ [key: number]: Array<{code: string, description: string}> }>({});
 
   // State for dynamically fetched data based on user selections
   const [filteredUoms, setFilteredUoms] = useState<{ [key: number]: Array<{code: string, name: string}> }>({});
@@ -482,66 +592,9 @@ export function SaleInvoiceForm({
     }
   }, [invoiceDate]);
 
-  // Function to filter and find HS code description locally
-  const handleHSCodeChange = useCallback((index: number, value: string) => {
-    updateItem(index, 'hsCode', value);
-
-    // If masterData has HS codes, filter and show suggestions
-    if (masterData && masterData.hs_codes && masterData.hs_codes.length > 0) {
-      if (value.length >= 2) {
-        // Filter HS codes that start with or contain the entered value
-        const filtered = masterData.hs_codes
-          .filter(hs =>
-            hs.code.toLowerCase().includes(value.toLowerCase()) ||
-            hs.description.toLowerCase().includes(value.toLowerCase())
-          )
-          .slice(0, 10); // Limit to 10 suggestions
-
-        setHsCodeSuggestions(prev => ({ ...prev, [index]: filtered }));
-
-        // If exact match found, fetch valid UOMs (description is manual)
-        const exactMatch = masterData.hs_codes.find(hs =>
-          hs.code.toLowerCase() === value.toLowerCase()
-        );
-
-        if (exactMatch) {
-          setHsCodeSuggestions(prev => ({ ...prev, [index]: [] })); // Clear suggestions
-
-          // Fetch valid UOMs for this HS code
-          fetchValidUomsForHsCode(index, exactMatch.code);
-        }
-      } else {
-        setHsCodeSuggestions(prev => ({ ...prev, [index]: [] }));
-      }
-    }
-  }, [masterData, updateItem, fetchValidUomsForHsCode]);
-
-  // Function to select an HS code from suggestions
-  const selectHSCode = useCallback((index: number, hsCode: {code: string, description: string}) => {
-    updateItem(index, 'hsCode', hsCode.code);
-    setHsCodeSuggestions(prev => ({ ...prev, [index]: [] })); // Clear suggestions
-
-    // Fetch valid UOMs for this HS code
-    fetchValidUomsForHsCode(index, hsCode.code);
-  }, [updateItem, fetchValidUomsForHsCode]);
-
   // Function to handle tax rate change
   const handleTaxRateChange = useCallback((index: number, rateValue: string) => {
     updateItem(index, 'rate', rateValue);
-
-    // Auto-select Sale Type based on tax rate
-    const rate = parseFloat(rateValue);
-    let autoSaleType = '01'; // Default: Goods at standard rate
-
-    if (rate === 0) {
-      autoSaleType = '03'; // Goods at zero rate
-    } else if (rate > 0 && rate < 18) {
-      autoSaleType = '02'; // Goods at reduced rate
-    } else if (rate === 18) {
-      autoSaleType = '01'; // Goods at standard rate (default)
-    }
-
-    updateItem(index, 'saleType', autoSaleType);
 
     // Fetch SRO schedules for this tax rate
     if (rateValue && invoiceDate) {
@@ -551,6 +604,15 @@ export function SaleInvoiceForm({
 
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Validate Further Tax for Unregistered buyers
+    if (buyerRegistrationType === 'Unregistered') {
+      const itemsWithoutFurtherTax = items.filter(item => !item.furtherTax || item.furtherTax === 0);
+      if (itemsWithoutFurtherTax.length > 0) {
+        toast.error('Further Tax is required for all items when buyer is Unregistered');
+        return;
+      }
+    }
 
     // Convert items from camelCase to snake_case for backend
     const formattedItems = items.map(item => ({
@@ -664,6 +726,15 @@ export function SaleInvoiceForm({
                   <Select value={transactionTypeId} onValueChange={(val) => {
                     setTransactionTypeId(val);
                     setHasSelectedTransactionType(true);
+
+                    // Find the transaction type name from the code
+                    const selectedTransactionType = masterData.transaction_types.find(t => t.code === val);
+                    const transactionTypeName = selectedTransactionType?.name?.trim() || '';
+
+                    // Auto-set Sale Type for all items to match Transaction Type NAME (not code)
+                    setItems(prevItems =>
+                      prevItems.map(item => ({ ...item, saleType: transactionTypeName }))
+                    );
                   }}>
                     <SelectTrigger disabled={masterData.transaction_types.length === 0}>
                       <span className="flex-1 text-left">
@@ -685,7 +756,6 @@ export function SaleInvoiceForm({
                       )}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-gray-500 mt-1">Required for automatic tax rate calculation</p>
                 </div>
 
             <div>
@@ -832,7 +902,6 @@ export function SaleInvoiceForm({
                   ))}
                 </SelectContent>
               </Select>
-              <p className="text-xs text-gray-500 mt-1">Auto-detected from FBR when NTN/CNIC is entered</p>
             </div>
 
             <div>
@@ -914,15 +983,36 @@ export function SaleInvoiceForm({
       {/* Invoice Items */}
       <Card>
         <CardHeader>
-          <div className="flex justify-between items-center">
-            <CardTitle>Invoice Items</CardTitle>
-            <Button type="button" variant="outline" size="sm" onClick={addItem}>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Item
-            </Button>
-          </div>
+          <CardTitle>Invoice Items</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
+          {/* Warning if no validated HS codes */}
+          {savedHSCodes.length === 0 && !isEditMode && (
+            <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-semibold text-amber-900 dark:text-amber-100 mb-1">
+                    No Validated HS Codes Available
+                  </h4>
+                  <p className="text-sm text-amber-800 dark:text-amber-200 mb-2">
+                    You need to add and validate HS codes in your profile before creating invoices.
+                    Only FBR-validated HS codes can be used in invoices.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => window.location.href = '/profile'}
+                    className="mt-2"
+                  >
+                    Go to Profile to Add HS Codes
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {items.map((item, index) => (
             <div key={index} className="border rounded-lg p-4 space-y-4">
               <div className="flex justify-between items-center mb-2">
@@ -942,25 +1032,45 @@ export function SaleInvoiceForm({
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="relative">
                   <Label>HS Code *</Label>
-                  <Input
-                    value={item.hsCode}
-                    onChange={(e) => handleHSCodeChange(index, e.target.value)}
-                    placeholder="e.g., 0101.2100"
-                    required
-                  />
-                  {hsCodeSuggestions[index] && hsCodeSuggestions[index].length > 0 && (
-                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                      {hsCodeSuggestions[index].map((suggestion, suggestionIndex) => (
-                        <div
-                          key={suggestionIndex}
-                          className="px-3 py-2 hover:bg-indigo-50 cursor-pointer border-b last:border-b-0"
-                          onClick={() => selectHSCode(index, suggestion)}
-                        >
-                          <div className="font-medium text-sm text-indigo-600">{suggestion.code}</div>
-                          <div className="text-xs text-gray-600 truncate">{suggestion.description}</div>
-                        </div>
-                      ))}
-                    </div>
+                  {!isEditMode ? (
+                    <Select
+                      value={item.hsCode}
+                      onValueChange={(val) => updateItem(index, 'hsCode', val)}
+                    >
+                      <SelectTrigger disabled={savedHSCodes.length === 0}>
+                        <SelectValue placeholder={savedHSCodes.length === 0 ? "No HS codes available" : "Select HS Code"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {savedHSCodes.length === 0 ? (
+                          <SelectItem value="none" disabled>No records</SelectItem>
+                        ) : (
+                          savedHSCodes.map((hsCode) => (
+                            <SelectItem key={hsCode.id} value={hsCode.hs_code}>
+                              <div className="flex flex-col">
+                                <span className="font-medium">{hsCode.hs_code}</span>
+                                {hsCode.fbr_description && (
+                                  <span className="text-xs text-gray-500 truncate max-w-[400px]">
+                                    {hsCode.fbr_description}
+                                  </span>
+                                )}
+                              </div>
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      value={item.hsCode}
+                      onChange={(e) => updateItem(index, 'hsCode', e.target.value)}
+                      placeholder="Enter HS Code"
+                      required
+                    />
+                  )}
+                  {!isEditMode && savedHSCodes.length === 0 && (
+                    <p className="text-xs text-amber-600 mt-1">
+                      Add HS codes in your profile first
+                    </p>
                   )}
                 </div>
 
@@ -971,12 +1081,39 @@ export function SaleInvoiceForm({
                       <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
                     )}
                   </div>
-                  <Input
-                    value={item.productDescription}
-                    onChange={(e) => updateItem(index, 'productDescription', e.target.value)}
-                    placeholder="Details of product or service"
-                    required
-                  />
+                  {!isEditMode ? (
+                    <Select
+                      value={item.productDescription}
+                      onValueChange={(val) => updateItem(index, 'productDescription', val)}
+                    >
+                      <SelectTrigger disabled={savedDescriptions.length === 0}>
+                        <SelectValue placeholder={savedDescriptions.length === 0 ? "No descriptions available" : "Select Description"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {savedDescriptions.length === 0 ? (
+                          <SelectItem value="none" disabled>No records</SelectItem>
+                        ) : (
+                          savedDescriptions.map((desc) => (
+                            <SelectItem key={desc.id} value={desc.product_description}>
+                              {desc.product_description}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      value={item.productDescription}
+                      onChange={(e) => updateItem(index, 'productDescription', e.target.value)}
+                      placeholder="Enter product description"
+                      required
+                    />
+                  )}
+                  {!isEditMode && savedDescriptions.length === 0 && (
+                    <p className="text-xs text-amber-600 mt-1">
+                      Add product descriptions in your profile first
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -986,31 +1123,66 @@ export function SaleInvoiceForm({
                       <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
                     )}
                   </div>
-                  <Select value={item.rate} onValueChange={(val) => handleTaxRateChange(index, val)}>
-                    <SelectTrigger disabled={dynamicTaxRates.length === 0}>
-                      <span className="flex-1 text-left">
-                        {item.rate && dynamicTaxRates.length > 0
-                          ? dynamicTaxRates.find(r => r.rate === item.rate)?.name || item.rate
-                          : dynamicTaxRates.length === 0
-                            ? "No tax rate found"
-                            : "Select tax rate"
-                        }
-                      </span>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {dynamicTaxRates.length === 0 ? (
-                        <SelectItem value="none" disabled>No tax rates available</SelectItem>
+                  {!isEditMode ? (
+                    <Select
+                      value={item.rate}
+                      onValueChange={(val) => updateItem(index, 'rate', val)}
+                    >
+                      <SelectTrigger disabled={savedTaxRates.length === 0}>
+                        <SelectValue placeholder={savedTaxRates.length === 0 ? "No tax rates available" : "Select Tax Rate"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {savedTaxRates.length === 0 ? (
+                          <SelectItem value="none" disabled>No records</SelectItem>
+                        ) : (
+                          savedTaxRates.map((rate) => (
+                            <SelectItem key={rate.id} value={rate.tax_rate}>
+                              {rate.tax_rate}% {rate.description ? `- ${rate.description}` : ''}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <>
+                      {dynamicTaxRates.length > 0 ? (
+                        <Select value={item.rate} onValueChange={(val) => handleTaxRateChange(index, val)}>
+                          <SelectTrigger>
+                            <span className="flex-1 text-left">
+                              {item.rate
+                                ? dynamicTaxRates.find(r => r.rate === item.rate)?.name || `${item.rate}%`
+                                : "Select tax rate"
+                              }
+                            </span>
+                          </SelectTrigger>
+                          <SelectContent>
+                            {dynamicTaxRates.map((rate) => (
+                              <SelectItem key={rate.rate} value={rate.rate}>{rate.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       ) : (
-                        dynamicTaxRates.map((rate) => (
-                          <SelectItem key={rate.rate} value={rate.rate}>{rate.name}</SelectItem>
-                        ))
+                        <>
+                          <Input
+                            type="text"
+                            value={item.rate}
+                            onChange={(e) => updateItem(index, 'rate', e.target.value)}
+                            placeholder="Enter tax rate (e.g., 18)"
+                            required
+                          />
+                          <p className="text-xs text-amber-600 mt-1">
+                            Enter tax rate manually (dynamic rates unavailable)
+                          </p>
+                        </>
                       )}
-                    </SelectContent>
-                  </Select>
-                  {dynamicTaxRates.length === 0 && !fetchingTaxRates && (
-                    <p className="text-xs text-gray-500 mt-1">Fill transaction type, date & province</p>
+                    </>
                   )}
-                  {taxRateError && (
+                  {!isEditMode && savedTaxRates.length === 0 && (
+                    <p className="text-xs text-amber-600 mt-1">
+                      Add tax rates in your profile first
+                    </p>
+                  )}
+                  {isEditMode && taxRateError && (
                     <p className="text-xs text-amber-600 mt-1">{taxRateError}</p>
                   )}
                 </div>
@@ -1022,34 +1194,63 @@ export function SaleInvoiceForm({
                       <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
                     )}
                   </div>
-                  <Select value={item.uoM} onValueChange={(val) => updateItem(index, 'uoM', val)}>
-                    <SelectTrigger disabled={masterData.uom.length === 0}>
-                      <span className="flex-1 text-left">
-                        {item.uoM
-                          ? (filteredUoms[index] && filteredUoms[index].length > 0
-                              ? filteredUoms[index].find(u => u.code === item.uoM)?.name
-                              : masterData.uom.find(u => u.code === item.uoM)?.name
-                            ) || item.uoM
-                          : masterData.uom.length === 0
-                            ? "Configure FBR token in profile"
-                            : "Select UOM"
-                        }
-                      </span>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {masterData.uom.length === 0 ? (
-                        <SelectItem value="none" disabled>No options available - Configure FBR token</SelectItem>
-                      ) : (
-                        // Show filtered UOMs if available (from HS code lookup), otherwise show all UOMs
-                        (filteredUoms[index] && filteredUoms[index].length > 0 ? filteredUoms[index] : masterData.uom).map((uom) => (
-                          <SelectItem key={uom.code} value={uom.code}>{uom.name}</SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
-                  {filteredUoms[index] && filteredUoms[index].length > 0 && (
-                    <p className="text-xs text-gray-500 mt-1">
-                      Showing {filteredUoms[index].length} valid UOM(s) for selected HS code
+                  {!isEditMode ? (
+                    <Select
+                      value={item.uoM}
+                      onValueChange={(val) => updateItem(index, 'uoM', val)}
+                    >
+                      <SelectTrigger disabled={savedUOMs.length === 0}>
+                        <span className="flex-1 text-left">
+                          {item.uoM && savedUOMs.length > 0
+                            ? savedUOMs.find(u => u.uom_code === item.uoM)?.uom_name || item.uoM
+                            : savedUOMs.length === 0
+                              ? "No UOMs available"
+                              : "Select UOM"
+                          }
+                        </span>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {savedUOMs.length === 0 ? (
+                          <SelectItem value="none" disabled>No records</SelectItem>
+                        ) : (
+                          savedUOMs.map((uom) => (
+                            <SelectItem key={uom.id} value={uom.uom_code}>
+                              {uom.uom_name}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Select value={item.uoM} onValueChange={(val) => updateItem(index, 'uoM', val)}>
+                      <SelectTrigger disabled={masterData.uom.length === 0}>
+                        <span className="flex-1 text-left">
+                          {item.uoM
+                            ? (filteredUoms[index] && filteredUoms[index].length > 0
+                                ? filteredUoms[index].find(u => u.code === item.uoM)?.name
+                                : masterData.uom.find(u => u.code === item.uoM)?.name
+                              ) || item.uoM
+                            : masterData.uom.length === 0
+                              ? "Configure FBR token in profile"
+                              : "Select UOM"
+                          }
+                        </span>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {masterData.uom.length === 0 ? (
+                          <SelectItem value="none" disabled>No options available - Configure FBR token</SelectItem>
+                        ) : (
+                          // Show filtered UOMs if available (from HS code lookup), otherwise show all UOMs
+                          (filteredUoms[index] && filteredUoms[index].length > 0 ? filteredUoms[index] : masterData.uom).map((uom) => (
+                            <SelectItem key={uom.code} value={uom.code}>{uom.name}</SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {!isEditMode && savedUOMs.length === 0 && (
+                    <p className="text-xs text-amber-600 mt-1">
+                      Add UOMs in your profile first
                     </p>
                   )}
                 </div>
@@ -1063,20 +1264,6 @@ export function SaleInvoiceForm({
                     onChange={(e) => {
                       const val = e.target.value;
                       updateItem(index, 'quantity', val === '' ? 0 : parseFloat(val));
-                    }}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <Label>Total Value (Inc. Tax) *</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={item.totalValues || ''}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      updateItem(index, 'totalValues', val === '' ? 0 : parseFloat(val));
                     }}
                     required
                   />
@@ -1097,6 +1284,36 @@ export function SaleInvoiceForm({
                 </div>
 
                 <div>
+                  <Label>Sales Tax Applicable *</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={item.salesTaxApplicable || ''}
+                    readOnly
+                    className="bg-gray-50 dark:bg-gray-800"
+                    required
+                  />
+                  <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
+                    Auto-calculated from value excl. tax
+                  </p>
+                </div>
+
+                <div>
+                  <Label>Total Value (Inc. Tax) *</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={item.totalValues || ''}
+                    readOnly
+                    className="bg-gray-50 dark:bg-gray-800"
+                    required
+                  />
+                  <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
+                    Auto-calculated from value excl. tax
+                  </p>
+                </div>
+
+                <div>
                   <Label>Fixed/Retail Price *</Label>
                   <Input
                     type="number"
@@ -1105,20 +1322,6 @@ export function SaleInvoiceForm({
                     onChange={(e) => {
                       const val = e.target.value;
                       updateItem(index, 'fixedNotifiedValueOrRetailPrice', val === '' ? 0 : parseFloat(val));
-                    }}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <Label>Sales Tax Applicable *</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={item.salesTaxApplicable || ''}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      updateItem(index, 'salesTaxApplicable', val === '' ? 0 : parseFloat(val));
                     }}
                     required
                   />
@@ -1149,7 +1352,7 @@ export function SaleInvoiceForm({
                 </div>
 
                 <div>
-                  <Label>Further Tax</Label>
+                  <Label>Further Tax {buyerRegistrationType === 'Unregistered' && '*'}</Label>
                   <Input
                     type="number"
                     step="0.01"
@@ -1158,7 +1361,15 @@ export function SaleInvoiceForm({
                       const val = e.target.value;
                       updateItem(index, 'furtherTax', val === '' ? 0 : parseFloat(val));
                     }}
+                    required={buyerRegistrationType === 'Unregistered'}
+                    readOnly={buyerRegistrationType === 'Unregistered'}
+                    className={buyerRegistrationType === 'Unregistered' ? 'bg-gray-50 dark:bg-gray-800' : ''}
                   />
+                  {buyerRegistrationType === 'Unregistered' && (
+                    <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
+                      Auto-calculated (4% of Value Excl. Sales Tax)
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -1194,11 +1405,6 @@ export function SaleInvoiceForm({
                       disabled={!item.rate}
                     />
                   )}
-                  {sroSchedules[index] && sroSchedules[index].length > 0 && (
-                    <p className="text-xs text-gray-500 mt-1">
-                      {sroSchedules[index].length} SRO schedule(s) available for selected tax rate
-                    </p>
-                  )}
                 </div>
 
                 <div>
@@ -1225,25 +1431,6 @@ export function SaleInvoiceForm({
                       updateItem(index, 'discount', val === '' ? 0 : parseFloat(val));
                     }}
                   />
-                </div>
-
-                <div>
-                  <Label>Sale Type *</Label>
-                  <Select value={item.saleType} onValueChange={(val) => updateItem(index, 'saleType', val)}>
-                    <SelectTrigger>
-                      <span className="flex-1 text-left">
-                        {item.saleType
-                          ? masterData.sale_types.find(t => t.code === item.saleType)?.name || item.saleType
-                          : "Select sale type"
-                        }
-                      </span>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {masterData.sale_types.map((type) => (
-                        <SelectItem key={type.code} value={type.code}>{type.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
                 </div>
 
                 <div>

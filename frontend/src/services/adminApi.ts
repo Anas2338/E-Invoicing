@@ -2,8 +2,8 @@
  * Admin API client for user management and approval.
  */
 
-// Use relative path to leverage Next.js proxy
-const API_BASE_URL = '/api/v1';
+// Use environment variable
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8001/api/v1';
 
 // Helper function to get cookie value by name
 function getCookie(name: string): string | null {
@@ -23,6 +23,7 @@ export interface PendingUser {
   name: string;
   created_at: string;
   account_status: string;
+  automation_enabled: boolean;
 }
 
 export interface UserListResponse {
@@ -142,6 +143,77 @@ class AdminApiClient {
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.detail || 'Failed to delete user');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Toggle automation access for a user.
+   */
+  async toggleAutomationAccess(userId: string, enabled: boolean): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/admin/users/${userId}/toggle-automation`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      credentials: 'include',
+      body: JSON.stringify({ enabled }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to toggle automation access');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Manually trigger FBR master data sync.
+   */
+  async triggerSync(): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/admin/sync/trigger`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to trigger sync');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Get FBR sync status and recent history.
+   */
+  async getSyncStatus(): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/admin/sync/status`, {
+      headers: this.getHeaders(),
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to get sync status');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Get FBR sync logs.
+   */
+  async getSyncLogs(limit: number = 50): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/admin/sync/logs?limit=${limit}`, {
+      headers: this.getHeaders(),
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to get sync logs');
     }
 
     return response.json();

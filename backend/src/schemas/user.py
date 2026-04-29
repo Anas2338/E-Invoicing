@@ -61,11 +61,31 @@ class UserProfile(UserResponse):
     """
     Schema for user profile with additional access information.
     """
+    role: str = "user"
     has_production_access: bool = False
     can_post_to_production: bool = False
+    automation_enabled: bool = False
 
     # FBR Integration fields
     fbr_seller_ntn: Optional[str] = None
     fbr_business_name: Optional[str] = None
     fbr_seller_province: Optional[str] = None
     fbr_seller_address: Optional[str] = None
+
+    # Invoice numbering settings
+    invoice_prefix: Optional[str] = 'INV-'
+    invoice_start_number: Optional[int] = 1
+    invoice_padding: Optional[int] = 4
+    invoice_include_year: Optional[bool] = False
+
+
+class UserProfileUpdate(BaseModel):
+    """
+    Schema for updating user profile.
+    Only allows updating name field for security.
+    """
+    name: Optional[str] = None
+
+    class Config:
+        # Reject any extra fields not defined in schema
+        extra = "forbid"

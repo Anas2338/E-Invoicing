@@ -123,7 +123,7 @@ export default function UploadHistory() {
                 Pending
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                Submitted
+                Transferred
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Failed
@@ -149,7 +149,7 @@ export default function UploadHistory() {
                   {session.pending_count}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 dark:text-green-400">
-                  {session.submitted_count}
+                  {session.transferred_count}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 dark:text-red-400">
                   {session.failed_count}
@@ -187,7 +187,7 @@ export default function UploadHistory() {
                     )
                   ) : (
                     <span className="text-gray-400 dark:text-gray-600 text-xs">
-                      Cannot delete (has submitted invoices)
+                      Cannot delete (has transferred invoices)
                     </span>
                   )}
                 </td>

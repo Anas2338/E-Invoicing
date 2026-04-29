@@ -1,5 +1,5 @@
-// Use relative path to leverage Next.js proxy
-const API_BASE_URL = '/api/v1';
+// Use environment variable
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8001/api/v1';
 
 class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -161,6 +161,62 @@ export const api = {
         : '/auth/profile/fbr-credentials';
       return fetchWithAuth(url, {
         method: 'DELETE',
+      });
+    },
+
+    getSavedProducts: async (activeOnly: boolean = true) => {
+      const params = new URLSearchParams();
+      if (activeOnly) {
+        params.append('active_only', 'true');
+      }
+      return fetchWithAuth(`/profile/saved-products?${params.toString()}`);
+    },
+
+    getSavedHSCodes: async (activeOnly: boolean = true) => {
+      const params = new URLSearchParams();
+      if (activeOnly) {
+        params.append('active_only', 'true');
+      }
+      return fetchWithAuth(`/profile/saved-hs-codes?${params.toString()}`);
+    },
+
+    getSavedProductDescriptions: async (activeOnly: boolean = true) => {
+      const params = new URLSearchParams();
+      if (activeOnly) {
+        params.append('active_only', 'true');
+      }
+      return fetchWithAuth(`/profile/saved-product-descriptions?${params.toString()}`);
+    },
+
+    getSavedUOMs: async (activeOnly: boolean = true) => {
+      const params = new URLSearchParams();
+      if (activeOnly) {
+        params.append('active_only', 'true');
+      }
+      return fetchWithAuth(`/profile/saved-uoms?${params.toString()}`);
+    },
+
+    getSavedTaxRates: async (activeOnly: boolean = true) => {
+      const params = new URLSearchParams();
+      if (activeOnly) {
+        params.append('active_only', 'true');
+      }
+      return fetchWithAuth(`/profile/saved-tax-rates?${params.toString()}`);
+    },
+
+    getNextInvoiceNumber: async () => {
+      return fetchWithAuth('/profile/next-invoice-number');
+    },
+
+    updateInvoiceSettings: async (settings: {
+      invoice_prefix?: string;
+      invoice_start_number?: number;
+      invoice_padding?: number;
+      invoice_include_year?: boolean;
+    }) => {
+      return fetchWithAuth('/profile/invoice-settings', {
+        method: 'PUT',
+        body: JSON.stringify(settings),
       });
     },
   },

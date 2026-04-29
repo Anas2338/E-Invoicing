@@ -16,11 +16,13 @@ class UploadSessionResponse(BaseModel):
     uploaded_at: datetime = Field(..., description="Upload timestamp")
     total_count: int = Field(..., description="Total invoices in this session")
     pending_count: int = Field(0, description="Number of pending invoices")
-    submitted_count: int = Field(0, description="Number of submitted invoices")
+    validated_count: int = Field(0, description="Number of validated invoices")
+    transferred_count: int = Field(0, description="Number of transferred invoices")
+    transfer_failed_count: int = Field(0, description="Number of transfer failed invoices")
     failed_count: int = Field(0, description="Number of failed invoices")
     blocked_count: int = Field(0, description="Number of blocked invoices")
     expired_count: int = Field(0, description="Number of expired invoices")
-    can_delete: bool = Field(..., description="Whether this session can be deleted (no submitted invoices)")
+    can_delete: bool = Field(..., description="Whether this session can be deleted (no transferred invoices)")
 
     class Config:
         from_attributes = True

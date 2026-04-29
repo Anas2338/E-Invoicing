@@ -63,6 +63,7 @@ class InvoiceBase(BaseModel):
     external_id: str
     invoice_type: str  # "Sale Invoice", "Debit Note", etc.
     invoice_date: str  # "YYYY-MM-DD" format
+    transaction_type_id: Optional[str] = None  # Transaction type ID (e.g., "01", "02")
     seller_ntn_cnic: str  # 7 or 13 digits
     seller_business_name: str
     seller_province: str
@@ -89,6 +90,7 @@ class InvoiceCreate(BaseModel):
     external_id: Optional[str] = None
     invoice_type: str  # "Sale Invoice", "Debit Note", etc.
     invoice_date: str  # "YYYY-MM-DD" format
+    transaction_type_id: Optional[str] = None  # Transaction type ID (e.g., "01", "02")
     seller_ntn_cnic: str  # 7 or 13 digits
     seller_business_name: str
     seller_province: str
@@ -130,6 +132,11 @@ class InvoiceResponse(InvoiceBase):
     validation_errors: Optional[dict] = None
     fbr_response: Optional[FBRValidationResponse] = None
 
+    # Transfer tracking fields
+    source: str = "manual"  # "manual" or "automation"
+    transferred_at: Optional[datetime] = None
+    automation_invoice_id: Optional[uuid.UUID] = None
+
 
 class InvoiceListResponse(BaseModel):
     """
@@ -149,6 +156,7 @@ class InvoiceFilter(BaseModel):
     status: Optional[InvoiceStatus] = None
     invoice_type: Optional[InvoiceType] = None
     environment: Optional[Environment] = None
+    source: Optional[str] = None  # Filter by source: "manual" or "automation"
     date_from: Optional[datetime] = None
     date_to: Optional[datetime] = None
     page: int = 1

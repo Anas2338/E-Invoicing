@@ -1,7 +1,7 @@
 """
 PDF generation service for FBR-compliant invoice printing.
 
-This service generates PDF documents for submitted invoices with:
+This service generates PDF documents for transferred invoices with:
 - Complete invoice data (header, line items, totals)
 - FBR Digital Invoicing System logo
 - QR code containing FBR-issued USIN for verification
@@ -61,10 +61,10 @@ class PDFService:
 
         # Validate invoice status
         if is_automation:
-            if invoice.status != AutomationInvoiceStatus.SUBMITTED:
+            if invoice.status != AutomationInvoiceStatus.TRANSFERRED:
                 raise ValueError(
                     f"Cannot generate PDF for invoice with status '{invoice.status}'. "
-                    "Only submitted invoices can be printed."
+                    "Only transferred invoices can be printed."
                 )
         else:
             if invoice.status != InvoiceStatus.POSTED:
@@ -96,7 +96,7 @@ class PDFService:
 
             # Extract USIN from FBR response
             if not invoice.fbr_response:
-                raise ValueError("FBR response is missing - invoice may not be submitted")
+                raise ValueError("FBR response is missing - invoice may not be transferred")
             usin = invoice.fbr_response.get('USIN') or invoice.fbr_response.get('usin')
             if not usin:
                 raise ValueError("USIN not found in FBR response")
@@ -223,13 +223,13 @@ class PDFService:
             # Generate each invoice on a separate page
             for idx, invoice in enumerate(invoices):
                 # Validate invoice status
-                if invoice.status != AutomationInvoiceStatus.SUBMITTED:
+                if invoice.status != AutomationInvoiceStatus.TRANSFERRED:
                     logger.warning(
                         f"Skipping invoice {invoice.invoice_number} with status '{invoice.status}'"
                     )
                     raise ValueError(
                         f"Cannot generate PDF for invoice {invoice.invoice_number} "
-                        f"with status '{invoice.status}'. Only submitted invoices can be printed."
+                        f"with status '{invoice.status}'. Only transferred invoices can be printed."
                     )
 
                 # Validate invoice data

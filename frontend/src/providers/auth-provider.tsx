@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useActivityTimeout } from '@/hooks/useActivityTimeout';
 import { toast } from 'sonner';
 
-// API Base URL - use relative path to leverage Next.js proxy
-const API_BASE_URL = '/api/v1';
+// API Base URL - use environment variable
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8001/api/v1';
 
 // Define types
 interface User {
@@ -22,6 +22,7 @@ interface User {
   };
   has_production_access?: boolean;
   can_post_to_production?: boolean;
+  automation_enabled?: boolean;
 }
 
 interface AuthContextType {
@@ -113,7 +114,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Login failed' }));
-        console.error('Login error:', errorData);
         setLoading(false);
         throw new Error(errorData.detail || errorData.error || 'Invalid credentials');
       }
@@ -137,7 +137,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       window.location.href = '/dashboard';
 
     } catch (error) {
-      console.error('Sign in error:', error);
       setLoading(false);
       throw error;
     }
@@ -173,7 +172,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(data.detail || data.error || 'Registration failed');
       }
     } catch (error) {
-      console.error('Sign up error:', error);
       throw error;
     } finally {
       setLoading(false);

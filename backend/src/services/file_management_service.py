@@ -47,20 +47,24 @@ class FileManagementService:
             ).all()
 
             pending_count = sum(1 for inv in invoices if inv.status == "pending")
-            submitted_count = sum(1 for inv in invoices if inv.status == "submitted")
+            transferred_count = sum(1 for inv in invoices if inv.status == "transferred")
+            transfer_failed_count = sum(1 for inv in invoices if inv.status == "transfer_failed")
+            validated_count = sum(1 for inv in invoices if inv.status == "validated")
             failed_count = sum(1 for inv in invoices if inv.status == "failed")
             blocked_count = sum(1 for inv in invoices if inv.status == "blocked")
             expired_count = sum(1 for inv in invoices if inv.status == "expired")
 
-            # Can delete if no submitted invoices
-            can_delete = submitted_count == 0
+            # Can delete if no transferred invoices
+            can_delete = transferred_count == 0
 
             result.append({
                 "id": str(session.id),
                 "uploaded_at": session.upload_timestamp,
                 "total_count": len(invoices),
                 "pending_count": pending_count,
-                "submitted_count": submitted_count,
+                "validated_count": validated_count,
+                "transferred_count": transferred_count,
+                "transfer_failed_count": transfer_failed_count,
                 "failed_count": failed_count,
                 "blocked_count": blocked_count,
                 "expired_count": expired_count,
@@ -71,7 +75,7 @@ class FileManagementService:
 
     def delete_upload_session(self, session_id: str, user_id: str) -> Tuple[bool, int, str]:
         """
-        Delete an upload session and all its invoices if no invoices are submitted.
+        Delete an upload session and all its invoices if no invoices are transferred.
 
         Args:
             session_id: Upload session ID
@@ -81,7 +85,7 @@ class FileManagementService:
             Tuple of (success, deleted_count, message)
 
         Raises:
-            HTTPException: If session not found or has submitted invoices
+            HTTPException: If session not found or has transferred invoices
         """
         # Verify session exists and belongs to user
         session = self.db.exec(
@@ -100,21 +104,21 @@ class FileManagementService:
                 detail="Upload session not found"
             )
 
-        # Check for submitted invoices
-        submitted_count = self.db.exec(
+        # Check for transferred invoices
+        transferred_count = self.db.exec(
             select(func.count(AutomationInvoice.id))
             .where(
                 and_(
                     AutomationInvoice.excel_upload_session_id == session.id,
-                    AutomationInvoice.status == "submitted"
+                    AutomationInvoice.status == "transferred"
                 )
             )
         ).one()
 
-        if submitted_count > 0:
+        if transferred_count > 0:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot delete upload session - {submitted_count} invoices already submitted to FBR. You can only delete pending or failed invoices."
+                detail=f"Cannot delete upload session - {transferred_count} invoices already transferred to main database. You can only delete pending, validated, or failed invoices."
             )
 
         # Get all invoices for this session
@@ -162,7 +166,7 @@ class FileManagementService:
             Updated invoice
 
         Raises:
-            HTTPException: If invoice not found or already submitted
+            HTTPException: If invoice not found or already transferred
         """
         invoice = self.db.exec(
             select(AutomationInvoice)
@@ -180,10 +184,10 @@ class FileManagementService:
                 detail="Invoice not found"
             )
 
-        if invoice.status == "submitted":
+        if invoice.status == "transferred":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot block submitted invoice"
+                detail="Cannot block transferred invoice"
             )
 
         # Update status to blocked
@@ -269,7 +273,7 @@ class FileManagementService:
 
     def delete_invoice(self, invoice_id: str, user_id: str) -> Tuple[bool, str]:
         """
-        Delete a single invoice if not submitted.
+        Delete a single invoice if not transferred.
 
         Args:
             invoice_id: Invoice ID
@@ -279,7 +283,7 @@ class FileManagementService:
             Tuple of (success, message)
 
         Raises:
-            HTTPException: If invoice not found or already submitted
+            HTTPException: If invoice not found or already transferred
         """
         invoice = self.db.exec(
             select(AutomationInvoice)
@@ -297,10 +301,10 @@ class FileManagementService:
                 detail="Invoice not found"
             )
 
-        if invoice.status in ["submitted", "validated"]:
+        if invoice.status in ["transferred", "validated"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot delete submitted invoice. Submitted invoices are permanent for audit purposes."
+                detail="Cannot delete transferred invoice. Transferred invoices are permanent for audit purposes."
             )
 
         # Log the action before deletion
@@ -336,7 +340,7 @@ class FileManagementService:
             Number of invoices blocked
 
         Raises:
-            HTTPException: If any invoice not found or already submitted
+            HTTPException: If any invoice not found or already transferred
         """
         blocked_count = 0
 

@@ -1,16 +1,22 @@
 # AI Agent - Invoice Automation
 
-Intelligent autonomous agent for processing FBR invoices with AI-powered decision making.
+Intelligent autonomous agent for validating FBR invoices during bulk upload.
 
 ## Overview
 
-The AI Agent replaces the old hourly FTE worker with:
-- **Continuous monitoring** (1-minute detection vs hourly)
-- **5-minute precision** (vs hourly batches)
+The AI Agent handles invoice validation during Excel bulk uploads:
+- **Real-time validation** during upload processing
 - **AI-powered error classification** (transient vs permanent)
-- **Adaptive retry strategies** (exponential backoff + circuit breaker)
+- **Automated data quality checks**
 - **Priority-based processing** (time, value, retry count)
 - **Hourly health checks** with anomaly detection
+
+**Important**: The AI Agent validates invoices but does NOT post them to FBR. Validated invoices are:
+1. Stored in the automation database
+2. Automatically transferred to the main database daily at 6 PM PKT
+3. Manually posted by users from the main invoice system
+
+This separation ensures better control, audit trails, and allows users to review invoices before FBR submission.
 
 ## Quick Start
 
@@ -88,8 +94,7 @@ ai-agent/
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `DATABASE_URL` | Yes | - | PostgreSQL connection string |
-| `DRY_RUN` | No | `false` | Set to `true` to simulate FBR responses without real API calls (for testing) |
+| `AUTOMATION_DATABASE_URL` | Yes | - | PostgreSQL connection string for automation database |
 | `AI_PROVIDER` | No | `gemini` | AI provider: `claude` or `gemini` |
 | `ANTHROPIC_API_KEY` | If using Claude | - | Claude API key |
 | `GEMINI_API_KEY` | If using Gemini | - | Gemini API key |
@@ -97,7 +102,13 @@ ai-agent/
 | `LOG_LEVEL` | No | `INFO` | Logging level |
 | `AGENT_CHECK_INTERVAL` | No | `300` | Processing interval (seconds) |
 
-### Dry Run Mode (Testing Without FBR)
+### Workflow
+
+1. **Upload**: User uploads Excel file with invoices via backend API
+2. **Validation**: AI Agent validates invoice data during upload
+3. **Storage**: Validated invoices stored in automation database with status `VALIDATED`
+4. **Transfer**: Daily at 6 PM PKT, validated invoices from last 24 hours are transferred to main database
+5. **Manual Posting**: Users manually post transferred invoices to FBR from main system
 
 **For safe testing during portal development:**
 

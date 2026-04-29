@@ -9,7 +9,8 @@ interface StatsProps {
     pending_count: number;
     expired_count: number;
     validated_count: number;
-    submitted_count: number;
+    transferred_count: number;
+    transfer_failed_count: number;
     failed_count: number;
     blocked_count: number;
   };
@@ -32,11 +33,18 @@ export function AutomationStats({ stats }: StatsProps) {
       bgColor: 'bg-[#fef3c7] dark:bg-[#451a03]/30'
     },
     {
-      label: 'Submitted',
-      value: stats.submitted_count,
+      label: 'Transferred',
+      value: stats.transferred_count,
       icon: CheckCircle,
       color: 'text-[#065f46] dark:text-[#34d399]',
       bgColor: 'bg-[#d1fae5] dark:bg-[#064e3b]/30'
+    },
+    {
+      label: 'Transfer Failed',
+      value: stats.transfer_failed_count,
+      icon: XCircle,
+      color: 'text-[#7c2d12] dark:text-[#fb923c]',
+      bgColor: 'bg-[#ffedd5] dark:bg-[#431407]/30'
     },
     {
       label: 'Failed',

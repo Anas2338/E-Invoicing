@@ -13,7 +13,9 @@ class AutomationInvoiceStatus(str, Enum):
     PENDING = "pending"
     EXPIRED = "expired"
     VALIDATED = "validated"
-    SUBMITTED = "submitted"
+    SUBMITTED = "submitted"  # Deprecated - kept for backward compatibility
+    TRANSFERRED = "transferred"
+    TRANSFER_FAILED = "transfer_failed"
     FAILED = "failed"
     BLOCKED = "blocked"
 
@@ -69,7 +71,8 @@ class DashboardStatsResponse(BaseModel):
     pending_count: int
     expired_count: int
     validated_count: int
-    submitted_count: int
+    transferred_count: int
+    transfer_failed_count: int
     failed_count: int
     blocked_count: int
 

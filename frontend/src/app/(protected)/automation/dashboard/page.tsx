@@ -9,12 +9,36 @@ import InvoiceDetail from '@/components/automation/InvoiceDetail';
 import { automationApi } from '@/services/automationApi';
 import { ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
+import { useAuth } from '@/providers/auth-provider';
 
 export default function DashboardPage() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!authLoading && user && !user.automation_enabled) {
+      toast.error('Automation access not enabled. Please contact your administrator.');
+      router.push('/dashboard');
+    }
+  }, [user, authLoading, router]);
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#008060] dark:border-[#00a876] mx-auto"></div>
+          <p className="mt-4 text-[#6d7175] dark:text-[#8c9196]">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user?.automation_enabled) {
+    return null;
+  }
   const [pagination, setPagination] = useState({
     total: 0,
     page: 1,

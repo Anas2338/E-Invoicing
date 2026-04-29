@@ -1,8 +1,8 @@
 // API Service Layer for FBR Invoice Portal
 
-// Configuration - use relative path to leverage Next.js proxy
-const API_BASE_URL = '/api/v1';
-const BACKEND_URL = '';
+// Configuration - use environment variables
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8001/api/v1';
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8001';
 
 // Helper function to get cookie value by name
 function getCookie(name: string): string | null {
@@ -199,6 +199,85 @@ export class InvoiceService extends ApiClient {
   }
 }
 
+export class NotificationService extends ApiClient {
+  async getAll(): Promise<any[]> {
+    const response = await this.request<any[]>('/notifications/feed?limit=50');
+
+    // Transform backend response to frontend format
+    return response.map((notif: any) => ({
+      id: notif.id.toString(),
+      title: this.generateTitle(notif.data_type, notif.change_type),
+      message: notif.summary,
+      type: this.mapChangeTypeToNotificationType(notif.change_type),
+      read: notif.is_read,
+      created_at: notif.created_at
+    }));
+  }
+
+  async getUnreadCount(): Promise<{ count: number }> {
+    const response = await this.request<any>('/notifications/unread-count');
+    return { count: response.unread_count || 0 };
+  }
+
+  async markAsRead(id: string): Promise<void> {
+    await this.request(`/notifications/mark-read/${id}`, {
+      method: 'POST',
+    });
+  }
+
+  async markAllAsRead(): Promise<void> {
+    await this.request('/notifications/mark-all-read', {
+      method: 'POST',
+    });
+  }
+
+  async delete(id: string): Promise<void> {
+    // Backend doesn't have delete endpoint for FBR notifications
+    // FBR notifications are system-wide and auto-cleaned after 2 days
+    // Just mark as read instead
+    await this.markAsRead(id);
+  }
+
+  // Helper methods to transform backend data
+  private generateTitle(dataType: string, changeType: string): string {
+    const typeMap: { [key: string]: string } = {
+      'provinces': 'Province',
+      'uom': 'UOM',
+      'hs_codes': 'HS Code',
+      'tax_rates': 'Tax Rate',
+      'transaction_types': 'Transaction Type',
+      'sro_schedules': 'SRO Schedule',
+      'sale_types': 'Sale Type',
+      'registration_types': 'Registration Type',
+      'invoice_types': 'Invoice Type'
+    };
+
+    const changeMap: { [key: string]: string } = {
+      'added': 'Added',
+      'modified': 'Updated',
+      'deleted': 'Removed'
+    };
+
+    const type = typeMap[dataType] || dataType;
+    const change = changeMap[changeType] || changeType;
+
+    return `FBR ${type} ${change}`;
+  }
+
+  private mapChangeTypeToNotificationType(changeType: string): 'info' | 'success' | 'warning' | 'error' {
+    switch (changeType) {
+      case 'added':
+        return 'info';
+      case 'modified':
+        return 'warning';
+      case 'deleted':
+        return 'error';
+      default:
+        return 'info';
+    }
+  }
+}
+
 export class UserService extends ApiClient {
   async getCurrentUser(): Promise<any> {
     return this.request('/auth/profile');
@@ -218,10 +297,216 @@ export class UserService extends ApiClient {
   async updateFbrCredentials(credentials: {
     fbr_sandbox_token?: string;
     fbr_production_token?: string;
+    fbr_system_sync_token?: string;
   }): Promise<{ success: boolean; message: string }> {
     return this.request('/auth/profile/fbr-credentials', {
       method: 'PUT',
       body: JSON.stringify(credentials),
+    });
+  }
+
+  // Profile Management
+  async getUserProfile(): Promise<any> {
+    return this.request('/profile');
+  }
+
+  async updateUserProfile(data: {
+    name?: string;
+    fbr_seller_ntn?: string;
+    fbr_business_name?: string;
+    fbr_seller_province?: string;
+    fbr_seller_address?: string;
+  }): Promise<any> {
+    return this.request('/profile', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getSellerInfo(): Promise<{
+    seller_ntn_cnic: string;
+    seller_business_name: string;
+    seller_province: string;
+    seller_address: string;
+    is_complete: boolean;
+  }> {
+    return this.request('/profile/seller-info');
+  }
+
+  // Saved Products Management
+  async getSavedProducts(activeOnly: boolean = true): Promise<any[]> {
+    const params = new URLSearchParams();
+    if (activeOnly) {
+      params.append('active_only', 'true');
+    }
+    return this.request(`/profile/saved-products?${params.toString()}`);
+  }
+
+  async getSavedProduct(id: number): Promise<any> {
+    return this.request(`/profile/saved-products/${id}`);
+  }
+
+  async createSavedProduct(data: {
+    hs_code: string;
+    product_description: string;
+    default_uom?: string;
+    default_rate?: string;
+    default_sale_type?: string;
+    default_unit_price?: number;
+    display_order?: number;
+  }): Promise<any> {
+    return this.request('/profile/saved-products', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSavedProduct(id: number, data: {
+    hs_code?: string;
+    product_description?: string;
+    default_uom?: string;
+    default_rate?: string;
+    default_sale_type?: string;
+    default_unit_price?: number;
+    display_order?: number;
+    is_active?: number;
+  }): Promise<any> {
+    return this.request(`/profile/saved-products/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSavedProduct(id: number, hardDelete: boolean = false): Promise<{ message: string }> {
+    const params = new URLSearchParams();
+    if (hardDelete) {
+      params.append('hard_delete', 'true');
+    }
+    return this.request(`/profile/saved-products/${id}?${params.toString()}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async reorderSavedProducts(productIds: number[]): Promise<{ message: string }> {
+    return this.request('/profile/saved-products/reorder', {
+      method: 'POST',
+      body: JSON.stringify(productIds),
+    });
+  }
+
+  // Saved HS Codes Management
+  async getSavedHSCodes(activeOnly: boolean = true): Promise<any[]> {
+    const params = new URLSearchParams();
+    if (activeOnly) {
+      params.append('active_only', 'true');
+    }
+    return this.request(`/profile/saved-hs-codes?${params.toString()}`);
+  }
+
+  async createSavedHSCode(data: { hs_code: string }): Promise<any> {
+    return this.request('/profile/saved-hs-codes', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSavedHSCode(id: number, data: { hs_code: string }): Promise<any> {
+    return this.request(`/profile/saved-hs-codes/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSavedHSCode(id: number): Promise<{ message: string }> {
+    return this.request(`/profile/saved-hs-codes/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Saved Product Descriptions Management
+  async getSavedProductDescriptions(activeOnly: boolean = true): Promise<any[]> {
+    const params = new URLSearchParams();
+    if (activeOnly) {
+      params.append('active_only', 'true');
+    }
+    return this.request(`/profile/saved-product-descriptions?${params.toString()}`);
+  }
+
+  async createSavedProductDescription(data: { product_description: string }): Promise<any> {
+    return this.request('/profile/saved-product-descriptions', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSavedProductDescription(id: number, data: { product_description: string }): Promise<any> {
+    return this.request(`/profile/saved-product-descriptions/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSavedProductDescription(id: number): Promise<{ message: string }> {
+    return this.request(`/profile/saved-product-descriptions/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Saved UOMs Management
+  async getSavedUOMs(activeOnly: boolean = true): Promise<any[]> {
+    const params = new URLSearchParams();
+    if (activeOnly) {
+      params.append('active_only', 'true');
+    }
+    return this.request(`/profile/saved-uoms?${params.toString()}`);
+  }
+
+  async createSavedUOM(data: { uom_code: string; uom_name: string }): Promise<any> {
+    return this.request('/profile/saved-uoms', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSavedUOM(id: number, data: { uom_code: string; uom_name: string }): Promise<any> {
+    return this.request(`/profile/saved-uoms/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSavedUOM(id: number): Promise<{ message: string }> {
+    return this.request(`/profile/saved-uoms/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Saved Tax Rates Management
+  async getSavedTaxRates(activeOnly: boolean = true): Promise<any[]> {
+    const params = new URLSearchParams();
+    if (activeOnly) {
+      params.append('active_only', 'true');
+    }
+    return this.request(`/profile/saved-tax-rates?${params.toString()}`);
+  }
+
+  async createSavedTaxRate(data: { tax_rate: string; description?: string }): Promise<any> {
+    return this.request('/profile/saved-tax-rates', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSavedTaxRate(id: number, data: { tax_rate: string; description?: string }): Promise<any> {
+    return this.request(`/profile/saved-tax-rates/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSavedTaxRate(id: number): Promise<{ message: string }> {
+    return this.request(`/profile/saved-tax-rates/${id}`, {
+      method: 'DELETE',
     });
   }
 }
@@ -313,39 +598,28 @@ export class MasterDataService extends ApiClient {
     return this.request('/masterdata/all');
   }
 
-  // Parameterized APIs - called dynamically during form filling
+  // Parameterized APIs - REMOVED: Data is synced to local DB at 6am daily
+  // These methods now return empty arrays to prevent runtime FBR API calls
+  // All data should be fetched from local database via getAllMasterData()
+
   async getSroSchedule(rateId: number, date: string, originationSupplierCsv: number): Promise<Array<{id: string, description: string}>> {
-    const params = new URLSearchParams({
-      rate_id: rateId.toString(),
-      date: date,
-      origination_supplier_csv: originationSupplierCsv.toString()
-    });
-    return this.request(`/masterdata/sro-schedule?${params.toString()}`);
+    console.log('[Performance] getSroSchedule removed - using local database data synced at 6am');
+    return [];
   }
 
   async getSaleTypeToRate(date: string, transTypeId: number, originationSupplier: number): Promise<any[]> {
-    const params = new URLSearchParams({
-      date: date,
-      trans_type_id: transTypeId.toString(),
-      origination_supplier: originationSupplier.toString()
-    });
-    return this.request(`/masterdata/sale-type-to-rate?${params.toString()}`);
+    console.log('[Performance] getSaleTypeToRate removed - using local database data synced at 6am');
+    return [];
   }
 
   async getHsUom(hsCode: string, annexureId: number): Promise<Array<{code: string, name: string}>> {
-    const params = new URLSearchParams({
-      hs_code: hsCode,
-      annexure_id: annexureId.toString()
-    });
-    return this.request(`/masterdata/hs-uom?${params.toString()}`);
+    console.log('[Performance] getHsUom removed - using local database data synced at 6am');
+    return [];
   }
 
   async getSroItemDetails(date: string, sroId: number): Promise<any[]> {
-    const params = new URLSearchParams({
-      date: date,
-      sro_id: sroId.toString()
-    });
-    return this.request(`/masterdata/sro-item-details?${params.toString()}`);
+    console.log('[Performance] getSroItemDetails removed - using local database data synced at 6am');
+    return [];
   }
 }
 
@@ -364,20 +638,27 @@ export interface BuyerVerificationResponse {
 }
 
 export class FBRIntegrationService extends ApiClient {
+  // REMOVED: Buyer verification causes performance issues during peak times
+  // Users should manually select registration type
   async verifyBuyer(ntnCnic: string, environment: string = 'SANDBOX'): Promise<BuyerVerificationResponse> {
-    return this.request('/fbr/verify-buyer', {
-      method: 'POST',
-      body: JSON.stringify({
-        ntn_cnic: ntnCnic,
-        environment: environment
-      }),
-    });
+    console.log('[Performance] Buyer verification removed - manual selection required');
+    return {
+      success: false,
+      registration_type: 'Registered',
+      is_registered: false,
+      error: 'Buyer verification disabled for performance - please select registration type manually'
+    };
   }
 
+  // REMOVED: HS code descriptions are synced to local DB at 6am daily
   async getHSCodeDescription(hsCode: string): Promise<{ hs_code: string; description: string | null; found: boolean; message?: string }> {
-    return this.request(`/fbr-reference/hs-code/${encodeURIComponent(hsCode)}`, {
-      method: 'GET',
-    });
+    console.log('[Performance] HS code description lookup removed - using local database data synced at 6am');
+    return {
+      hs_code: hsCode,
+      description: null,
+      found: false,
+      message: 'HS code descriptions available in local database'
+    };
   }
 }
 
@@ -387,3 +668,4 @@ export const invoiceService = new InvoiceService();
 export const userService = new UserService();
 export const masterDataService = new MasterDataService();
 export const fbrIntegrationService = new FBRIntegrationService();
+export const notificationService = new NotificationService();

@@ -44,11 +44,11 @@ export default function CreateInvoicePage() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => router.push('/dashboard')}
+          onClick={() => router.push('/invoices/history')}
           className="flex items-center gap-2"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to Dashboard
+          Back to Invoice History
         </Button>
       </div>
 

@@ -276,7 +276,8 @@ class AutomationService:
             func.sum(func.cast(AutomationInvoice.status == AutomationInvoiceStatus.PENDING, sa.Integer)).label('pending'),
             func.sum(func.cast(AutomationInvoice.status == AutomationInvoiceStatus.EXPIRED, sa.Integer)).label('expired'),
             func.sum(func.cast(AutomationInvoice.status == AutomationInvoiceStatus.VALIDATED, sa.Integer)).label('validated'),
-            func.sum(func.cast(AutomationInvoice.status == AutomationInvoiceStatus.SUBMITTED, sa.Integer)).label('submitted'),
+            func.sum(func.cast(AutomationInvoice.status == AutomationInvoiceStatus.TRANSFERRED, sa.Integer)).label('transferred'),
+            func.sum(func.cast(AutomationInvoice.status == AutomationInvoiceStatus.TRANSFER_FAILED, sa.Integer)).label('transfer_failed'),
             func.sum(func.cast(AutomationInvoice.status == AutomationInvoiceStatus.FAILED, sa.Integer)).label('failed'),
             func.sum(func.cast(AutomationInvoice.status == 'blocked', sa.Integer)).label('blocked'),
         ).where(AutomationInvoice.user_id == user_id)
@@ -288,7 +289,8 @@ class AutomationService:
             "pending_count": result.pending or 0,
             "expired_count": result.expired or 0,
             "validated_count": result.validated or 0,
-            "submitted_count": result.submitted or 0,
+            "transferred_count": result.transferred or 0,
+            "transfer_failed_count": result.transfer_failed or 0,
             "failed_count": result.failed or 0,
             "blocked_count": result.blocked or 0,
         }
@@ -354,7 +356,7 @@ class AutomationService:
             self.log_automation_activity(
                 invoice_id=invoice_id,
                 action=AutomationLogAction.RETRY,
-                status=AutomationLogStatus.FAILED,
+                status=AutomationLogStatus.FAILURE,
                 details={"message": f"Invoice validation failed: {validation_error}"}
             )
 

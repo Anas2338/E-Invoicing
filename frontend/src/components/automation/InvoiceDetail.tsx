@@ -87,14 +87,41 @@ export default function InvoiceDetail({ invoiceId, onClose, onUpdate }: InvoiceD
     }
   };
 
+  const getFBRValidationMessage = (fbrResponse: any): { status: string; message: string; isValid: boolean } => {
+    try {
+      const validationResponse = fbrResponse?.validationResponse;
+      if (!validationResponse) {
+        return { status: 'Unknown', message: 'No validation response available', isValid: false };
+      }
+
+      const status = validationResponse.status || '';
+      const statusCode = validationResponse.statusCode || '';
+      const error = validationResponse.error || '';
+
+      // Check if valid
+      const isValid = status === 'Valid' || statusCode === '00';
+
+      if (isValid) {
+        return { status: 'Valid', message: 'Invoice validated successfully by FBR', isValid: true };
+      } else {
+        const errorMsg = error || 'Validation failed';
+        return { status: 'Invalid', message: errorMsg, isValid: false };
+      }
+    } catch (e) {
+      return { status: 'Error', message: 'Failed to parse FBR response', isValid: false };
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending':
         return 'bg-[#fef3c7] text-[#92400e] border-[#fde68a] dark:bg-[#451a03]/30 dark:text-[#fbbf24] dark:border-[#451a03]';
       case 'validated':
         return 'bg-[#e0e7ff] text-[#3730a3] border-[#c7d2fe] dark:bg-[#312e81]/30 dark:text-[#a5b4fc] dark:border-[#312e81]';
-      case 'submitted':
+      case 'transferred':
         return 'bg-[#d1fae5] text-[#065f46] border-[#a7f3d0] dark:bg-[#064e3b]/30 dark:text-[#34d399] dark:border-[#065f46]';
+      case 'transfer_failed':
+        return 'bg-[#ffedd5] text-[#7c2d12] border-[#fed7aa] dark:bg-[#431407]/30 dark:text-[#fb923c] dark:border-[#431407]';
       case 'failed':
         return 'bg-[#fee2e2] text-[#991b1b] border-[#fecaca] dark:bg-[#7f1d1d]/30 dark:text-[#f87171] dark:border-[#7f1d1d]';
       case 'expired':
@@ -273,11 +300,22 @@ export default function InvoiceDetail({ invoiceId, onClose, onUpdate }: InvoiceD
 
       {/* FBR Response */}
       {invoice.fbr_response && (
-        <div className="bg-white dark:bg-[#1a1a1a] border border-[#e1e3e5] dark:border-[#2e2e2e] rounded-xl p-6">
-          <h3 className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] mb-3">FBR Response</h3>
-          <pre className="text-xs text-[#202223] dark:text-[#e3e3e3] bg-[#f6f6f7] dark:bg-[#2e2e2e] p-4 rounded-xl overflow-x-auto">
-            {JSON.stringify(invoice.fbr_response, null, 2)}
-          </pre>
+        <div className={`border rounded-xl p-4 ${getFBRValidationMessage(invoice.fbr_response).isValid ? 'bg-[#d1fae5] dark:bg-[#064e3b]/30 border-[#a7f3d0] dark:border-[#065f46]' : 'bg-[#fee2e2] dark:bg-[#7f1d1d]/30 border-[#fecaca] dark:border-[#7f1d1d]'}`}>
+          <div className="flex items-center gap-2 mb-2">
+            {getFBRValidationMessage(invoice.fbr_response).isValid ? (
+              <CheckCircle className="h-5 w-5 text-[#065f46] dark:text-[#34d399]" />
+            ) : (
+              <svg className="h-5 w-5 text-[#991b1b] dark:text-[#f87171]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            )}
+            <h3 className={`text-sm font-semibold ${getFBRValidationMessage(invoice.fbr_response).isValid ? 'text-[#065f46] dark:text-[#34d399]' : 'text-[#991b1b] dark:text-[#f87171]'}`}>
+              FBR Validation: {getFBRValidationMessage(invoice.fbr_response).status}
+            </h3>
+          </div>
+          <p className={`text-sm ${getFBRValidationMessage(invoice.fbr_response).isValid ? 'text-[#065f46] dark:text-[#34d399]' : 'text-[#991b1b] dark:text-[#f87171]'}`}>
+            {getFBRValidationMessage(invoice.fbr_response).message}
+          </p>
         </div>
       )}
 

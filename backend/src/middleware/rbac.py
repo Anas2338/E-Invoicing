@@ -175,3 +175,43 @@ def require_resource_ownership(
         )
 
     return current_user
+
+
+def require_automation_access(
+    current_user_id: str = Depends(require_authentication),
+    db: Session = Depends(get_db)
+) -> str:
+    """
+    Dependency that requires automation access to be enabled for the user.
+    Admins always have automation access.
+
+    Args:
+        current_user_id: ID of the authenticated user
+        db: Database session
+
+    Returns:
+        User ID if user has automation access
+
+    Raises:
+        HTTPException: If user doesn't have automation access enabled
+    """
+    user = db.get(User, current_user_id)
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    # Admins always have automation access
+    if user.role == UserRole.ADMIN.value:
+        return current_user_id
+
+    # Check if automation is enabled for this user
+    if not user.automation_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Automation access not enabled. Please contact your administrator."
+        )
+
+    return current_user_id

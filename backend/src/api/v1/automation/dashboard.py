@@ -9,8 +9,7 @@ from sqlmodel import Session, select, and_, or_, func
 from datetime import date
 import os
 
-from src.database.session import get_db
-from src.models.user import User
+from src.database.session import get_automation_db
 from src.models.automation_invoice import AutomationInvoice, AutomationInvoiceStatus, InvoiceSource
 from src.models.automation_log import AutomationLog
 from src.models.excel_upload_session import ExcelUploadSession
@@ -22,6 +21,7 @@ from src.schemas.automation import (
     InvoiceDetailResponse
 )
 from src.api.middleware.auth_middleware import require_authentication
+from src.middleware.rbac import require_automation_access
 
 router = APIRouter(prefix="/dashboard", tags=["automation-dashboard"])
 
@@ -29,8 +29,8 @@ router = APIRouter(prefix="/dashboard", tags=["automation-dashboard"])
 @router.get("/stats", response_model=DashboardStatsResponse)
 async def get_dashboard_stats(
     request: Request,
-    user_id: str = Depends(require_authentication),
-    db: Session = Depends(get_db)
+    user_id: str = Depends(require_automation_access),
+    db: Session = Depends(get_automation_db)
 ):
     """
     Get dashboard statistics for authenticated user.
@@ -46,20 +46,20 @@ async def get_dashboard_stats(
 @router.get("/invoices", response_model=InvoiceListResponse)
 async def get_invoice_list(
     request: Request,
-    user_id: str = Depends(require_authentication),
+    user_id: str = Depends(require_automation_access),
     status: Optional[AutomationInvoiceStatus] = Query(None, description="Filter by status"),
     source: Optional[InvoiceSource] = Query(None, description="Filter by source"),
     date_from: Optional[date] = Query(None, description="Filter by scheduled date from"),
     date_to: Optional[date] = Query(None, description="Filter by scheduled date to"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_automation_db)
 ):
     """
     Get paginated list of invoices for authenticated user with optional filters.
 
     Supports filtering by:
-    - Status (pending, validated, submitted, failed, expired)
+    - Status (pending, validated, transferred, transfer_failed, failed, expired, blocked)
     - Source (excel_upload, api, recurring)
     - Date range (scheduled_date)
 
@@ -115,8 +115,8 @@ async def get_invoice_list(
 async def get_invoice_detail(
     invoice_id: UUID,
     request: Request,
-    user_id: str = Depends(require_authentication),
-    db: Session = Depends(get_db)
+    user_id: str = Depends(require_automation_access),
+    db: Session = Depends(get_automation_db)
 ):
     """
     Get detailed information for a specific invoice.
@@ -125,7 +125,7 @@ async def get_invoice_detail(
     - Invoice data
     - Status and timestamps
     - Validation errors (if any)
-    - FBR response (if submitted)
+    - FBR response (if transferred)
     - Activity logs
 
     Row-level security: Only returns invoice if it belongs to the requesting user.
@@ -153,8 +153,8 @@ async def get_invoice_detail(
 async def download_excel_file(
     session_id: UUID,
     request: Request,
-    user_id: str = Depends(require_authentication),
-    db: Session = Depends(get_db)
+    user_id: str = Depends(require_automation_access),
+    db: Session = Depends(get_automation_db)
 ):
     """
     Generate and download Excel file with invoice data from database.

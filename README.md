@@ -153,7 +153,7 @@ E-Invoicing/
 
    Required environment variables:
    ```bash
-   DATABASE_URL=postgresql://user:password@localhost:5432/einvoicing
+   DATABASE_URL=postgresql://....
    JWT_SECRET_KEY=your-secret-key
    FBR_SANDBOX_URL=https://sandbox.fbr.gov.pk/api
    FBR_PRODUCTION_URL=https://api.fbr.gov.pk

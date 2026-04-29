@@ -28,8 +28,8 @@ class ExcelUploadSession(SQLModel, table=True):
     # Primary key
     id: UUID = Field(default_factory=uuid4, primary_key=True)
 
-    # Foreign key
-    user_id: UUID = Field(foreign_key="users.id", index=True)
+    # User reference (no FK - cross-database reference)
+    user_id: UUID = Field(index=True)
 
     # File information (optional for in-memory parsing)
     file_path: Optional[str] = Field(default=None, max_length=500)
@@ -48,20 +48,13 @@ class ExcelUploadSession(SQLModel, table=True):
     error_message: Optional[str] = Field(default=None, max_length=2000)
 
     # Relationships
-    user: Optional["User"] = Relationship(back_populates="excel_upload_sessions")
+    # Note: No relationship to User (cross-database reference)
     automation_invoices: list["AutomationInvoice"] = Relationship(
         back_populates="excel_upload_session",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
     __table_args__ = (
-        # Partial unique index: only one 'processing' session per user
-        Index(
-            "idx_one_processing_per_user",
-            "user_id",
-            unique=True,
-            postgresql_where=(processing_status == ExcelUploadProcessingStatus.PROCESSING)
-        ),
         # Composite index for user session queries
         Index(
             "idx_user_sessions",

@@ -19,6 +19,8 @@ class AutomationInvoiceStatus(str, Enum):
     SUBMITTED = "submitted"
     FAILED = "failed"
     BLOCKED = "blocked"
+    TRANSFERRED = "transferred"
+    TRANSFER_FAILED = "transfer_failed"
 
 
 class InvoiceSource(str, Enum):
@@ -39,7 +41,7 @@ class AutomationInvoice(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
 
     # Foreign keys
-    user_id: UUID = Field(foreign_key="users.id", index=True)
+    user_id: UUID = Field(index=True)  # Cross-database reference (no FK)
     excel_upload_session_id: UUID = Field(
         foreign_key="excel_upload_session.id",
         index=True
@@ -71,6 +73,17 @@ class AutomationInvoice(SQLModel, table=True):
     validation_errors: Optional[str] = Field(default=None, max_length=5000)
     fbr_response: Optional[dict] = Field(default=None, sa_column=Column(JSON))
 
+    # Transfer tracking (for database separation feature)
+    transferred_at: Optional[datetime] = Field(
+        default=None,
+        description="Timestamp when invoice was transferred to main database"
+    )
+    transfer_error: Optional[str] = Field(
+        default=None,
+        max_length=2000,
+        description="Error message if transfer failed"
+    )
+
     # AI Agent retry tracking
     retry_count: int = Field(default=0, ge=0)
     last_retry_at: Optional[datetime] = Field(default=None)
@@ -85,7 +98,7 @@ class AutomationInvoice(SQLModel, table=True):
     processed_at: Optional[datetime] = Field(default=None)
 
     # Relationships
-    user: Optional["User"] = Relationship(back_populates="automation_invoices")
+    # Note: No relationship to User (cross-database reference)
     excel_upload_session: Optional["ExcelUploadSession"] = Relationship(
         back_populates="automation_invoices"
     )

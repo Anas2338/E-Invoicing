@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { InvoiceTable } from '@/components/invoices/invoice-table';
 import { ValidationResultDialog } from '@/components/invoices/validation-result-dialog';
 import { api, ApiError } from '@/lib/api';
-import { Plus, Trash2, ArrowLeft } from 'lucide-react';
+import { Plus, Trash2, ArrowLeft, CheckCircle } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 interface Invoice {
@@ -35,9 +35,9 @@ export default function InvoiceHistoryPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [sourceFilter, setSourceFilter] = useState('all');
   const [selectedInvoices, setSelectedInvoices] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkValidating, setBulkValidating] = useState(false);
   const [validatingInvoiceId, setValidatingInvoiceId] = useState<string | null>(null);
   const [postingInvoiceId, setPostingInvoiceId] = useState<string | null>(null);
 
@@ -56,24 +56,12 @@ export default function InvoiceHistoryPage() {
     message: '',
   });
 
-  // Filter options
-  const sourceOptions = [
-    { value: 'all', label: 'All Sources' },
-    { value: 'manual', label: 'Manual' },
-    { value: 'automated', label: 'Automated' },
-  ];
-
   const statusOptions = [
     { value: 'all', label: 'All' },
     { value: 'DRAFT', label: 'Draft' },
-    { value: 'pending', label: 'Pending' },
     { value: 'VALIDATED', label: 'Validated' },
-    { value: 'validated', label: 'Validated (Auto)' },
     { value: 'POSTED', label: 'Posted' },
-    { value: 'submitted', label: 'Submitted' },
     { value: 'FAILED', label: 'Failed' },
-    { value: 'failed', label: 'Failed (Auto)' },
-    { value: 'expired', label: 'Expired' },
   ];
 
   useEffect(() => {
@@ -82,7 +70,7 @@ export default function InvoiceHistoryPage() {
 
   useEffect(() => {
     applyFilters();
-  }, [invoices, searchTerm, statusFilter, sourceFilter]);
+  }, [invoices, searchTerm, statusFilter]);
 
   const fetchInvoices = async () => {
     try {
@@ -92,22 +80,24 @@ export default function InvoiceHistoryPage() {
       // Fetch unified invoices from backend (manual + automated)
       const response = await api.invoices.getUnifiedHistory({ page_size: 100 });
 
-      // Transform backend data to match our interface
-      const transformedInvoices: Invoice[] = response.invoices.map((invoice: any) => ({
-        id: invoice.id,
-        source: invoice.source,
-        invoiceNumber: invoice.invoice_number || 'N/A',
-        date: invoice.invoice_date || new Date(invoice.created_at).toISOString().split('T')[0],
-        buyerName: invoice.buyer_business_name || 'N/A',
-        sellerName: invoice.seller_business_name || 'N/A',
-        totalAmount: invoice.total_amount || 0,
-        status: invoice.status,
-        environment: invoice.environment || '',
-        invoiceType: invoice.invoice_type || 'Sale Invoice',
-        createdAt: invoice.created_at,
-        scheduledDate: invoice.scheduled_date,
-        scheduledTime: invoice.scheduled_time,
-      }));
+      // Transform backend data to match our interface and filter only manual invoices
+      const transformedInvoices: Invoice[] = response.invoices
+        .filter((invoice: any) => invoice.source === 'manual')
+        .map((invoice: any) => ({
+          id: invoice.id,
+          source: invoice.source,
+          invoiceNumber: invoice.invoice_number || 'N/A',
+          date: invoice.invoice_date || new Date(invoice.created_at).toISOString().split('T')[0],
+          buyerName: invoice.buyer_business_name || 'N/A',
+          sellerName: invoice.seller_business_name || 'N/A',
+          totalAmount: invoice.total_amount || 0,
+          status: invoice.status,
+          environment: invoice.environment || '',
+          invoiceType: invoice.invoice_type || 'Sale Invoice',
+          createdAt: invoice.created_at,
+          scheduledDate: invoice.scheduled_date,
+          scheduledTime: invoice.scheduled_time,
+        }));
 
       setInvoices(transformedInvoices);
     } catch (err) {
@@ -136,11 +126,6 @@ export default function InvoiceHistoryPage() {
       );
     }
 
-    // Apply source filter
-    if (sourceFilter !== 'all') {
-      result = result.filter(invoice => invoice.source === sourceFilter);
-    }
-
     // Apply status filter
     if (statusFilter !== 'all') {
       result = result.filter(invoice => invoice.status === statusFilter);
@@ -150,15 +135,7 @@ export default function InvoiceHistoryPage() {
   };
 
   const handleViewInvoice = (id: string) => {
-    const invoice = invoices.find(inv => inv.id === id);
-    if (!invoice) return;
-
-    // Route based on source
-    if (invoice.source === 'automated') {
-      router.push(`/automation/dashboard?invoice=${id}` as any);
-    } else {
-      router.push(`/invoices/${id}` as any);
-    }
+    router.push(`/invoices/${id}` as any);
   };
 
   const handleEditInvoice = (id: string) => {
@@ -341,6 +318,93 @@ export default function InvoiceHistoryPage() {
     }
   };
 
+  const handleBulkValidate = async () => {
+    if (selectedInvoices.size === 0) return;
+
+    // Filter to only include DRAFT invoices
+    const selectedInvoicesList = Array.from(selectedInvoices);
+    const draftInvoices = selectedInvoicesList.filter(id => {
+      const invoice = invoices.find(inv => inv.id === id);
+      return invoice?.status === 'DRAFT';
+    });
+
+    const alreadyValidatedCount = selectedInvoicesList.length - draftInvoices.length;
+
+    // If no draft invoices, show message
+    if (draftInvoices.length === 0) {
+      setDialogData({
+        success: false,
+        title: 'No Draft Invoices Selected',
+        message: 'All selected invoices are already validated or posted. Only DRAFT invoices can be validated.',
+        errors: []
+      });
+      setDialogOpen(true);
+      return;
+    }
+
+    // Show confirmation with info about skipped invoices
+    const confirmMessage = alreadyValidatedCount > 0
+      ? `Validate ${draftInvoices.length} DRAFT invoice${draftInvoices.length > 1 ? 's' : ''} with FBR?\n\n${alreadyValidatedCount} already validated invoice${alreadyValidatedCount > 1 ? 's' : ''} will be skipped.\n\nThis will validate each invoice one by one.`
+      : `Validate ${draftInvoices.length} selected invoice${draftInvoices.length > 1 ? 's' : ''} with FBR?\n\nThis will validate each invoice one by one.`;
+
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    setBulkValidating(true);
+    let successCount = 0;
+    let failCount = 0;
+    const errors: string[] = [];
+
+    try {
+      // Validate each DRAFT invoice one by one
+      for (const invoiceId of draftInvoices) {
+        const invoice = invoices.find(inv => inv.id === invoiceId);
+
+        try {
+          setValidatingInvoiceId(invoiceId);
+          const response = await api.invoices.validate(invoiceId);
+
+          if (response.success) {
+            successCount++;
+          } else {
+            failCount++;
+            errors.push(`${invoice?.invoiceNumber || invoiceId}: ${response.message || 'Validation failed'}`);
+          }
+        } catch (err) {
+          failCount++;
+          errors.push(`${invoice?.invoiceNumber || invoiceId}: ${err instanceof ApiError ? err.message : 'Failed'}`);
+        }
+      }
+
+      // Show result dialog
+      const skippedMessage = alreadyValidatedCount > 0 ? ` ${alreadyValidatedCount} invoice${alreadyValidatedCount > 1 ? 's were' : ' was'} skipped (already validated).` : '';
+      setDialogData({
+        success: failCount === 0,
+        title: failCount === 0 ? 'Bulk Validation Successful' : 'Bulk Validation Completed with Errors',
+        message: `Successfully validated ${successCount} invoice${successCount !== 1 ? 's' : ''}.${failCount > 0 ? ` Failed to validate ${failCount} invoice${failCount !== 1 ? 's' : ''}.` : ''}${skippedMessage}`,
+        errors: errors.length > 0 ? errors.map(err => ({ message: err })) : []
+      });
+      setDialogOpen(true);
+
+      // Clear selection and refresh
+      setSelectedInvoices(new Set());
+      await fetchInvoices();
+    } catch (err) {
+      setDialogData({
+        success: false,
+        title: 'Bulk Validation Error',
+        message: 'An unexpected error occurred during bulk validation.',
+        errors: []
+      });
+      setDialogOpen(true);
+      console.error('Error during bulk validation:', err);
+    } finally {
+      setBulkValidating(false);
+      setValidatingInvoiceId(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -395,19 +459,30 @@ export default function InvoiceHistoryPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-[#202223] dark:text-[#e3e3e3]">Invoice History</h1>
-          <p className="mt-2 text-sm sm:text-base text-[#6d7175] dark:text-[#8c9196]">View and manage all your invoices</p>
+          <p className="mt-2 text-sm sm:text-base text-[#6d7175] dark:text-[#8c9196]">View and manage your invoices</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-3">
           {selectedInvoices.size > 0 && (
-            <Button
-              variant="destructive"
-              onClick={handleBulkDelete}
-              disabled={bulkDeleting}
-              className="w-full sm:w-auto"
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              {bulkDeleting ? 'Deleting...' : `Delete ${selectedInvoices.size} Selected`}
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                onClick={handleBulkValidate}
+                disabled={bulkValidating}
+                className="w-full sm:w-auto border-[#008060] text-[#008060] hover:bg-[#008060] hover:text-white"
+              >
+                <CheckCircle className="h-4 w-4 mr-2" />
+                {bulkValidating ? 'Validating...' : `Validate ${selectedInvoices.size} Selected`}
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleBulkDelete}
+                disabled={bulkDeleting}
+                className="w-full sm:w-auto"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                {bulkDeleting ? 'Deleting...' : `Delete ${selectedInvoices.size} Selected`}
+              </Button>
+            </>
           )}
           <Button onClick={() => router.push('/invoices/create')} className="w-full sm:w-auto">
             <Plus className="h-4 w-4 mr-2" />
@@ -418,7 +493,7 @@ export default function InvoiceHistoryPage() {
 
       {/* Filters */}
       <div className="bg-white dark:bg-[#1a1a1a] rounded-2xl border border-[#e1e3e5] dark:border-[#2e2e2e] shadow-sm p-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <div>
             <label className="block text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] mb-1">Search</label>
             <Input
@@ -427,24 +502,6 @@ export default function InvoiceHistoryPage() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] mb-2">Source</label>
-            <Select value={sourceFilter} onValueChange={setSourceFilter}>
-              <SelectTrigger className="h-11 text-[#202223] dark:text-[#e3e3e3] shadow p-4">
-                <span className="text-[#6d7175] dark:text-[#8c9196]">
-                  {sourceOptions.find(opt => opt.value === sourceFilter)?.label || 'All Sources'}
-                </span>
-              </SelectTrigger>
-              <SelectContent>
-                {sourceOptions.map(option => (
-                  <SelectItem key={option.value} value={option.value} className="text-[#202223] dark:text-[#e3e3e3]">
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
 
           <div>
@@ -471,7 +528,6 @@ export default function InvoiceHistoryPage() {
               onClick={() => {
                 setSearchTerm('');
                 setStatusFilter('all');
-                setSourceFilter('all');
               }}
               className="w-full"
             >

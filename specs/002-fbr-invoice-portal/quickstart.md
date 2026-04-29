@@ -77,7 +77,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 # Better Auth
 NEXT_PUBLIC_BETTER_AUTH_URL=http://localhost:3000
 BETTER_AUTH_SECRET=your-secret-key-here-min-32-chars
-DATABASE_URL=postgresql://user:password@localhost:5432/fbr_portal
+DATABASE_URL=postgresql://....
 
 # Environment
 NODE_ENV=development
@@ -88,7 +88,7 @@ NODE_ENV=development
 NEXT_PUBLIC_API_URL=https://api.yourdomain.com
 NEXT_PUBLIC_BETTER_AUTH_URL=https://yourdomain.com
 BETTER_AUTH_SECRET=production-secret-key
-DATABASE_URL=postgresql://user:password@production-host:5432/fbr_portal
+DATABASE_URL=postgresql://....
 NODE_ENV=production
 ```
 

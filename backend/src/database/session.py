@@ -16,6 +16,14 @@ from src.models.automation_invoice import AutomationInvoice
 from src.models.automation_log import AutomationLog
 from src.models.excel_upload_session import ExcelUploadSession
 from src.models.ai_agent_health_check import AIAgentHealthCheck
+from src.models.user_saved_product import UserSavedProduct
+
+# Import FBR models (these use a separate declarative base)
+from src.models.fbr_master_data import (
+    FBRProvince, FBRUOM, FBRHSCode, FBRTransactionType,
+    FBRInvoiceType, FBRSROItem, FBRSyncLog, FBRBase
+)
+from src.models.fbr_notifications import FBRChangeNotification, FBRDataSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +49,7 @@ def validate_database_url_security(url: str) -> None:
             raise ValueError(
                 "SECURITY ERROR: Database connection must use SSL/TLS encryption. "
                 "Add '?sslmode=require' to DATABASE_URL. "
-                "Example: postgresql://user:pass@host/db?sslmode=require"
+                "Example format: postgresql://USER@HOST/DATABASE?sslmode=require"
             )
 
         # Warn about insecure SSL modes
@@ -65,8 +73,9 @@ def validate_database_url_security(url: str) -> None:
 
 # Validate database URL security before creating engine
 validate_database_url_security(settings.database_url)
+validate_database_url_security(settings.automation_database_url)
 
-# Create the database engine
+# Create the main database engine
 # PERFORMANCE: Optimized for cloud databases (Neon) with high latency
 engine = create_engine(
     settings.database_url,
@@ -82,13 +91,32 @@ engine = create_engine(
     }
 )
 
+# Create the automation database engine
+# Separate engine for automation data (bulk uploads, scheduled invoices)
+automation_engine = create_engine(
+    settings.automation_database_url,
+    echo=settings.db_echo,
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=10,
+    pool_recycle=300,
+    pool_timeout=30,
+    connect_args={
+        "connect_timeout": 10,
+    }
+)
+
 
 def create_db_and_tables():
     """
-    Create database tables based on SQLModel models.
+    Create database tables based on SQLModel models and FBR models.
     Use Alembic migrations for production.
     """
+    # Create SQLModel tables
     SQLModel.metadata.create_all(bind=engine)
+
+    # Create FBR model tables (using separate declarative base)
+    FBRBase.metadata.create_all(bind=engine)
 
 
 @contextmanager
@@ -108,9 +136,34 @@ def get_db_session() -> Generator:
         db.close()
 
 
+@contextmanager
+def get_automation_db_session() -> Generator:
+    """
+    Context manager for automation database sessions.
+    Ensures session is properly closed after use.
+    """
+    db = Session(automation_engine)
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
 def get_db():
     """
-    Dependency for FastAPI to provide database sessions.
+    Dependency for FastAPI to provide main database sessions.
     """
     with get_db_session() as session:
+        yield session
+
+
+def get_automation_db():
+    """
+    Dependency for FastAPI to provide automation database sessions.
+    """
+    with get_automation_db_session() as session:
         yield session

@@ -39,7 +39,7 @@ import httpx
 # Import skills AFTER models - they will use the already-registered models
 from skills.priority_scheduler import PrioritySchedulerSkill
 from skills.invoice_validator import InvoiceValidatorSkill
-from skills.fbr_poster import FBRPosterSkill
+# FBRPosterSkill removed - invoices are now transferred to main DB for manual posting
 from skills.error_handler import ErrorHandlerSkill
 from skills.retry_manager import RetryManagerSkill
 
@@ -192,120 +192,50 @@ class AIAgent:
                     logger.info("AI Agent: No validated invoices ready for posting")
                     return
 
-                logger.info(f"AI Agent: Total {len(all_validated_invoices)} validated invoice(s) ready for posting across {len(users_with_pending)} user(s)")
+                logger.info(f"AI Agent: Total {len(all_validated_invoices)} validated invoice(s) ready for transfer across {len(users_with_pending)} user(s)")
 
                 validated_invoices = all_validated_invoices
 
-                # Process each validated invoice - skip validation, go straight to posting
-                stats = {"processed": 0, "submitted": 0, "failed": 0}
+                # Log validated invoices ready for transfer
+                # NOTE: AI Agent no longer posts to FBR
+                # Validated invoices will be transferred to main DB at 6 PM PKT daily
+                # Users can then manually post them from the main invoice system
+                stats = {"validated_ready": 0}
 
                 for invoice in validated_invoices:
                     try:
-                        # Get user's FBR credentials
-                        user = db.get(User, invoice.user_id)
-                        if not user:
-                            logger.error(f"User not found for invoice {invoice.invoice_number}")
-                            invoice.status = AutomationInvoiceStatus.FAILED
-                            invoice.validation_errors = "User not found"
-                            invoice.processed_at = datetime.utcnow()
-                            db.add(invoice)
-                            stats["failed"] += 1
-                            continue
+                        # Log that invoice is ready for transfer
+                        logger.info(
+                            f"AI Agent: Invoice {invoice.invoice_number} (ID: {invoice.id}) "
+                            f"validated and ready for transfer. "
+                            f"Scheduled: {invoice.scheduled_date} {invoice.scheduled_time}"
+                        )
 
-                        # Get user's FBR token based on their environment preference
-                        user_environment = user.fbr_environment or "SANDBOX"
-                        user_fbr_token = user.fbr_sandbox_token if user_environment == "SANDBOX" else user.fbr_production_token
+                        # Log decision for audit trail
+                        self._log_decision(
+                            db,
+                            invoice.id,
+                            "validated_ready_for_transfer",
+                            {
+                                "message": "Invoice validated and ready for daily transfer to main database",
+                                "scheduled_date": str(invoice.scheduled_date),
+                                "scheduled_time": str(invoice.scheduled_time),
+                                "transfer_time": "Daily at 6 PM PKT"
+                            }
+                        )
 
-                        if not user_fbr_token:
-                            logger.error(f"FBR credentials not configured for user {user.email}")
-                            invoice.status = AutomationInvoiceStatus.FAILED
-                            invoice.validation_errors = f"FBR {user_environment} credentials not configured"
-                            invoice.processed_at = datetime.utcnow()
-                            db.add(invoice)
-                            stats["failed"] += 1
-                            continue
-
-                        # Post to FBR using user's credentials
-                        poster_skill = FBRPosterSkill()
-                        post_result = poster_skill.run({
-                            "invoice_data": invoice.invoice_data,
-                            "environment": user_environment,
-                            "fbr_token": user_fbr_token
-                        })
-
-                        if post_result.is_success():
-                            # Submission successful
-                            invoice.status = AutomationInvoiceStatus.SUBMITTED
-                            invoice.fbr_response = post_result.data['response_data']
-                            invoice.processed_at = datetime.utcnow()
-                            db.add(invoice)
-                            stats["submitted"] += 1
-
-                            # Log decision
-                            self._log_decision(db, invoice.id, "submission_success", post_result)
-                        else:
-                            # Submission failed - classify error and handle retry
-                            error_handler = ErrorHandlerSkill()
-                            classification_result = error_handler.run({
-                                "error_message": post_result.error,
-                                "error_context": {
-                                    "invoice_number": invoice.invoice_number,
-                                    "retry_count": invoice.retry_count,
-                                    "error_source": "fbr_api"
-                                }
-                            })
-
-                            if classification_result.data.get('is_transient'):
-                                # Transient error - schedule retry
-                                retry_manager = RetryManagerSkill()
-                                retry_result = retry_manager.run({
-                                    "invoice_id": str(invoice.id),
-                                    "retry_count": invoice.retry_count,
-                                    "error_classification": classification_result.data
-                                })
-
-                                if retry_result.data.get('should_retry'):
-                                    invoice.retry_count += 1
-                                    invoice.last_retry_at = datetime.utcnow()
-                                    invoice.validation_errors = f"Retry scheduled: {post_result.error}"
-                                    db.add(invoice)
-
-                                    # Log retry decision
-                                    self._log_decision(db, invoice.id, "retry_scheduled", retry_result)
-                                else:
-                                    # Max retries exceeded
-                                    invoice.status = AutomationInvoiceStatus.FAILED
-                                    invoice.validation_errors = post_result.error
-                                    invoice.processed_at = datetime.utcnow()
-                                    db.add(invoice)
-                                    stats["failed"] += 1
-
-                                    # Log failure
-                                    self._log_decision(db, invoice.id, "max_retries_exceeded", retry_result)
-                            else:
-                                # Permanent error - mark as failed
-                                invoice.status = AutomationInvoiceStatus.FAILED
-                                invoice.validation_errors = post_result.error
-                                invoice.processed_at = datetime.utcnow()
-                                db.add(invoice)
-                                stats["failed"] += 1
-
-                                # Log permanent failure
-                                self._log_decision(db, invoice.id, "permanent_failure", classification_result)
-
-                        stats["processed"] += 1
+                        stats["validated_ready"] += 1
 
                     except Exception as e:
-                        logger.error(f"Error processing invoice {invoice.invoice_number}: {str(e)}", exc_info=True)
-                        stats["failed"] += 1
+                        logger.error(f"Error logging invoice {invoice.invoice_number}: {str(e)}", exc_info=True)
 
                 # Commit all changes
                 db.commit()
 
                 logger.info("AI Agent: Invoice processing cycle completed")
-                logger.info(f"  Processed: {stats['processed']}")
-                logger.info(f"  Submitted: {stats['submitted']}")
-                logger.info(f"  Failed: {stats['failed']}")
+                logger.info(f"  Validated invoices ready for transfer: {stats['validated_ready']}")
+                logger.info(f"  Note: Invoices will be transferred to main DB at 6 PM PKT daily")
+                logger.info(f"  Users can manually post transferred invoices from the main system")
                 logger.info("=" * 80)
 
         except Exception as e:
@@ -456,14 +386,15 @@ class AIAgent:
             db: Database session
             invoice_id: Invoice UUID
             decision_type: Type of decision made
-            result: SkillResult with decision details
+            result: SkillResult with decision details OR dict with decision data
         """
         action_map = {
             "validation_failed": AutomationLogAction.VALIDATE,
             "submission_success": AutomationLogAction.SUBMIT,
             "retry_scheduled": AutomationLogAction.RETRY,
             "max_retries_exceeded": AutomationLogAction.RETRY,
-            "permanent_failure": AutomationLogAction.SUBMIT
+            "permanent_failure": AutomationLogAction.SUBMIT,
+            "validated_ready_for_transfer": AutomationLogAction.VALIDATE
         }
 
         status_map = {
@@ -471,12 +402,22 @@ class AIAgent:
             "submission_success": AutomationLogStatus.SUCCESS,
             "retry_scheduled": AutomationLogStatus.SUCCESS,
             "max_retries_exceeded": AutomationLogStatus.FAILURE,
-            "permanent_failure": AutomationLogStatus.FAILURE
+            "permanent_failure": AutomationLogStatus.FAILURE,
+            "validated_ready_for_transfer": AutomationLogStatus.SUCCESS
         }
 
         # Get user_id from invoice for audit trail
         invoice = db.get(AutomationInvoice, invoice_id)
         user_id_str = str(invoice.user_id) if invoice else None
+
+        # Handle both dict and SkillResult objects
+        if isinstance(result, dict):
+            decision_data = result
+            error_msg = result.get("error") or "Success"
+        else:
+            # SkillResult object
+            decision_data = result.data
+            error_msg = result.error or "Success"
 
         log = AutomationLog(
             automation_invoice_id=invoice_id,
@@ -484,8 +425,8 @@ class AIAgent:
             status=status_map.get(decision_type, AutomationLogStatus.FAILURE),
             details={
                 "decision_type": decision_type,
-                "ai_decision": result.data,
-                "rationale": result.error or "Success",
+                "ai_decision": decision_data,
+                "rationale": error_msg,
                 "model_used": config.CLAUDE_MODEL,
                 "timestamp": datetime.utcnow().isoformat(),
                 "user_id": user_id_str  # ✅ USER CONTEXT FOR AUDIT

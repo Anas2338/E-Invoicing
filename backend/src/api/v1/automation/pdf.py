@@ -10,12 +10,13 @@ from io import BytesIO
 import logging
 import asyncio
 
-from src.database.session import get_db
+from src.database.session import get_automation_db
 from src.services.pdf_service import PDFService
 from src.services.automation_service import AutomationService
 from src.models.automation_invoice import AutomationInvoice, AutomationInvoiceStatus
 from src.models.invoice import Invoice, InvoiceStatus
 from src.api.middleware.auth_middleware import require_authentication
+from src.middleware.rbac import require_automation_access
 from src.schemas.automation import BatchPdfRequest
 
 router = APIRouter()
@@ -28,14 +29,14 @@ BATCH_PDF_TIMEOUT = 180
 @router.get("/invoices/{invoice_id}/pdf")
 async def get_invoice_pdf(
     invoice_id: UUID,
-    db: Annotated[Session, Depends(get_db)],
-    user_id: str = Depends(require_authentication),
+    db: Annotated[Session, Depends(get_automation_db)],
+    user_id: str = Depends(require_automation_access),
     disposition: str = "attachment"
 ):
     """
-    Generate and download PDF for a single submitted invoice.
+    Generate and download PDF for a single transferred invoice.
 
-    This endpoint generates an FBR-compliant PDF document for a submitted invoice,
+    This endpoint generates an FBR-compliant PDF document for a transferred invoice,
     including the FBR Digital Invoicing System logo and a QR code containing the
     FBR-issued USIN (Unique Sales Invoice Number) for verification.
 
@@ -68,7 +69,7 @@ async def get_invoice_pdf(
     Raises:
         HTTPException 400 (Bad Request):
             - Invalid disposition type (must be 'attachment' or 'inline')
-            - Invoice is not in 'submitted' status
+            - Invoice is not in 'transferred' status
             - Invoice is missing FBR response data
             - Invoice is missing USIN in FBR response
             - Invoice data structure is invalid
@@ -139,16 +140,16 @@ async def get_invoice_pdf(
             detail="You do not have permission to access this invoice"
         )
 
-    # Validate invoice status (submitted for automation, POSTED for manual)
+    # Validate invoice status (transferred for automation, POSTED for manual)
     if is_automation:
-        if invoice.status != AutomationInvoiceStatus.SUBMITTED:
+        if invoice.status != AutomationInvoiceStatus.TRANSFERRED:
             logger.warning(
                 f"Cannot generate PDF for automation invoice {invoice_id} with status {invoice.status}"
             )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Cannot generate PDF for invoice with status '{invoice.status}'. "
-                       "Only submitted invoices can be printed."
+                       "Only transferred invoices can be printed."
             )
     else:
         if invoice.status != InvoiceStatus.POSTED:
@@ -235,11 +236,11 @@ async def get_invoice_pdf(
 @router.post("/invoices/batch-pdf")
 async def get_batch_invoice_pdf(
     request: BatchPdfRequest,
-    db: Annotated[Session, Depends(get_db)],
-    user_id: str = Depends(require_authentication)
+    db: Annotated[Session, Depends(get_automation_db)],
+    user_id: str = Depends(require_automation_access)
 ):
     """
-    Generate and download PDF for multiple submitted invoices in a single document.
+    Generate and download PDF for multiple transferred invoices in a single document.
 
     This endpoint generates a single FBR-compliant PDF document containing multiple
     invoices with page breaks between them. Each invoice includes the FBR logo and
@@ -295,7 +296,7 @@ async def get_batch_invoice_pdf(
         HTTPException 400 (Bad Request):
             - Empty invoice list
             - Batch size exceeds 50 invoices
-            - One or more invoices not in 'submitted' status
+            - One or more invoices not in 'transferred' status
             - One or more invoices missing FBR response/USIN
             - Invalid invoice data structure
         HTTPException 403 (Forbidden):
@@ -324,7 +325,7 @@ async def get_batch_invoice_pdf(
         - Invoices are rendered in the order provided in invoice_ids array
         - Selection order is preserved from frontend
         - Progress indicator shown in UI for batches with 20+ invoices
-        - All invoices must be in 'submitted' status
+        - All invoices must be in 'transferred' status
         - All invoices must belong to the authenticated user
     """
     # Convert user_id string to UUID
@@ -379,14 +380,14 @@ async def get_batch_invoice_pdf(
             )
 
         # Validate invoice status
-        if invoice.status != AutomationInvoiceStatus.SUBMITTED:
+        if invoice.status != AutomationInvoiceStatus.TRANSFERRED:
             logger.warning(
                 f"Cannot include invoice {invoice_id} with status {invoice.status} in batch PDF"
             )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Cannot generate PDF for invoice {invoice.invoice_number} "
-                       f"with status '{invoice.status}'. Only submitted invoices can be printed."
+                       f"with status '{invoice.status}'. Only transferred invoices can be printed."
             )
 
         invoices.append(invoice)

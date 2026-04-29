@@ -68,9 +68,14 @@ export default function AutomationDashboard() {
       color: 'bg-[#e0e7ff] border-[#c7d2fe] text-[#3730a3] dark:bg-[#312e81]/30 dark:border-[#312e81] dark:text-[#a5b4fc]',
     },
     {
-      label: 'Submitted',
-      value: stats.submitted_count,
+      label: 'Transferred',
+      value: stats.transferred_count,
       color: 'bg-[#d1fae5] border-[#a7f3d0] text-[#065f46] dark:bg-[#064e3b]/30 dark:border-[#065f46] dark:text-[#34d399]',
+    },
+    {
+      label: 'Transfer Failed',
+      value: stats.transfer_failed_count,
+      color: 'bg-[#ffedd5] border-[#fed7aa] text-[#7c2d12] dark:bg-[#431407]/30 dark:border-[#7c2d12] dark:text-[#fb923c]',
     },
     {
       label: 'Failed',

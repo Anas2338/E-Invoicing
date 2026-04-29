@@ -1,12 +1,38 @@
 'use client';
 
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import ExcelUploadForm from '@/components/automation/ExcelUploadForm';
 import { ArrowLeft } from 'lucide-react';
+import { useAuth } from '@/providers/auth-provider';
+import { toast } from 'react-toastify';
 
 export default function UploadPage() {
   const router = useRouter();
+  const { user, loading } = useAuth();
+
+  useEffect(() => {
+    if (!loading && user && !user.automation_enabled) {
+      toast.error('Automation access not enabled. Please contact your administrator.');
+      router.push('/dashboard');
+    }
+  }, [user, loading, router]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#008060] dark:border-[#00a876] mx-auto"></div>
+          <p className="mt-4 text-[#6d7175] dark:text-[#8c9196]">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user?.automation_enabled) {
+    return null;
+  }
 
   return (
     <div className="container mx-auto px-4 py-8">

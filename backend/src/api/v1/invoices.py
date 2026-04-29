@@ -53,6 +53,7 @@ def create_invoice(
         user_id=db_invoice.user_id,
         invoice_type=db_invoice.invoice_type,
         invoice_date=db_invoice.invoice_date,
+        transaction_type_id=db_invoice.transaction_type_id,
         seller_ntn_cnic=db_invoice.seller_ntn_cnic,
         seller_business_name=db_invoice.seller_business_name,
         seller_province=db_invoice.seller_province,
@@ -72,7 +73,10 @@ def create_invoice(
         validated_at=db_invoice.validated_at,
         posted_at=db_invoice.posted_at,
         fbr_reference_number=db_invoice.fbr_reference_number,
-        validation_errors=db_invoice.validation_errors
+        validation_errors=db_invoice.validation_errors,
+        source=db_invoice.source,
+        transferred_at=db_invoice.transferred_at,
+        automation_invoice_id=db_invoice.automation_invoice_id
     )
 
 
@@ -80,7 +84,7 @@ def create_invoice(
 def get_unified_invoice_history(
     request: Request,
     user_id: str = Depends(require_authentication),
-    source: Optional[str] = Query(None, description="Filter by source: manual, automated"),
+    source: Optional[str] = Query(None, description="Filter by source: manual, automation"),
     status: Optional[str] = Query(None, description="Filter by status"),
     date_from: Optional[date] = Query(None, description="Filter by date from"),
     date_to: Optional[date] = Query(None, description="Filter by date to"),
@@ -153,6 +157,7 @@ def get_invoice(
         user_id=db_invoice.user_id,
         invoice_type=db_invoice.invoice_type,
         invoice_date=db_invoice.invoice_date,
+        transaction_type_id=db_invoice.transaction_type_id,
         seller_ntn_cnic=db_invoice.seller_ntn_cnic,
         seller_business_name=db_invoice.seller_business_name,
         seller_province=db_invoice.seller_province,
@@ -172,7 +177,10 @@ def get_invoice(
         validated_at=db_invoice.validated_at,
         posted_at=db_invoice.posted_at,
         fbr_reference_number=db_invoice.fbr_reference_number,
-        validation_errors=db_invoice.validation_errors
+        validation_errors=db_invoice.validation_errors,
+        source=db_invoice.source,
+        transferred_at=db_invoice.transferred_at,
+        automation_invoice_id=db_invoice.automation_invoice_id
     )
 
 

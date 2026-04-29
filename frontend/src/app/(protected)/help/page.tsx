@@ -117,10 +117,10 @@ export default function HelpPage() {
                   Call us during business hours (9 AM - 5 PM)
                 </p>
                 <a
-                  href="tel:+92-51-1234567"
+                  href="tel:+92-336-2338915"
                   className="text-sm text-[#008060] dark:text-[#00a876] hover:text-[#006e52] dark:hover:text-[#008f64] font-semibold"
                 >
-                  +92-51-1234567
+                  +92-336-2338915
                 </a>
               </div>
             </div>

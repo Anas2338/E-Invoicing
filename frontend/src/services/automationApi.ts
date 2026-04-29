@@ -35,7 +35,8 @@ export interface DashboardStats {
   pending_count: number;
   expired_count: number;
   validated_count: number;
-  submitted_count: number;
+  transferred_count: number;
+  transfer_failed_count: number;
   failed_count: number;
   blocked_count: number;
 }
@@ -48,7 +49,7 @@ export interface AutomationInvoice {
   invoice_data: Record<string, any>;
   scheduled_date: string;
   scheduled_time: string;
-  status: 'pending' | 'expired' | 'validated' | 'submitted' | 'failed' | 'blocked';
+  status: 'pending' | 'expired' | 'validated' | 'transferred' | 'transfer_failed' | 'failed' | 'blocked';
   validation_errors?: string;
   fbr_response?: Record<string, any>;
   created_at: string;
@@ -75,7 +76,9 @@ export interface UploadSession {
   uploaded_at: string;
   total_count: number;
   pending_count: number;
-  submitted_count: number;
+  validated_count: number;
+  transferred_count: number;
+  transfer_failed_count: number;
   failed_count: number;
   blocked_count: number;
   expired_count: number;
@@ -384,14 +387,14 @@ class AutomationApiClient {
   async getStatistics(): Promise<{
     pending: number;
     validated: number;
-    submitted: number;
+    transferred: number;
     failed: number;
   }> {
     const stats = await this.getDashboardStats();
     return {
       pending: stats.pending_count,
       validated: stats.validated_count,
-      submitted: stats.submitted_count,
+      transferred: stats.transferred_count,
       failed: stats.failed_count,
     };
   }

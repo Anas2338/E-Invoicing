@@ -552,11 +552,13 @@ class ExcelService:
         Returns:
             Formatted reason string
         """
-        if invoice.status.value == 'submitted':
-            reason = "Successfully submitted to FBR"
+        if invoice.status.value == 'transferred':
+            reason = "Successfully transferred to main database"
             if invoice.fbr_response and invoice.fbr_response.get('reference_number'):
                 reason += f" (Ref: {invoice.fbr_response['reference_number']})"
             return reason
+        elif invoice.status.value == 'transfer_failed':
+            return invoice.transfer_error or "Transfer to main database failed"
         elif invoice.status.value == 'failed':
             return invoice.validation_errors or "Processing failed"
         elif invoice.status.value == 'expired':
@@ -564,6 +566,6 @@ class ExcelService:
         elif invoice.status.value == 'pending':
             return "Waiting for scheduled time"
         elif invoice.status.value == 'validated':
-            return "Validated, awaiting submission"
+            return "Validated, awaiting transfer"
         else:
             return ""

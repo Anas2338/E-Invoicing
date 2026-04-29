@@ -3,11 +3,15 @@ from datetime import datetime, date
 from sqlmodel import Session, select
 from uuid import UUID
 import logging
+from fastapi import HTTPException, status
 
 from src.models.invoice import Invoice, InvoiceCreate, InvoiceUpdate, InvoiceStatus
 from src.models.user import User
 from src.models.fbr_response import FBRResponse
-from src.models.automation_invoice import AutomationInvoice
+from src.models.user_saved_hs_code import UserSavedHSCode
+from src.models.user_saved_product_description import UserSavedProductDescription
+from src.models.user_saved_uom import UserSavedUOM
+from src.models.user_saved_tax_rate import UserSavedTaxRate
 from src.schemas.invoice import InvoiceFilter
 from src.utils.helpers import calculate_hash
 
@@ -23,6 +27,7 @@ class InvoiceService:
     def create_invoice(self, db: Session, invoice_create: InvoiceCreate, user_id: UUID) -> Invoice:
         """
         Create a new invoice in draft status.
+        Validates that all items use only the user's pre-saved products.
 
         Args:
             db: Database session
@@ -31,7 +36,13 @@ class InvoiceService:
 
         Returns:
             Created Invoice object
+
+        Raises:
+            HTTPException: If any item uses HS code/product not in user's saved products
         """
+        # Validate that all items are from user's saved products
+        self._validate_invoice_items(db, invoice_create.items, user_id)
+
         # Generate external ID if not provided
         external_id = invoice_create.external_id or f"INV-{int(datetime.utcnow().timestamp())}-{hash(str(invoice_create.invoice_type)) % 10000}"
 
@@ -41,6 +52,7 @@ class InvoiceService:
             user_id=user_id,
             invoice_type=invoice_create.invoice_type,
             invoice_date=invoice_create.invoice_date,
+            transaction_type_id=invoice_create.transaction_type_id,
             seller_ntn_cnic=invoice_create.seller_ntn_cnic,
             seller_business_name=invoice_create.seller_business_name,
             seller_province=invoice_create.seller_province,
@@ -65,6 +77,89 @@ class InvoiceService:
         logger.info(f"Invoice {db_invoice.id} created for user {user_id}")
 
         return db_invoice
+
+    def _validate_invoice_items(self, db: Session, items: List, user_id: UUID) -> None:
+        """
+        Validate that all invoice items use data from user's saved profile.
+        Validates HS codes, product descriptions, UOMs, and tax rates separately.
+
+        Args:
+            db: Database session
+            items: List of invoice items to validate
+            user_id: ID of the user
+
+        Raises:
+            HTTPException: If any item uses data not in user's saved profile
+        """
+        # Get all user's saved data
+        saved_hs_codes = db.query(UserSavedHSCode).filter(
+            UserSavedHSCode.user_id == user_id,
+            UserSavedHSCode.is_active == 1,
+            UserSavedHSCode.fbr_validated == True
+        ).all()
+
+        saved_descriptions = db.query(UserSavedProductDescription).filter(
+            UserSavedProductDescription.user_id == user_id,
+            UserSavedProductDescription.is_active == 1
+        ).all()
+
+        saved_uoms = db.query(UserSavedUOM).filter(
+            UserSavedUOM.user_id == user_id,
+            UserSavedUOM.is_active == 1
+        ).all()
+
+        saved_tax_rates = db.query(UserSavedTaxRate).filter(
+            UserSavedTaxRate.user_id == user_id,
+            UserSavedTaxRate.is_active == 1
+        ).all()
+
+        # Create lookup sets for faster validation
+        hs_codes_set = {h.hs_code.strip().lower() for h in saved_hs_codes}
+        descriptions_set = {d.product_description.strip().lower() for d in saved_descriptions}
+        uoms_set = {u.uom_code.strip().upper() for u in saved_uoms}
+        tax_rates_set = {t.tax_rate.strip() for t in saved_tax_rates}
+
+        # Validate each item
+        invalid_items = []
+        for idx, item in enumerate(items):
+            errors = []
+
+            # Validate HS code
+            if item.hs_code.strip().lower() not in hs_codes_set:
+                errors.append(f"HS Code '{item.hs_code}' not in your saved HS codes")
+
+            # Validate product description
+            if item.product_description.strip().lower() not in descriptions_set:
+                errors.append(f"Description '{item.product_description}' not in your saved descriptions")
+
+            # Validate UOM
+            if item.uom.strip().upper() not in uoms_set:
+                errors.append(f"UOM '{item.uom}' not in your saved UOMs")
+
+            # Validate tax rate
+            if item.rate.strip() not in tax_rates_set:
+                errors.append(f"Tax Rate '{item.rate}%' not in your saved tax rates")
+
+            if errors:
+                invalid_items.append({
+                    "index": idx + 1,
+                    "errors": errors
+                })
+
+        if invalid_items:
+            error_details = "The following items contain data not in your profile:\n"
+            for item in invalid_items:
+                error_details += f"\nItem {item['index']}:\n"
+                for error in item['errors']:
+                    error_details += f"  - {error}\n"
+            error_details += "\nPlease add the required data to your profile before creating invoices."
+
+            logger.warning(f"User {user_id} attempted to create invoice with invalid items: {invalid_items}")
+
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_details
+            )
 
     def get_invoice_by_id(self, db: Session, invoice_id: UUID, user_id: UUID) -> Optional[Invoice]:
         """
@@ -143,6 +238,8 @@ class InvoiceService:
             query = query.where(Invoice.invoice_type == filters.invoice_type)
         if filters.environment:
             query = query.where(Invoice.environment == filters.environment)
+        if filters.source:
+            query = query.where(Invoice.source == filters.source)
         if filters.date_from:
             query = query.where(Invoice.created_at >= filters.date_from)
         if filters.date_to:
@@ -363,12 +460,16 @@ class InvoiceService:
         page_size: int = 20
     ) -> Tuple[List[Dict], int]:
         """
-        Get unified list of manual and automated invoices.
+        Get unified list of manual and automated invoices from main database only.
+
+        IMPORTANT: This queries ONLY the main database Invoice table.
+        Automated invoices appear here AFTER they've been transferred at 6 PM PKT.
+        The 'source' field distinguishes between manual and automation invoices.
 
         Args:
-            db: Database session
+            db: Main database session
             user_id: User UUID
-            source: Filter by source ("manual", "automated", or None for all)
+            source: Filter by source ("manual", "automation", or None for all)
             status: Filter by status
             date_from: Filter by date from
             date_to: Filter by date to
@@ -378,98 +479,81 @@ class InvoiceService:
         Returns:
             Tuple of (list of normalized invoice dicts, total count)
         """
-        unified_invoices = []
+        # Build query for main database Invoice table only
+        query = select(Invoice).where(
+            Invoice.user_id == user_id,
+            Invoice.is_deleted == False
+        )
 
-        # Query manual invoices if not filtering for automated only
-        if source != "automated":
-            manual_query = select(Invoice).where(
-                Invoice.user_id == user_id,
-                Invoice.is_deleted == False
-            )
+        # Apply source filter
+        if source == "manual":
+            query = query.where(Invoice.source == "manual")
+        elif source == "automation":
+            query = query.where(Invoice.source == "automation")
+        # If source is None, show all (both manual and automation)
 
-            # Apply date filters
-            if date_from:
-                manual_query = manual_query.where(Invoice.created_at >= datetime.combine(date_from, datetime.min.time()))
-            if date_to:
-                manual_query = manual_query.where(Invoice.created_at <= datetime.combine(date_to, datetime.max.time()))
+        # Apply date filters
+        if date_from:
+            query = query.where(Invoice.created_at >= datetime.combine(date_from, datetime.min.time()))
+        if date_to:
+            query = query.where(Invoice.created_at <= datetime.combine(date_to, datetime.max.time()))
 
-            # Apply status filter
-            if status:
-                manual_query = manual_query.where(Invoice.status == status)
+        # Apply status filter
+        if status:
+            query = query.where(Invoice.status == status)
 
-            manual_invoices = db.exec(manual_query).all()
+        # Order by created_at descending (newest first)
+        query = query.order_by(Invoice.created_at.desc())
 
-            # Normalize manual invoices
-            for invoice in manual_invoices:
-                # Calculate total amount from items
-                total_amount = sum(item.get('total_values', 0) for item in invoice.items) if invoice.items else 0
+        # Get total count
+        count_query = select(Invoice).where(
+            Invoice.user_id == user_id,
+            Invoice.is_deleted == False
+        )
+        if source == "manual":
+            count_query = count_query.where(Invoice.source == "manual")
+        elif source == "automation":
+            count_query = count_query.where(Invoice.source == "automation")
+        if date_from:
+            count_query = count_query.where(Invoice.created_at >= datetime.combine(date_from, datetime.min.time()))
+        if date_to:
+            count_query = count_query.where(Invoice.created_at <= datetime.combine(date_to, datetime.max.time()))
+        if status:
+            count_query = count_query.where(Invoice.status == status)
 
-                unified_invoices.append({
-                    "id": invoice.id,
-                    "source": "manual",
-                    "invoice_number": invoice.external_id,
-                    "invoice_type": invoice.invoice_type,
-                    "invoice_date": invoice.invoice_date,
-                    "buyer_business_name": invoice.buyer_business_name,
-                    "seller_business_name": invoice.seller_business_name,
-                    "total_amount": total_amount,
-                    "status": invoice.status,
-                    "created_at": invoice.created_at,
-                    "environment": invoice.environment if invoice.environment else None,
-                    "scheduled_date": None,
-                    "scheduled_time": None
-                })
-
-        # Query automation invoices if not filtering for manual only
-        if source != "manual":
-            auto_query = select(AutomationInvoice).where(
-                AutomationInvoice.user_id == user_id
-            )
-
-            # Apply date filters
-            if date_from:
-                auto_query = auto_query.where(AutomationInvoice.created_at >= datetime.combine(date_from, datetime.min.time()))
-            if date_to:
-                auto_query = auto_query.where(AutomationInvoice.created_at <= datetime.combine(date_to, datetime.max.time()))
-
-            # Apply status filter
-            if status:
-                auto_query = auto_query.where(AutomationInvoice.status == status)
-
-            auto_invoices = db.exec(auto_query).all()
-
-            # Normalize automation invoices
-            for invoice in auto_invoices:
-                invoice_data = invoice.invoice_data or {}
-                item = invoice_data.get('items', [{}])[0] if invoice_data.get('items') else {}
-
-                unified_invoices.append({
-                    "id": invoice.id,
-                    "source": "automated",
-                    "invoice_number": invoice_data.get('invoice_number', ''),
-                    "invoice_type": invoice_data.get('invoice_type', ''),
-                    "invoice_date": invoice_data.get('invoice_date', ''),
-                    "buyer_business_name": invoice_data.get('buyer_business_name', ''),
-                    "seller_business_name": invoice_data.get('seller_business_name', ''),
-                    "total_amount": item.get('total_values', 0),
-                    "status": invoice.status,
-                    "created_at": invoice.created_at,
-                    "environment": invoice_data.get('environment', ''),
-                    "scheduled_date": invoice.scheduled_date.isoformat() if invoice.scheduled_date else None,
-                    "scheduled_time": invoice.scheduled_time.isoformat() if invoice.scheduled_time else None
-                })
-
-        # Sort by created_at descending (newest first)
-        unified_invoices.sort(key=lambda x: x['created_at'], reverse=True)
-
-        # Get total count before pagination
-        total = len(unified_invoices)
+        from sqlalchemy import func
+        total = db.exec(select(func.count()).select_from(count_query.subquery())).one()
 
         # Apply pagination
-        start_idx = (page - 1) * page_size
-        end_idx = start_idx + page_size
-        paginated_invoices = unified_invoices[start_idx:end_idx]
+        offset = (page - 1) * page_size
+        query = query.offset(offset).limit(page_size)
 
-        logger.info(f"Retrieved {len(paginated_invoices)} unified invoices for user {user_id} (total: {total})")
+        # Execute query
+        invoices = db.exec(query).all()
 
-        return paginated_invoices, total
+        # Normalize invoices
+        unified_invoices = []
+        for invoice in invoices:
+            # Calculate total amount from items
+            total_amount = sum(item.get('total_values', 0) for item in invoice.items) if invoice.items else 0
+
+            unified_invoices.append({
+                "id": invoice.id,
+                "source": invoice.source,  # "manual" or "automation"
+                "invoice_number": invoice.external_id,
+                "invoice_type": invoice.invoice_type,
+                "invoice_date": invoice.invoice_date,
+                "buyer_business_name": invoice.buyer_business_name,
+                "seller_business_name": invoice.seller_business_name,
+                "total_amount": total_amount,
+                "status": invoice.status,
+                "created_at": invoice.created_at,
+                "transferred_at": invoice.transferred_at,  # Shows when automation invoice was transferred
+                "environment": invoice.environment if invoice.environment else None,
+                "scheduled_date": None,
+                "scheduled_time": None
+            })
+
+        logger.info(f"Retrieved {len(unified_invoices)} invoices for user {user_id} (total: {total}, source: {source or 'all'})")
+
+        return unified_invoices, total

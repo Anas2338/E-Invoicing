@@ -5,14 +5,14 @@ from fastapi import APIRouter, Depends
 from sqlmodel import Session, select, func
 from datetime import datetime, timedelta
 
-from src.database.session import get_db
+from src.database.session import get_automation_db
 from src.models.automation_log import AutomationLog, AutomationLogAction
 
 router = APIRouter(prefix="/health", tags=["automation-health"])
 
 
 @router.get("/worker")
-async def get_worker_health(db: Session = Depends(get_db)):
+async def get_worker_health(db: Session = Depends(get_automation_db)):
     """
     Health check endpoint for FTE worker monitoring.
 
@@ -59,7 +59,7 @@ async def get_worker_health(db: Session = Depends(get_db)):
 
 
 @router.get("/status")
-async def get_system_status(db: Session = Depends(get_db)):
+async def get_system_status(db: Session = Depends(get_automation_db)):
     """
     Overall system health status.
 

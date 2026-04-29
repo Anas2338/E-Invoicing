@@ -185,7 +185,6 @@
 
 2. **Verify connection string**:
    ```bash
-   # Format: postgresql://user:password@host:port/database
    echo $DATABASE_URL
    ```
 

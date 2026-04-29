@@ -29,6 +29,7 @@ class UserBase(SQLModel):
     is_active: bool = Field(default=True)
     role: str = Field(default=UserRole.USER.value, sa_column=Column(String, nullable=False))
     approval_flags: Optional[dict] = Field(default=None, sa_column=Column(JSON))
+    automation_enabled: bool = Field(default=False)
 
     # Account approval fields
     account_status: str = Field(default="pending", sa_column=Column(String, nullable=False))  # pending, approved, rejected
@@ -55,6 +56,15 @@ class UserBase(SQLModel):
     fbr_seller_province: Optional[str] = Field(default=None, sa_column=Column(String, nullable=True))
     fbr_seller_address: Optional[str] = Field(default=None, sa_column=Column(String, nullable=True))
 
+    # System-level FBR token for daily sync (admin only)
+    fbr_system_sync_token: Optional[str] = Field(default=None, sa_column=Column(String, nullable=True))
+
+    # Invoice numbering settings
+    invoice_prefix: Optional[str] = Field(default='INV-', sa_column=Column(String(20), nullable=True))
+    invoice_start_number: Optional[int] = Field(default=1, sa_column=Column(String, nullable=True))
+    invoice_padding: Optional[int] = Field(default=4, sa_column=Column(String, nullable=True))
+    invoice_include_year: Optional[bool] = Field(default=False, sa_column=Column(String, nullable=True))
+
 
 class User(UserBase, Base, table=True):
     """
@@ -77,8 +87,8 @@ class User(UserBase, Base, table=True):
 
     # Relationships
     invoices: list["Invoice"] = Relationship(back_populates="user")
-    automation_invoices: list["AutomationInvoice"] = Relationship(back_populates="user")
-    excel_upload_sessions: list["ExcelUploadSession"] = Relationship(back_populates="user")
+    # Note: automation_invoices and excel_upload_sessions are in a separate database
+    # No relationships defined for cross-database references
 
 
 # Model for creating new users
@@ -99,6 +109,7 @@ class UserUpdate(SQLModel):
     name: Optional[str] = None
     is_active: Optional[bool] = None
     approval_flags: Optional[dict] = None
+    automation_enabled: Optional[bool] = None
 
     # FBR Integration fields
     fbr_access_token: Optional[str] = None

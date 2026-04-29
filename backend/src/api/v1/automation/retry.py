@@ -1,71 +1,69 @@
 """
-Retry API endpoints for failed invoices.
+Retry endpoints for automation operations.
+
+Provides endpoints for retrying failed automation tasks.
 """
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlmodel import Session, select
+from typing import List
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlmodel import Session
+import logging
 
-from src.database.session import get_db
-from src.models.user import User
-from src.models.automation_invoice import AutomationInvoice
-from src.services.automation_service import AutomationService
-from src.schemas.automation import InvoiceRetryResponse
+from src.database.session import get_automation_db
 from src.api.middleware.auth_middleware import require_authentication
+from src.models.automation_invoice import AutomationInvoice, AutomationInvoiceStatus
 
-router = APIRouter(tags=["automation-retry"])
+router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
-@router.post("/invoice/{invoice_id}/retry", response_model=InvoiceRetryResponse)
+@router.post("/automation/retry/{invoice_id}")
 async def retry_failed_invoice(
     invoice_id: UUID,
-    request: Request,
-    user_id: str = Depends(require_authentication),
-    db: Session = Depends(get_db)
+    automation_db: Session = Depends(get_automation_db),
+    user_id: str = Depends(require_authentication)
 ):
     """
-    Retry a pending invoice by re-validating it immediately.
+    Retry a failed automation invoice.
 
-    Only invoices with 'pending' status can be retried.
-    If validation passes, invoice status becomes 'validated' and will be picked up by AI agent.
-    If validation fails, invoice remains 'pending' with updated error message.
-
-    Row-level security: Only allows retry if invoice belongs to authenticated user.
-
-    Returns:
-        Updated invoice with validated status (if validation passes) or pending (if validation fails)
-
-    Raises:
-        HTTPException 400: If validation fails or invoice cannot be retried
+    This endpoint allows users to retry invoices that failed during automation processing.
     """
-    # Retry invoice with user_id check (row-level security)
-    automation_service = AutomationService(db)
+    # Get the invoice
+    statement = select(AutomationInvoice).where(
+        AutomationInvoice.id == invoice_id,
+        AutomationInvoice.user_id == UUID(user_id)
+    )
+    invoice = automation_db.exec(statement).first()
 
-    try:
-        updated_invoice = automation_service.retry_failed_invoice(invoice_id, UUID(user_id))
-
-        # Success - invoice was re-validated and is now VALIDATED
-        return InvoiceRetryResponse(
-            message="Invoice re-validated successfully and will be processed by AI agent in the next cycle",
-            invoice_id=updated_invoice.id,
-            status=updated_invoice.status,
-            result={
-                "invoice_number": updated_invoice.invoice_number,
-                "scheduled_date": updated_invoice.scheduled_date.isoformat(),
-                "scheduled_time": updated_invoice.scheduled_time.isoformat(),
-                "validation_status": "passed"
-            }
+    if not invoice:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invoice not found"
         )
 
-    except ValueError as e:
-        # Validation failed or other error
-        error_message = str(e)
+    # Check if invoice is in a retryable state
+    if invoice.status not in [AutomationInvoiceStatus.FAILED, AutomationInvoiceStatus.TRANSFER_FAILED]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invoice cannot be retried. Current status: {invoice.status}"
+        )
 
-        # Check if it's a validation error (invoice still exists but validation failed)
-        if "validation failed" in error_message.lower():
-            raise HTTPException(
-                status_code=400,
-                detail=f"Retry failed: {error_message}. Please fix the invoice data and try again."
-            )
-        else:
-            # Other errors (not found, wrong status, etc.)
-            raise HTTPException(status_code=400, detail=error_message)
+    # Reset invoice to validated status for retry
+    invoice.status = AutomationInvoiceStatus.VALIDATED
+    invoice.retry_count = (invoice.retry_count or 0) + 1
+    invoice.validation_errors = None
+    invoice.transfer_error = None
+
+    automation_db.add(invoice)
+    automation_db.commit()
+    automation_db.refresh(invoice)
+
+    logger.info(f"Invoice {invoice_id} reset for retry by user {user_id}")
+
+    return {
+        "success": True,
+        "message": "Invoice reset for retry",
+        "invoice_id": str(invoice.id),
+        "retry_count": invoice.retry_count,
+        "status": invoice.status
+    }

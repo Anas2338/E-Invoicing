@@ -13,6 +13,7 @@ export default function AdminUsersPage() {
   const [activeTab, setActiveTab] = useState<'pending' | 'all'>('pending');
   const [rejectionReason, setRejectionReason] = useState<{ [key: string]: string }>({});
   const [showRejectModal, setShowRejectModal] = useState<string | null>(null);
+  const [togglingAutomation, setTogglingAutomation] = useState<string | null>(null);
 
   useEffect(() => {
     loadUsers();
@@ -28,6 +29,8 @@ export default function AdminUsersPage() {
         setPendingUsers(response.users);
       } else {
         const response = await adminApi.getAllUsers();
+        console.log('All Users Response:', response);
+        console.log('First user automation_enabled:', response.users[0]?.automation_enabled);
         setAllUsers(response.users);
       }
     } catch (err) {
@@ -80,6 +83,24 @@ export default function AdminUsersPage() {
       alert(err instanceof Error ? err.message : 'Failed to delete user');
     } finally {
       setActionLoading(null);
+    }
+  };
+
+  const handleToggleAutomation = async (userId: string, currentStatus: boolean) => {
+    const action = currentStatus ? 'disable' : 'enable';
+    if (!confirm(`Are you sure you want to ${action} automation access for this user?`)) {
+      return;
+    }
+
+    try {
+      setTogglingAutomation(userId);
+      await adminApi.toggleAutomationAccess(userId, !currentStatus);
+      await loadUsers();
+      alert(`Automation access ${action}d successfully!`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : `Failed to ${action} automation access`);
+    } finally {
+      setTogglingAutomation(null);
     }
   };
 
@@ -180,9 +201,14 @@ export default function AdminUsersPage() {
                   Registered
                 </th>
                 {activeTab === 'all' && (
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
-                    Status
-                  </th>
+                  <>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
+                      Automation
+                    </th>
+                  </>
                 )}
                 <th className="px-6 py-3 text-right text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
                   Actions
@@ -206,11 +232,29 @@ export default function AdminUsersPage() {
                     </div>
                   </td>
                   {activeTab === 'all' && (
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-2 py-1 text-xs font-semibold rounded-lg ${getStatusBadge(user.account_status)}`}>
-                        {user.account_status}
-                      </span>
-                    </td>
+                    <>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-2 py-1 text-xs font-semibold rounded-lg ${getStatusBadge(user.account_status)}`}>
+                          {user.account_status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <button
+                          onClick={() => {
+                            console.log('Toggle clicked for user:', user.id, 'Current status:', user.automation_enabled);
+                            handleToggleAutomation(user.id, user.automation_enabled);
+                          }}
+                          disabled={togglingAutomation === user.id || user.account_status !== 'approved'}
+                          className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all duration-200 border-2 cursor-pointer ${
+                            user.automation_enabled
+                              ? 'bg-green-500 text-white border-green-600 hover:bg-green-600 hover:shadow-md'
+                              : 'bg-gray-500 text-white border-gray-600 hover:bg-gray-600 hover:shadow-md'
+                          } disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none`}
+                        >
+                          {togglingAutomation === user.id ? 'Updating...' : (user.automation_enabled ? '✓ Enabled' : '✗ Disabled')}
+                        </button>
+                      </td>
+                    </>
                   )}
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <div className="flex items-center justify-end gap-2">

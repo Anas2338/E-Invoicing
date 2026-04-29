@@ -1,7 +1,7 @@
 """
 Master Data API endpoints for FBR-compliant reference data.
 Provides dropdown options for invoice forms based on FBR specifications.
-Fetches live data from FBR APIs when user has valid token.
+Fetches data from local database (synced daily from FBR APIs).
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -13,12 +13,19 @@ import logging
 from src.api.middleware.auth_middleware import require_authentication
 from src.api.deps import get_database_session
 from src.models.user import User
+from src.models.fbr_master_data import (
+    FBRProvince,
+    FBRUOM,
+    FBRHSCode,
+    FBRTransactionType,
+    FBRInvoiceType
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-# FBR API Base URLs (same for both sandbox and production, differentiated by token)
+# FBR API Base URLs (for dynamic endpoints that still need live API calls)
 FBR_BASE_URL = "https://gw.fbr.gov.pk"
 
 
@@ -71,6 +78,7 @@ async def get_user_fbr_token(db, user_id: str, environment: str = "SANDBOX") -> 
     """
     Get user's FBR access token based on environment.
     Decrypts the token before returning.
+    Used for dynamic API calls that require user-specific token.
 
     Args:
         db: Database session
@@ -112,12 +120,12 @@ async def get_user_fbr_token(db, user_id: str, environment: str = "SANDBOX") -> 
 
 async def fetch_from_fbr(endpoint: str, token: Optional[str], environment: str = "SANDBOX") -> Optional[List[Dict[str, Any]]]:
     """
-    Fetch data from FBR API.
+    Fetch data from FBR API (for dynamic endpoints).
 
     Args:
-        endpoint: FBR API endpoint path (e.g., "/pdi/v1/provinces")
+        endpoint: FBR API endpoint path
         token: FBR access token
-        environment: SANDBOX or PRODUCTION (both use same base URL, differentiated by token)
+        environment: SANDBOX or PRODUCTION
 
     Returns:
         List of data from FBR or None if failed
@@ -161,38 +169,17 @@ async def get_provinces(
     environment: str = "SANDBOX"
 ):
     """
-    Get list of FBR-compliant provinces from live FBR API.
-    Returns empty list if user has no FBR token configured.
+    Get list of FBR-compliant provinces from local database.
 
     Returns:
         List of provinces with code and name
     """
-    token = await get_user_fbr_token(db, user_id, environment)
-
-    if not token:
-        logger.info("No FBR token found, returning empty provinces list")
+    try:
+        provinces = db.query(FBRProvince).all()
+        return [{"code": p.code, "name": p.name} for p in provinces]
+    except Exception as e:
+        logger.error(f"Error fetching provinces from database: {str(e)}")
         return []
-
-    fbr_data = await fetch_from_fbr("/pdi/v1/provinces", token, environment)
-
-    if not fbr_data:
-        return []
-
-    # Transform FBR response format to our format
-    # FBR: {"stateProvinceCode": 7, "stateProvinceDesc": "PUNJAB"}
-    # Our: {"code": "7", "name": "PUNJAB"}
-    # Deduplicate by stateProvinceCode to ensure unique keys
-    seen_ids = set()
-    result = []
-    for item in fbr_data:
-        province_code = str(item.get("stateProvinceCode", ""))
-        if province_code and province_code not in seen_ids:
-            seen_ids.add(province_code)
-            result.append({
-                "code": province_code,
-                "name": item.get("stateProvinceDesc", "")
-            })
-    return result
 
 
 @router.get("/uom", response_model=List[Dict[str, Any]])
@@ -202,49 +189,17 @@ async def get_uom_codes(
     environment: str = "SANDBOX"
 ):
     """
-    Get list of FBR-compliant Unit of Measure codes from live FBR API.
-    Returns empty list if user has no FBR token configured.
+    Get list of FBR-compliant Unit of Measure codes from local database.
 
     Returns:
         List of UOM codes with code and name
     """
-    token = await get_user_fbr_token(db, user_id, environment)
-
-    if not token:
-        logger.info("No FBR token found, returning empty UOM list")
+    try:
+        uom_codes = db.query(FBRUOM).all()
+        return [{"code": u.code, "name": u.name} for u in uom_codes]
+    except Exception as e:
+        logger.error(f"Error fetching UOM codes from database: {str(e)}")
         return []
-
-    fbr_data = await fetch_from_fbr("/pdi/v1/uom", token, environment)
-
-    if not fbr_data:
-        return []
-
-    # Transform FBR response format to our format
-    # FBR: {"uoM_ID": 77, "description": "Square Metre"}
-    # Our: {"code": "77", "name": "Square Metre"}
-    # Deduplicate by uoM_ID to ensure unique keys
-    seen_ids = set()
-    result = []
-    duplicates_found = []
-
-    for item in fbr_data:
-        uom_id = str(item.get("uoM_ID", ""))
-        description = item.get("description", "")
-
-        if uom_id and uom_id not in seen_ids:
-            seen_ids.add(uom_id)
-            result.append({
-                "code": uom_id,
-                "name": description
-            })
-        elif uom_id in seen_ids:
-            duplicates_found.append(f"ID:{uom_id} Name:{description}")
-
-    if duplicates_found:
-        logger.warning(f"Found {len(duplicates_found)} duplicate UOM IDs: {duplicates_found[:5]}")
-
-    logger.info(f"Returning {len(result)} unique UOM codes")
-    return result
 
 
 @router.get("/tax-rates", response_model=List[Dict[str, str]])
@@ -259,7 +214,6 @@ async def get_tax_rates(
     Returns:
         List of tax rates with rate and name
     """
-    # No direct FBR API for tax rates, return fallback
     return FALLBACK_TAX_RATES
 
 
@@ -275,7 +229,6 @@ async def get_sale_types(
     Returns:
         List of sale types with code and name
     """
-    # No direct FBR API for sale types, return fallback
     return FALLBACK_SALE_TYPES
 
 
@@ -291,7 +244,6 @@ async def get_registration_types(
     Returns:
         List of registration types with code and name
     """
-    # No direct FBR API for registration types, return fallback
     return FALLBACK_REGISTRATION_TYPES
 
 
@@ -302,38 +254,17 @@ async def get_invoice_types(
     environment: str = "SANDBOX"
 ):
     """
-    Get list of FBR-compliant invoice types from live FBR API.
-    Returns empty list if user has no FBR token configured.
+    Get list of FBR-compliant invoice types from local database.
 
     Returns:
         List of invoice types with code and name
     """
-    token = await get_user_fbr_token(db, user_id, environment)
-
-    if not token:
-        logger.info("No FBR token found, returning empty invoice types list")
+    try:
+        invoice_types = db.query(FBRInvoiceType).all()
+        return [{"code": i.code, "name": i.name} for i in invoice_types]
+    except Exception as e:
+        logger.error(f"Error fetching invoice types from database: {str(e)}")
         return []
-
-    fbr_data = await fetch_from_fbr("/pdi/v1/doctypecode", token, environment)
-
-    if not fbr_data:
-        return []
-
-    # Transform FBR response format to our format
-    # FBR: {"docTypeId": 4, "docDescription": "Sale Invoice"}
-    # Our: {"code": "4", "name": "Sale Invoice"}
-    # Deduplicate by docTypeId to ensure unique keys
-    seen_ids = set()
-    result = []
-    for item in fbr_data:
-        doc_type_id = str(item.get("docTypeId", ""))
-        if doc_type_id and doc_type_id not in seen_ids:
-            seen_ids.add(doc_type_id)
-            result.append({
-                "code": doc_type_id,
-                "name": item.get("docDescription", "")
-            })
-    return result
 
 
 @router.get("/hs-codes", response_model=List[Dict[str, str]])
@@ -343,42 +274,19 @@ async def get_hs_codes(
     environment: str = "SANDBOX"
 ):
     """
-    Get list of HS codes from live FBR API.
-    Returns empty list if user has no FBR token configured.
-
-    FBR API: /pdi/v1/itemdesccode
-    Returns all HS codes with descriptions.
+    Get list of HS codes from local database.
 
     Returns:
         List of HS codes with code and description
     """
-    token = await get_user_fbr_token(db, user_id, environment)
-
-    if not token:
-        logger.info("No FBR token found, returning empty HS codes list")
+    try:
+        hs_codes = db.query(FBRHSCode).all()
+        result = [{"code": h.code, "description": h.description} for h in hs_codes]
+        logger.info(f"Returning {len(result)} HS codes from database")
+        return result
+    except Exception as e:
+        logger.error(f"Error fetching HS codes from database: {str(e)}")
         return []
-
-    fbr_data = await fetch_from_fbr("/pdi/v1/itemdesccode", token, environment)
-
-    if not fbr_data:
-        return []
-
-    # Transform FBR response format to our format
-    # FBR: {"hS_CODE": "8432.1010", "description": "NUCLEAR REACTOR..."}
-    # Our: {"code": "8432.1010", "description": "NUCLEAR REACTOR..."}
-    result = []
-    for item in fbr_data:
-        hs_code = item.get("hS_CODE", "")
-        description = item.get("description", "")
-
-        if hs_code:
-            result.append({
-                "code": hs_code,
-                "description": description
-            })
-
-    logger.info(f"Returning {len(result)} HS codes")
-    return result
 
 
 @router.get("/transaction-types", response_model=List[Dict[str, str]])
@@ -388,88 +296,22 @@ async def get_transaction_types(
     environment: str = "SANDBOX"
 ):
     """
-    Get list of transaction types from live FBR API.
-    Returns empty list if user has no FBR token configured.
-
-    FBR API: /pdi/v1/transtypecode
-    Returns all transaction types with IDs and descriptions.
+    Get list of transaction types from local database.
 
     Returns:
         List of transaction types with code and name
     """
-    token = await get_user_fbr_token(db, user_id, environment)
-
-    if not token:
-        logger.info("No FBR token found, returning empty transaction types list")
+    try:
+        transaction_types = db.query(FBRTransactionType).all()
+        result = [{"code": t.code, "name": t.name} for t in transaction_types]
+        logger.info(f"Returning {len(result)} transaction types from database")
+        return result
+    except Exception as e:
+        logger.error(f"Error fetching transaction types from database: {str(e)}")
         return []
 
-    fbr_data = await fetch_from_fbr("/pdi/v1/transtypecode", token, environment)
 
-    if not fbr_data:
-        return []
-
-    # Transform FBR response format to our format
-    # FBR: {"transactioN_TYPE_ID": 82, "transactioN_DESC": "DTRE goods"}
-    # Our: {"code": "82", "name": "DTRE goods"}
-    seen_ids = set()
-    result = []
-    for item in fbr_data:
-        trans_type_id = str(item.get("transactioN_TYPE_ID", ""))
-        if trans_type_id and trans_type_id not in seen_ids:
-            seen_ids.add(trans_type_id)
-            result.append({
-                "code": trans_type_id,
-                "name": item.get("transactioN_DESC", "")
-            })
-
-    logger.info(f"Returning {len(result)} transaction types")
-    return result
-
-
-@router.get("/sro-items", response_model=List[Dict[str, str]])
-async def get_sro_items(
-    db = Depends(get_database_session),
-    user_id: str = Depends(require_authentication),
-    environment: str = "SANDBOX"
-):
-    """
-    Get list of SRO items from live FBR API.
-    Returns empty list if user has no FBR token configured.
-
-    FBR API: /pdi/v1/sroitemcode
-    Returns all SRO items with IDs and descriptions.
-
-    Returns:
-        List of SRO items with code and name
-    """
-    token = await get_user_fbr_token(db, user_id, environment)
-
-    if not token:
-        logger.info("No FBR token found, returning empty SRO items list")
-        return []
-
-    fbr_data = await fetch_from_fbr("/pdi/v1/sroitemcode", token, environment)
-
-    if not fbr_data:
-        return []
-
-    # Transform FBR response format to our format
-    # FBR: {"srO_ITEM_ID": 724, "srO_ITEM_DESC": "9"}
-    # Our: {"code": "724", "name": "9"}
-    seen_ids = set()
-    result = []
-    for item in fbr_data:
-        sro_item_id = str(item.get("srO_ITEM_ID", ""))
-        if sro_item_id and sro_item_id not in seen_ids:
-            seen_ids.add(sro_item_id)
-            result.append({
-                "code": sro_item_id,
-                "name": item.get("srO_ITEM_DESC", "")
-            })
-
-    logger.info(f"Returning {len(result)} SRO items")
-    return result
-
+# Dynamic endpoints that still require live FBR API calls (parameter-based queries)
 
 @router.get("/sro-schedule", response_model=List[Dict[str, Any]])
 async def get_sro_schedule(
@@ -482,8 +324,7 @@ async def get_sro_schedule(
 ):
     """
     Get SRO schedule based on rate ID, date, and supplier type.
-
-    FBR API: /pdi/v1/SroSchedule
+    This endpoint requires live FBR API call as it's parameter-based.
 
     Args:
         rate_id: Tax rate ID
@@ -499,16 +340,12 @@ async def get_sro_schedule(
         logger.info("No FBR token found, returning empty SRO schedule list")
         return []
 
-    # Build query string
     endpoint = f"/pdi/v1/SroSchedule?rate_id={rate_id}&date={date}&origination_supplier_csv={origination_supplier_csv}"
     fbr_data = await fetch_from_fbr(endpoint, token, environment)
 
     if not fbr_data:
         return []
 
-    # Transform FBR response format to our format
-    # FBR: {"srO_ID": 7, "srO_DESC": "Zero Rated Gas"}
-    # Our: {"id": "7", "description": "Zero Rated Gas"}
     result = []
     for item in fbr_data:
         sro_id = str(item.get("srO_ID", ""))
@@ -533,17 +370,15 @@ async def get_sale_type_to_rate(
 ):
     """
     Get applicable tax rates based on date, transaction type, and province.
-
-    FBR API: /pdi/v2/SaleTypeToRate
+    This endpoint requires live FBR API call as it's parameter-based.
 
     Args:
         date: Invoice date (format: DD-MMM-YYYY, e.g., "24-Feb-2024")
         trans_type_id: Transaction type ID
-        origination_supplier: Province ID (e.g., 1 for Punjab, 2 for Sindh)
+        origination_supplier: Province ID
 
     Returns:
-        List of applicable tax rates in format: [{"rate": "18", "name": "18% - Standard rate"}]
-        Falls back to FALLBACK_TAX_RATES if FBR API fails or no token configured
+        List of applicable tax rates
     """
     token = await get_user_fbr_token(db, user_id, environment)
 
@@ -551,7 +386,6 @@ async def get_sale_type_to_rate(
         logger.info("No FBR token found, returning fallback tax rates")
         return FALLBACK_TAX_RATES
 
-    # Build query string - Note: This is v2 API
     endpoint = f"/pdi/v2/SaleTypeToRate?date={date}&transTypeId={trans_type_id}&originationSupplier={origination_supplier}"
     fbr_data = await fetch_from_fbr(endpoint, token, environment)
 
@@ -559,29 +393,21 @@ async def get_sale_type_to_rate(
         logger.warning("FBR API returned no data, returning fallback tax rates")
         return FALLBACK_TAX_RATES
 
-    # Transform FBR response format to our format
-    # FBR: {"ratE_ID": 734, "ratE_DESC": "18% along with rupees 60 per kilogram", "ratE_VALUE": 18}
-    # Our: {"rate": "18", "name": "18% - along with rupees 60 per kilogram"}
     result = []
     for item in fbr_data:
         rate_value = item.get("ratE_VALUE") or item.get("rate_value")
         rate_desc = item.get("ratE_DESC") or item.get("rate_desc", "")
 
         if rate_value is not None:
-            # If description is just the percentage (e.g., "5%"), use it as-is
-            # Otherwise, prepend rate value and strip leading percentage from description if present
             if rate_desc == f"{rate_value}%":
                 name = rate_desc
             elif rate_desc:
-                # Remove leading percentage from description if it matches rate_value
                 cleaned_desc = rate_desc
                 if rate_desc.startswith(f"{rate_value}%"):
                     cleaned_desc = rate_desc[len(f"{rate_value}%"):].strip()
-                    # Remove leading dash or space if present
                     if cleaned_desc.startswith("-"):
                         cleaned_desc = cleaned_desc[1:].strip()
 
-                # Only add description if there's additional info beyond the percentage
                 name = f"{rate_value}% - {cleaned_desc}" if cleaned_desc else f"{rate_value}%"
             else:
                 name = f"{rate_value}%"
@@ -609,8 +435,7 @@ async def get_hs_uom(
 ):
     """
     Get valid UOM options for a specific HS code.
-
-    FBR API: /pdi/v2/HS_UOM
+    This endpoint requires live FBR API call as it's parameter-based.
 
     Args:
         hs_code: HS code (e.g., "5904.9000")
@@ -625,16 +450,12 @@ async def get_hs_uom(
         logger.info("No FBR token found, returning empty HS-UOM list")
         return []
 
-    # Build query string - Note: This is v2 API
     endpoint = f"/pdi/v2/HS_UOM?hs_code={hs_code}&annexure_id={annexure_id}"
     fbr_data = await fetch_from_fbr(endpoint, token, environment)
 
     if not fbr_data:
         return []
 
-    # Transform FBR response format to our format
-    # FBR: {"uoM_ID": 77, "description": "Square Meter"}
-    # Our: {"code": "77", "name": "Square Meter"}
     result = []
     for item in fbr_data:
         uom_id = str(item.get("uoM_ID", ""))
@@ -658,8 +479,7 @@ async def get_sro_item_details(
 ):
     """
     Get detailed SRO item information based on date and SRO ID.
-
-    FBR API: /pdi/v2/SROItem
+    This endpoint requires live FBR API call as it's parameter-based.
 
     Args:
         date: Invoice date (format: YYYY-MM-DD, e.g., "2025-03-25")
@@ -674,7 +494,6 @@ async def get_sro_item_details(
         logger.info("No FBR token found, returning empty SRO item details list")
         return []
 
-    # Build query string - Note: This is v2 API
     endpoint = f"/pdi/v2/SROItem?date={date}&sro_id={sro_id}"
     fbr_data = await fetch_from_fbr(endpoint, token, environment)
 
@@ -693,125 +512,40 @@ async def get_all_master_data(
 ):
     """
     Get all master data in a single request.
-    Fetches live data from FBR APIs when user has valid token.
-    Returns empty arrays for fields requiring FBR token if not configured.
+    Fetches data from local database (synced daily from FBR APIs).
+
+    Note: HS codes are excluded from this endpoint for performance.
+    Users should fetch HS codes separately only when needed.
 
     Returns:
-        Dictionary containing all master data
+        Dictionary containing all master data (excluding HS codes)
     """
-    token = await get_user_fbr_token(db, user_id, environment)
+    try:
+        # Fetch all data from database (excluding HS codes for performance)
+        provinces = db.query(FBRProvince).all()
+        uom = db.query(FBRUOM).all()
+        invoice_types = db.query(FBRInvoiceType).all()
+        transaction_types = db.query(FBRTransactionType).all()
 
-    # Fetch data from FBR APIs (only if token exists)
-    provinces = []
-    uom = []
-    invoice_types = []
-    hs_codes = []
-    transaction_types = []
-    sro_items = []
-
-    if token:
-        # Fetch provinces
-        fbr_provinces = await fetch_from_fbr("/pdi/v1/provinces", token, environment)
-        if fbr_provinces:
-            seen_ids = set()
-            for item in fbr_provinces:
-                province_code = str(item.get("stateProvinceCode", ""))
-                if province_code and province_code not in seen_ids:
-                    seen_ids.add(province_code)
-                    provinces.append({
-                        "code": province_code,
-                        "name": item.get("stateProvinceDesc", "")
-                    })
-
-        # Fetch UOM codes
-        fbr_uom = await fetch_from_fbr("/pdi/v1/uom", token, environment)
-        if fbr_uom:
-            seen_ids = set()
-            for item in fbr_uom:
-                uom_id = str(item.get("uoM_ID", ""))
-                if uom_id and uom_id not in seen_ids:
-                    seen_ids.add(uom_id)
-                    uom.append({
-                        "code": uom_id,
-                        "name": item.get("description", "")
-                    })
-
-        # Fetch invoice types
-        fbr_invoice_types = await fetch_from_fbr("/pdi/v1/doctypecode", token, environment)
-        if fbr_invoice_types:
-            seen_ids = set()
-            for item in fbr_invoice_types:
-                doc_type_id = str(item.get("docTypeId", ""))
-                if doc_type_id and doc_type_id not in seen_ids:
-                    seen_ids.add(doc_type_id)
-                    invoice_types.append({
-                        "code": doc_type_id,
-                        "name": item.get("docDescription", "")
-                    })
-
-        # Fetch HS codes
-        logger.info("Fetching HS codes from FBR API...")
-        fbr_hs_codes = await fetch_from_fbr("/pdi/v1/itemdesccode", token, environment)
-        if fbr_hs_codes:
-            logger.info(f"Received {len(fbr_hs_codes)} HS codes from FBR")
-            for item in fbr_hs_codes:
-                hs_code = item.get("hS_CODE", "")
-                if hs_code:
-                    hs_codes.append({
-                        "code": hs_code,
-                        "description": item.get("description", "")
-                    })
-            logger.info(f"Returning {len(hs_codes)} HS codes to frontend")
-        else:
-            logger.warning("No HS codes received from FBR API")
-
-        # Fetch transaction types
-        logger.info("Fetching transaction types from FBR API...")
-        fbr_transaction_types = await fetch_from_fbr("/pdi/v1/transtypecode", token, environment)
-        if fbr_transaction_types:
-            logger.info(f"Received {len(fbr_transaction_types)} transaction types from FBR")
-            seen_ids = set()
-            for item in fbr_transaction_types:
-                trans_type_id = str(item.get("transactioN_TYPE_ID", ""))
-                if trans_type_id and trans_type_id not in seen_ids:
-                    seen_ids.add(trans_type_id)
-                    transaction_types.append({
-                        "code": trans_type_id,
-                        "name": item.get("transactioN_DESC", "")
-                    })
-            logger.info(f"Returning {len(transaction_types)} transaction types to frontend")
-        else:
-            logger.warning("No transaction types received from FBR API")
-
-        # Fetch SRO items
-        logger.info("Fetching SRO items from FBR API...")
-        fbr_sro_items = await fetch_from_fbr("/pdi/v1/sroitemcode", token, environment)
-        if fbr_sro_items:
-            logger.info(f"Received {len(fbr_sro_items)} SRO items from FBR")
-            seen_ids = set()
-            for item in fbr_sro_items:
-                sro_item_id = str(item.get("srO_ITEM_ID", ""))
-                if sro_item_id and sro_item_id not in seen_ids:
-                    seen_ids.add(sro_item_id)
-                    sro_items.append({
-                        "code": sro_item_id,
-                        "name": item.get("srO_ITEM_DESC", "")
-                    })
-            logger.info(f"Returning {len(sro_items)} SRO items to frontend")
-        else:
-            logger.warning("No SRO items received from FBR API")
-    else:
-        logger.info("No FBR token found, returning empty arrays for FBR-dependent fields")
-
-    return {
-        "provinces": provinces,
-        "uom": uom,
-        "tax_rates": FALLBACK_TAX_RATES,
-        "sale_types": FALLBACK_SALE_TYPES,
-        "registration_types": FALLBACK_REGISTRATION_TYPES,
-        "invoice_types": invoice_types,
-        "hs_codes": hs_codes,
-        "transaction_types": transaction_types,
-        "sro_items": sro_items
-    }
- 
+        return {
+            "provinces": [{"code": p.code, "name": p.name} for p in provinces],
+            "uom": [{"code": u.code, "name": u.name} for u in uom],
+            "tax_rates": FALLBACK_TAX_RATES,
+            "sale_types": FALLBACK_SALE_TYPES,
+            "registration_types": FALLBACK_REGISTRATION_TYPES,
+            "invoice_types": [{"code": i.code, "name": i.name} for i in invoice_types],
+            "hs_codes": [],  # Excluded for performance - fetch separately if needed
+            "transaction_types": [{"code": t.code, "name": t.name} for t in transaction_types]
+        }
+    except Exception as e:
+        logger.error(f"Error fetching all master data from database: {str(e)}")
+        return {
+            "provinces": [],
+            "uom": [],
+            "tax_rates": FALLBACK_TAX_RATES,
+            "sale_types": FALLBACK_SALE_TYPES,
+            "registration_types": FALLBACK_REGISTRATION_TYPES,
+            "invoice_types": [],
+            "hs_codes": [],
+            "transaction_types": []
+        }

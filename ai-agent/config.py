@@ -24,9 +24,10 @@ class Config:
         self.DRY_RUN: bool = os.getenv("DRY_RUN", "false").lower() in ("true", "1", "yes")
 
         # Database Configuration
+        # AI Agent uses automation database for processing bulk uploads
         self.DATABASE_URL: str = os.getenv(
-            "DATABASE_URL",
-            "postgresql://localhost/fbr_invoices"
+            "AUTOMATION_DATABASE_URL",
+            os.getenv("DATABASE_URL", "postgresql://localhost/fbr_automation")
         )
 
         # AI Configuration

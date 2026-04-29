@@ -76,7 +76,7 @@ class EnvironmentValidator:
         if not database_url:
             self.errors.append(
                 "DATABASE_URL is not set. Required format: "
-                "postgresql://user:password@host:port/database"
+                "postgresql://USERNAME@HOST:PORT/DATABASE"
             )
             return
 

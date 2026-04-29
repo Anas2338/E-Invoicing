@@ -79,12 +79,12 @@ export function InvoiceTable({
 
   // Checkbox selection handlers
   const handleSelectAll = () => {
-    if (selectedInvoices.size === submittedInvoices.length) {
+    if (selectedInvoices.size === transferredInvoices.length) {
       // Deselect all
       setSelectedInvoices(new Set());
     } else {
-      // Select all submitted invoices
-      setSelectedInvoices(new Set(submittedInvoices.map(inv => inv.id)));
+      // Select all transferred invoices
+      setSelectedInvoices(new Set(transferredInvoices.map(inv => inv.id)));
     }
   };
 
@@ -98,8 +98,8 @@ export function InvoiceTable({
     setSelectedInvoices(newSelection);
   };
 
-  // Filter submitted invoices (only submitted invoices can be printed)
-  const submittedInvoices = invoices.filter(inv => inv.status === 'submitted');
+  // Filter transferred invoices (only transferred invoices can be printed)
+  const transferredInvoices = invoices.filter(inv => inv.status === 'transferred');
 
   // Batch print handler
   const handleBatchPrint = async () => {
@@ -160,8 +160,10 @@ export function InvoiceTable({
     const statusConfig: Record<string, { label: string; className: string }> = {
       pending: { label: 'Pending', className: 'bg-[#fef3c7] text-[#92400e] dark:bg-[#451a03]/30 dark:text-[#fbbf24]' },
       validated: { label: 'Validated', className: 'bg-[#e0e7ff] text-[#3730a3] dark:bg-[#312e81]/30 dark:text-[#a5b4fc]' },
-      submitted: { label: 'Submitted', className: 'bg-[#d1fae5] text-[#065f46] dark:bg-[#064e3b]/30 dark:text-[#34d399]' },
+      transferred: { label: 'Transferred', className: 'bg-[#d1fae5] text-[#065f46] dark:bg-[#064e3b]/30 dark:text-[#34d399]' },
+      transfer_failed: { label: 'Transfer Failed', className: 'bg-[#ffedd5] text-[#7c2d12] dark:bg-[#431407]/30 dark:text-[#fb923c]' },
       failed: { label: 'Failed', className: 'bg-[#fee2e2] text-[#991b1b] dark:bg-[#7f1d1d]/30 dark:text-[#f87171]' },
+      blocked: { label: 'Blocked', className: 'bg-[#ffedd5] text-[#7c2d12] dark:bg-[#431407]/30 dark:text-[#fb923c]' },
       expired: { label: 'Expired', className: 'bg-[#f6f6f7] text-[#6d7175] dark:bg-[#2e2e2e] dark:text-[#8c9196]' }
     };
 
@@ -228,8 +230,10 @@ export function InvoiceTable({
                 <SelectItem value="all">All statuses</SelectItem>
                 <SelectItem value="pending">Pending</SelectItem>
                 <SelectItem value="validated">Validated</SelectItem>
-                <SelectItem value="submitted">Submitted</SelectItem>
+                <SelectItem value="transferred">Transferred</SelectItem>
+                <SelectItem value="transfer_failed">Transfer Failed</SelectItem>
                 <SelectItem value="failed">Failed</SelectItem>
+                <SelectItem value="blocked">Blocked</SelectItem>
                 <SelectItem value="expired">Expired</SelectItem>
               </SelectContent>
             </Select>
@@ -323,14 +327,14 @@ export function InvoiceTable({
             <table className="min-w-full divide-y divide-[#e1e3e5] dark:divide-[#2e2e2e]">
               <thead className="bg-[#f6f6f7] dark:bg-[#2e2e2e]">
                 <tr>
-                  {submittedInvoices.length > 0 && (
+                  {transferredInvoices.length > 0 && (
                     <th className="px-6 py-3 text-left">
                       <input
                         type="checkbox"
-                        checked={selectedInvoices.size === submittedInvoices.length && submittedInvoices.length > 0}
+                        checked={selectedInvoices.size === transferredInvoices.length && transferredInvoices.length > 0}
                         onChange={handleSelectAll}
                         className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        title="Select all submitted invoices"
+                        title="Select all transferred invoices"
                       />
                     </th>
                   )}
@@ -356,14 +360,14 @@ export function InvoiceTable({
               </thead>
               <tbody className="bg-white dark:bg-[#1a1a1a] divide-y divide-[#e1e3e5] dark:divide-[#2e2e2e]">
                 {invoices.map((invoice) => {
-                  const isSubmitted = invoice.status === 'submitted';
+                  const isTransferred = invoice.status === 'transferred';
                   const isSelected = selectedInvoices.has(invoice.id);
 
                   return (
                     <tr key={invoice.id} className="hover:bg-[#f6f6f7] dark:hover:bg-[#2e2e2e] transition-colors duration-150">
-                      {submittedInvoices.length > 0 && (
+                      {transferredInvoices.length > 0 && (
                         <td className="px-6 py-4 whitespace-nowrap">
-                          {isSubmitted ? (
+                          {isTransferred ? (
                             <input
                               type="checkbox"
                               checked={isSelected}
@@ -411,7 +415,7 @@ export function InvoiceTable({
                               Retry
                             </Button>
                           )}
-                          {invoice.status === 'submitted' && (
+                          {invoice.status === 'transferred' && (
                             <PrintInvoiceButton
                               invoiceId={invoice.id}
                               invoiceNumber={invoice.invoice_number}

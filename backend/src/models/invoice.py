@@ -72,6 +72,7 @@ class InvoiceBase(SQLModel):
     # FBR-specific invoice fields based on technical specification
     invoice_type: str = Field(sa_column=Column(String, nullable=False))  # "Sale Invoice", "Debit Note", etc.
     invoice_date: str = Field(sa_column=Column(String, nullable=False))  # "YYYY-MM-DD" format
+    transaction_type_id: Optional[str] = Field(default=None)  # Transaction type ID (e.g., "01", "02")
     seller_ntn_cnic: str = Field(sa_column=Column(String, nullable=False))  # 7 or 13 digits
     seller_business_name: str = Field(sa_column=Column(String, nullable=False))
     seller_province: str = Field(sa_column=Column(String, nullable=False))
@@ -95,6 +96,23 @@ class InvoiceBase(SQLModel):
     fbr_reference_number: Optional[str] = Field(default=None)
     validation_errors: Optional[dict] = Field(default=None, sa_column=Column(JSON))
     fbr_response_id: Optional[uuid.UUID] = Field(default=None, foreign_key="fbr_responses.id")
+
+    # Transfer tracking (for automation database separation feature)
+    source: str = Field(
+        default="manual",
+        sa_column=Column(String, nullable=False),
+        description="Source of invoice: manual or automation"
+    )
+    transferred_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime),
+        description="Timestamp when transferred from automation database"
+    )
+    automation_invoice_id: Optional[uuid.UUID] = Field(
+        default=None,
+        sa_column=Column(Uuid),
+        description="Reference to original automation invoice if transferred"
+    )
 
     # Soft delete field
     is_deleted: bool = Field(default=False, nullable=False)
@@ -127,6 +145,7 @@ class InvoiceCreate(SQLModel):
     # FBR-specific invoice fields based on technical specification
     invoice_type: str  # "Sale Invoice", "Debit Note", etc.
     invoice_date: str  # "YYYY-MM-DD" format
+    transaction_type_id: Optional[str] = None  # Transaction type ID (e.g., "01", "02")
     seller_ntn_cnic: str  # 7 or 13 digits
     seller_business_name: str
     seller_province: str
@@ -155,6 +174,7 @@ class InvoiceUpdate(SQLModel):
     external_id: Optional[str] = None
     invoice_type: Optional[str] = None
     invoice_date: Optional[str] = None
+    transaction_type_id: Optional[str] = None
     seller_ntn_cnic: Optional[str] = None
     seller_business_name: Optional[str] = None
     seller_province: Optional[str] = None

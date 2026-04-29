@@ -11,7 +11,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 import logging
 
-from src.database.session import get_db
+from src.database.session import get_automation_db, get_db
 from src.schemas.excel import ExcelUploadResponse, ExcelUploadStatusResponse
 from src.services.excel_service import ExcelService
 from src.services.automation_service import AutomationService
@@ -20,6 +20,7 @@ from src.models.automation_invoice import AutomationInvoiceStatus
 from src.utils.excel_validator import ExcelValidator
 from src.utils.secure_file_validator import SecureFileValidator
 from src.api.middleware.auth_middleware import require_authentication
+from src.middleware.rbac import require_automation_access
 from src.config.settings import settings
 
 router = APIRouter()
@@ -31,7 +32,8 @@ limiter = Limiter(key_func=get_remote_address)
 
 @router.get("/template/download")
 async def download_template(
-    db: Annotated[Session, Depends(get_db)]
+    db: Annotated[Session, Depends(get_automation_db)],
+    user_id: str = Depends(require_automation_access)
 ):
     """
     Download Excel template with predefined headers.
@@ -56,8 +58,9 @@ async def download_template(
 async def upload_excel(
     request: Request,
     file: Annotated[UploadFile, File(...)],
-    db: Annotated[Session, Depends(get_db)],
-    user_id: str = Depends(require_authentication)
+    db: Annotated[Session, Depends(get_automation_db)],
+    main_db: Annotated[Session, Depends(get_db)],
+    user_id: str = Depends(require_automation_access)
 ):
     """
     Upload filled Excel file for bulk invoice scheduling.
@@ -83,13 +86,7 @@ async def upload_excel(
     excel_service = ExcelService(db)
     automation_service = AutomationService(db)
 
-    # Check for concurrent upload
-    existing_session = excel_service.check_concurrent_upload(user_uuid)
-    if existing_session:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Previous upload still processing. Please wait for it to complete."
-        )
+    # Note: Concurrent upload check removed to allow multiple uploads per user
 
     try:
         # Read file content into memory
@@ -164,8 +161,8 @@ async def upload_excel(
         current_date = now.date()
         current_time = now.time()
 
-        # Get user's FBR credentials
-        user = db.get(User, user_uuid)
+        # Get user's FBR credentials from main database
+        user = main_db.get(User, user_uuid)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -318,9 +315,28 @@ async def upload_excel(
             message=" ".join(message_parts)
         )
 
-    except HTTPException:
+    except HTTPException as e:
+        # Update session status to failed on HTTP exceptions
+        try:
+            if 'upload_session' in locals():
+                upload_session.processing_status = "failed"
+                upload_session.error_message = str(e.detail)
+                db.add(upload_session)
+                db.commit()
+        except:
+            pass  # Don't fail the error response if status update fails
         raise
     except Exception as e:
+        # Update session status to failed on unexpected errors
+        try:
+            if 'upload_session' in locals():
+                upload_session.processing_status = "failed"
+                upload_session.error_message = str(e)
+                db.add(upload_session)
+                db.commit()
+        except:
+            pass  # Don't fail the error response if status update fails
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing upload: {str(e)}"
@@ -330,8 +346,8 @@ async def upload_excel(
 @router.get("/excel/status/{session_id}", response_model=ExcelUploadStatusResponse)
 async def get_upload_status(
     session_id: UUID,
-    db: Annotated[Session, Depends(get_db)],
-    user_id: str = Depends(require_authentication)
+    db: Annotated[Session, Depends(get_automation_db)],
+    user_id: str = Depends(require_automation_access)
 ):
     """
     Check upload processing status.

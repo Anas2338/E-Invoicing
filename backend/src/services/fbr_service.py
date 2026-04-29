@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 
 from src.models.invoice import Invoice, InvoiceStatus
+from src.config.settings import settings
 
 
 logger = logging.getLogger(__name__)
@@ -17,15 +18,16 @@ logger = logging.getLogger(__name__)
 class FBRService:
     """Service for interacting with FBR Digital Invoicing APIs."""
 
-    # FBR API URLs (from FBR Technical Documentation v1.12)
-    # Note: Both sandbox and production use gw.fbr.gov.pk
-    # Sandbox endpoints have _sb suffix
-    # Routing is based on the security token being used
-    SANDBOX_VALIDATE_URL = "https://gw.fbr.gov.pk/di_data/v1/di/validateinvoicedata_sb"
-    PRODUCTION_VALIDATE_URL = "https://gw.fbr.gov.pk/di_data/v1/di/validateinvoicedata"
+    def __init__(self):
+        self.timeout = 30.0  # 30 seconds timeout for FBR API calls
+        self._uom_cache = {}  # Cache for UoM code to description mapping
 
-    SANDBOX_POST_URL = "https://gw.fbr.gov.pk/di_data/v1/di/postinvoicedata_sb"
-    PRODUCTION_POST_URL = "https://gw.fbr.gov.pk/di_data/v1/di/postinvoicedata"
+        # Build FBR API URLs from environment variables
+        # Base URLs come from .env: FBR_SANDBOX_BASE_URL and FBR_PRODUCTION_BASE_URL
+        self.sandbox_validate_url = f"{settings.fbr_sandbox_base_url}/validateinvoicedata_sb"
+        self.production_validate_url = f"{settings.fbr_production_base_url}/validateinvoicedata"
+        self.sandbox_post_url = f"{settings.fbr_sandbox_base_url}/postinvoicedata_sb"
+        self.production_post_url = f"{settings.fbr_production_base_url}/postinvoicedata"
 
     # Sale type code to full description mapping (as per FBR documentation)
     SALE_TYPE_MAPPING = {
@@ -55,17 +57,13 @@ class FBRService:
         "24": "Non-Adjustable Supplies"
     }
 
-    def __init__(self):
-        self.timeout = 30.0  # 30 seconds timeout for FBR API calls
-        self._uom_cache = {}  # Cache for UoM code to description mapping
-
     def _get_validate_url(self, environment: str) -> str:
         """Get the appropriate validation URL based on environment."""
-        return self.SANDBOX_VALIDATE_URL if environment == "SANDBOX" else self.PRODUCTION_VALIDATE_URL
+        return self.sandbox_validate_url if environment == "SANDBOX" else self.production_validate_url
 
     def _get_post_url(self, environment: str) -> str:
         """Get the appropriate posting URL based on environment."""
-        return self.SANDBOX_POST_URL if environment == "SANDBOX" else self.PRODUCTION_POST_URL
+        return self.sandbox_post_url if environment == "SANDBOX" else self.production_post_url
 
     async def _fetch_uom_mappings(self, access_token: str, environment: str = "SANDBOX") -> Dict[str, str]:
         """
@@ -131,9 +129,16 @@ class FBRService:
         # Transform items from snake_case to camelCase
         transformed_items = []
         for item in (invoice.items or []):
-            # Get sale type code and convert to full description
-            sale_type_code = item.get("sale_type", "01")
-            sale_type_description = self.SALE_TYPE_MAPPING.get(sale_type_code, sale_type_code)
+            # Get sale type - can be either code or description
+            sale_type_value = item.get("sale_type", "01")
+
+            # If it's a code (2 digits or less), convert to description
+            # Otherwise, use the value as-is (it's already a description)
+            if sale_type_value and len(str(sale_type_value).strip()) <= 3 and str(sale_type_value).strip().isdigit():
+                sale_type_description = self.SALE_TYPE_MAPPING.get(sale_type_value, sale_type_value)
+            else:
+                # Already a description, use as-is but trim any extra spaces
+                sale_type_description = str(sale_type_value).strip()
 
             # Get rate and ensure it has % suffix
             rate = str(item.get("rate", "0"))
@@ -217,6 +222,7 @@ class FBRService:
         }
 
         logger.info(f"Validating invoice {invoice.id} with FBR ({invoice.environment})")
+        logger.info(f"FBR validation URL: {url}")
         logger.info(f"FBR validation payload: {fbr_data}")
 
         async with httpx.AsyncClient(timeout=self.timeout, verify=False) as client:
@@ -230,17 +236,29 @@ class FBRService:
                 return result
 
             except httpx.HTTPStatusError as e:
-                logger.error(f"FBR validation failed with status {e.response.status_code}: {e.response.text}")
+                error_text = e.response.text if e.response.text else "No error details provided by FBR"
+                logger.error(f"FBR validation failed with status {e.response.status_code}: {error_text}")
+                logger.error(f"Request URL: {url}")
+                logger.error(f"Request payload: {fbr_data}")
+
+                # Try to parse JSON error response
+                try:
+                    error_json = e.response.json()
+                    error_message = error_json.get('message') or error_json.get('error') or error_json.get('detail') or error_text
+                except:
+                    error_message = error_text
+
                 return {
                     "error": True,
                     "statusCode": e.response.status_code,
-                    "message": f"FBR API error: {e.response.text}"
+                    "message": f"FBR API error (Status {e.response.status_code}): {error_message}"
                 }
             except httpx.RequestError as e:
                 logger.error(f"FBR validation request failed: {str(e)}")
+                logger.error(f"Request URL: {url}")
                 return {
                     "error": True,
-                    "message": f"Failed to connect to FBR: {str(e)}"
+                    "message": f"Failed to connect to FBR API: {str(e)}"
                 }
 
     async def post_invoice(self, invoice: Invoice, access_token: str) -> Dict[str, Any]:
@@ -307,7 +325,10 @@ class FBRService:
             Tuple of (is_valid, error_message, item_errors)
         """
         if fbr_response.get("error"):
-            return False, fbr_response.get("message", "Unknown error"), None
+            error_msg = fbr_response.get("message", "Unknown FBR API error")
+            if not error_msg or error_msg.strip() == "":
+                error_msg = f"FBR API returned error (Status: {fbr_response.get('statusCode', 'unknown')})"
+            return False, error_msg, None
 
         validation_response = fbr_response.get("validationResponse", {})
         status = validation_response.get("status", "")
@@ -316,7 +337,16 @@ class FBRService:
             return True, None, None
 
         # Extract error details
-        error_message = validation_response.get("error", "Validation failed")
+        error_message = validation_response.get("error") or validation_response.get("message") or validation_response.get("errorMessage")
+
+        # If still no error message, provide a generic one with available details
+        if not error_message or error_message.strip() == "":
+            error_message = f"FBR validation failed with status: {status or 'Unknown'}"
+
+            # Try to extract more details from the response
+            if validation_response:
+                error_message += f". Response details: {str(validation_response)[:200]}"
+
         item_errors = validation_response.get("invoiceStatuses", [])
 
         return False, error_message, item_errors

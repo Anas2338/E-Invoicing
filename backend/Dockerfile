@@ -48,7 +48,11 @@ RUN find /app/.venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null ||
     rm -rf /app/.venv/lib/python3.11/site-packages/*/test && \
     rm -rf /app/.venv/lib/python3.11/site-packages/pygments/styles && \
     rm -rf /app/.venv/lib/python3.11/site-packages/pygments/lexers && \
-    rm -rf /app/.venv/lib/python3.11/site-packages/pygments/formatters
+    rm -rf /app/.venv/lib/python3.11/site-packages/pygments/formatters && \
+    find /app/.venv -type f -name "*.exe" -delete 2>/dev/null || true && \
+    find /app/.venv -type f -name "*.bat" -delete 2>/dev/null || true && \
+    find /app/.venv -type d -name "*.dist-info" -exec sh -c 'rm -f "$1"/RECORD "$1"/INSTALLER "$1"/direct_url.json' _ {} \; 2>/dev/null || true && \
+    rm -rf /app/.venv/bin/pip* /app/.venv/bin/wheel /app/.venv/bin/easy_install* 2>/dev/null || true
 
 # Production stage - minimal runtime image
 FROM python:3.11-alpine
@@ -79,7 +83,6 @@ COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
 # Copy application code and migration files
 COPY --chown=appuser:appuser src/ ./src/
 COPY --chown=appuser:appuser alembic/ ./alembic/
-COPY --chown=appuser:appuser alembic.ini ./
 
 # Switch to non-root user
 USER appuser

@@ -37,10 +37,37 @@ interface InvoiceDetailModalProps {
 export function InvoiceDetailModal({ invoice, onClose, onRetry }: InvoiceDetailModalProps) {
   const { invoice: inv, logs } = invoice;
 
+  const getFBRValidationMessage = (fbrResponse: any): { status: string; message: string; isValid: boolean } => {
+    try {
+      const validationResponse = fbrResponse?.validationResponse;
+      if (!validationResponse) {
+        return { status: 'Unknown', message: 'No validation response available', isValid: false };
+      }
+
+      const status = validationResponse.status || '';
+      const statusCode = validationResponse.statusCode || '';
+      const error = validationResponse.error || '';
+
+      // Check if valid
+      const isValid = status === 'Valid' || statusCode === '00';
+
+      if (isValid) {
+        return { status: 'Valid', message: 'Invoice validated successfully by FBR', isValid: true };
+      } else {
+        const errorMsg = error || 'Validation failed';
+        return { status: 'Invalid', message: errorMsg, isValid: false };
+      }
+    } catch (e) {
+      return { status: 'Error', message: 'Failed to parse FBR response', isValid: false };
+    }
+  };
+
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'submitted':
+      case 'transferred':
         return <CheckCircle className="h-5 w-5 text-[#065f46] dark:text-[#34d399]" />;
+      case 'transfer_failed':
+        return <XCircle className="h-5 w-5 text-[#7c2d12] dark:text-[#fb923c]" />;
       case 'failed':
         return <XCircle className="h-5 w-5 text-[#991b1b] dark:text-[#f87171]" />;
       case 'pending':
@@ -56,8 +83,10 @@ export function InvoiceDetailModal({ invoice, onClose, onRetry }: InvoiceDetailM
     const statusConfig: Record<string, { label: string; className: string }> = {
       pending: { label: 'Pending', className: 'bg-[#fef3c7] text-[#92400e] dark:bg-[#451a03]/30 dark:text-[#fbbf24]' },
       validated: { label: 'Validated', className: 'bg-[#e0e7ff] text-[#3730a3] dark:bg-[#312e81]/30 dark:text-[#a5b4fc]' },
-      submitted: { label: 'Submitted', className: 'bg-[#d1fae5] text-[#065f46] dark:bg-[#064e3b]/30 dark:text-[#34d399]' },
+      transferred: { label: 'Transferred', className: 'bg-[#d1fae5] text-[#065f46] dark:bg-[#064e3b]/30 dark:text-[#34d399]' },
+      transfer_failed: { label: 'Transfer Failed', className: 'bg-[#ffedd5] text-[#7c2d12] dark:bg-[#431407]/30 dark:text-[#fb923c]' },
       failed: { label: 'Failed', className: 'bg-[#fee2e2] text-[#991b1b] dark:bg-[#7f1d1d]/30 dark:text-[#f87171]' },
+      blocked: { label: 'Blocked', className: 'bg-[#ffedd5] text-[#7c2d12] dark:bg-[#431407]/30 dark:text-[#fb923c]' },
       expired: { label: 'Expired', className: 'bg-[#f6f6f7] text-[#6d7175] dark:bg-[#2e2e2e] dark:text-[#8c9196]' }
     };
 
@@ -191,11 +220,20 @@ export function InvoiceDetailModal({ invoice, onClose, onRetry }: InvoiceDetailM
 
           {/* FBR Response */}
           {inv.fbr_response && (
-            <Card className="p-4 bg-[#d1fae5] dark:bg-[#064e3b]/30 border-[#a7f3d0] dark:border-[#065f46]">
-              <h3 className="text-lg font-bold text-[#065f46] dark:text-[#34d399] mb-2">FBR Response</h3>
-              <pre className="text-sm text-[#065f46] dark:text-[#34d399] overflow-x-auto">
-                {JSON.stringify(inv.fbr_response, null, 2)}
-              </pre>
+            <Card className={`p-4 ${getFBRValidationMessage(inv.fbr_response).isValid ? 'bg-[#d1fae5] dark:bg-[#064e3b]/30 border-[#a7f3d0] dark:border-[#065f46]' : 'bg-[#fee2e2] dark:bg-[#7f1d1d]/30 border-[#fecaca] dark:border-[#7f1d1d]'}`}>
+              <div className="flex items-center gap-2 mb-2">
+                {getFBRValidationMessage(inv.fbr_response).isValid ? (
+                  <CheckCircle className="h-5 w-5 text-[#065f46] dark:text-[#34d399]" />
+                ) : (
+                  <XCircle className="h-5 w-5 text-[#991b1b] dark:text-[#f87171]" />
+                )}
+                <h3 className={`text-lg font-bold ${getFBRValidationMessage(inv.fbr_response).isValid ? 'text-[#065f46] dark:text-[#34d399]' : 'text-[#991b1b] dark:text-[#f87171]'}`}>
+                  FBR Validation: {getFBRValidationMessage(inv.fbr_response).status}
+                </h3>
+              </div>
+              <p className={`text-sm ${getFBRValidationMessage(inv.fbr_response).isValid ? 'text-[#065f46] dark:text-[#34d399]' : 'text-[#991b1b] dark:text-[#f87171]'}`}>
+                {getFBRValidationMessage(inv.fbr_response).message}
+              </p>
             </Card>
           )}
 

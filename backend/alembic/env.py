@@ -11,6 +11,11 @@ from src.models.user import User  # noqa
 from src.models.fbr_response import FBRResponse  # noqa
 from src.models.base import Base
 
+# Import automation models
+from src.models.automation_invoice import AutomationInvoice  # noqa
+from src.models.automation_log import AutomationLog  # noqa
+from src.models.excel_upload_session import ExcelUploadSession  # noqa
+
 from src.config.settings import settings
 
 # this is the Alembic Config object, which provides
@@ -22,11 +27,19 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Set the database URL from settings
-config.set_main_option('sqlalchemy.url', settings.database_url)
+# Determine which database we're migrating based on config file
+is_automation_db = config.config_file_name and 'alembic_automation.ini' in config.config_file_name
 
-# Set target metadata
-target_metadata = Base.metadata
+# Set the database URL from settings
+if is_automation_db:
+    config.set_main_option('sqlalchemy.url', settings.automation_database_url)
+    # For automation database, use only automation models' metadata
+    # We'll use Base.metadata but only automation tables will be created
+    target_metadata = Base.metadata
+else:
+    config.set_main_option('sqlalchemy.url', settings.database_url)
+    # For main database, use all models' metadata
+    target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:

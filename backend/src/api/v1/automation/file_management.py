@@ -8,7 +8,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlmodel import Session
 
-from src.database.session import get_db
+from src.database.session import get_automation_db
 from src.services.file_management_service import FileManagementService
 from src.schemas.file_management import (
     UploadSessionListResponse,
@@ -19,6 +19,7 @@ from src.schemas.file_management import (
     DeleteUploadSessionResponse,
 )
 from src.api.middleware.auth_middleware import require_authentication
+from src.middleware.rbac import require_automation_access
 
 
 router = APIRouter(tags=["automation-file-management"])
@@ -27,8 +28,8 @@ router = APIRouter(tags=["automation-file-management"])
 @router.get("/upload-sessions", response_model=UploadSessionListResponse)
 async def get_upload_sessions(
     request: Request,
-    user_id: str = Depends(require_authentication),
-    db: Session = Depends(get_db),
+    user_id: str = Depends(require_automation_access),
+    db: Session = Depends(get_automation_db),
 ):
     """
     Get all upload sessions for the current user with invoice counts.
@@ -49,13 +50,13 @@ async def get_upload_sessions(
 async def delete_upload_session(
     session_id: str,
     request: Request,
-    user_id: str = Depends(require_authentication),
-    db: Session = Depends(get_db),
+    user_id: str = Depends(require_automation_access),
+    db: Session = Depends(get_automation_db),
 ):
     """
     Delete an upload session and all its invoices.
 
-    Only allowed if no invoices have been submitted to FBR.
+    Only allowed if no invoices have been transferred to main database.
 
     Args:
         session_id: Upload session ID to delete
@@ -65,7 +66,7 @@ async def delete_upload_session(
 
     Raises:
         HTTPException 404: Session not found
-        HTTPException 400: Session has submitted invoices
+        HTTPException 400: Session has transferred invoices
     """
     service = FileManagementService(db)
     success, deleted_count, message = service.delete_upload_session(
@@ -84,8 +85,8 @@ async def block_invoice(
     invoice_id: str,
     request: Request,
     body: BlockInvoiceRequest = BlockInvoiceRequest(),
-    user_id: str = Depends(require_authentication),
-    db: Session = Depends(get_db),
+    user_id: str = Depends(require_automation_access),
+    db: Session = Depends(get_automation_db),
 ):
     """
     Block an invoice from FBR submission.
@@ -120,8 +121,8 @@ async def block_invoice(
 async def unblock_invoice(
     invoice_id: str,
     request: Request,
-    user_id: str = Depends(require_authentication),
-    db: Session = Depends(get_db),
+    user_id: str = Depends(require_automation_access),
+    db: Session = Depends(get_automation_db),
 ):
     """
     Unblock an invoice to allow FBR submission.
@@ -153,8 +154,8 @@ async def unblock_invoice(
 async def delete_invoice(
     invoice_id: str,
     request: Request,
-    user_id: str = Depends(require_authentication),
-    db: Session = Depends(get_db),
+    user_id: str = Depends(require_automation_access),
+    db: Session = Depends(get_automation_db),
 ):
     """
     Delete a single invoice.
@@ -182,8 +183,8 @@ async def delete_invoice(
 async def bulk_block_invoices(
     body: BulkBlockRequest,
     request: Request,
-    user_id: str = Depends(require_authentication),
-    db: Session = Depends(get_db),
+    user_id: str = Depends(require_automation_access),
+    db: Session = Depends(get_automation_db),
 ):
     """
     Block multiple invoices at once.

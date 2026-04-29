@@ -6,7 +6,6 @@ import { RecentInvoices } from '@/components/dashboard/recent-invoices';
 import { UserProfileCard } from '@/components/dashboard/user-profile-card';
 import { QuickActionsPanel } from '@/components/dashboard/quick-actions-panel';
 import { api, ApiError } from '@/lib/api';
-import { automationApi } from '@/services/automationApi';
 import { useAuth } from '@/providers/auth-provider';
 
 export default function DashboardPage() {
@@ -18,13 +17,6 @@ export default function DashboardPage() {
     draft: 0,
     validated: 0,
     posted: 0,
-    failed: 0,
-  });
-
-  const [automationStats, setAutomationStats] = useState({
-    pending: 0,
-    validated: 0,
-    submitted: 0,
     failed: 0,
   });
 
@@ -56,19 +48,12 @@ export default function DashboardPage() {
 
         const data = await response.json();
 
-        // Set stats from optimized response
+        // Set stats from optimized response - manual invoices only
         setInvoiceStats({
           draft: data.manual_stats.draft || 0,
           validated: data.manual_stats.validated || 0,
           posted: data.manual_stats.posted || 0,
           failed: data.manual_stats.failed || 0,
-        });
-
-        setAutomationStats({
-          pending: data.automation_stats.pending || 0,
-          validated: data.automation_stats.validated || 0,
-          submitted: data.automation_stats.submitted || 0,
-          failed: data.automation_stats.failed || 0,
         });
 
         setRecentInvoices(data.recent_invoices || []);
@@ -158,28 +143,24 @@ export default function DashboardPage() {
           count={invoiceStats.draft}
           icon="📝"
           color="bg-blue-500"
-          subtitle="Manual only"
         />
         <SummaryCard
           title="Validated"
-          count={invoiceStats.validated + automationStats.validated}
+          count={invoiceStats.validated}
           icon="✅"
           color="bg-green-500"
-          subtitle={`Manual: ${invoiceStats.validated} | Auto: ${automationStats.validated}`}
         />
         <SummaryCard
           title="Posted"
-          count={invoiceStats.posted + automationStats.submitted}
+          count={invoiceStats.posted}
           icon="📤"
           color="bg-purple-500"
-          subtitle={`Manual: ${invoiceStats.posted} | Auto: ${automationStats.submitted}`}
         />
         <SummaryCard
           title="Failed"
-          count={invoiceStats.failed + automationStats.failed}
+          count={invoiceStats.failed}
           icon="❌"
           color="bg-red-500"
-          subtitle={`Manual: ${invoiceStats.failed} | Auto: ${automationStats.failed}`}
         />
       </div>
 
@@ -187,24 +168,17 @@ export default function DashboardPage() {
       <div className="bg-gradient-to-r from-[#008060] to-[#00a876] dark:from-[#006e52] dark:to-[#008f64] rounded-2xl shadow-lg p-4 sm:p-6 text-white">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="text-center sm:text-left">
-            <p className="text-sm font-semibold text-white/80">Total Invoices</p>
+            <p className="text-sm font-semibold text-white/80">Total Manual Invoices</p>
             <p className="text-2xl sm:text-3xl font-bold mt-2">
-              {invoiceStats.draft + invoiceStats.validated + invoiceStats.posted + invoiceStats.failed +
-               automationStats.pending + automationStats.validated + automationStats.submitted + automationStats.failed}
-            </p>
-            <p className="text-xs text-white/70 mt-1">
-              Manual: {invoiceStats.draft + invoiceStats.validated + invoiceStats.posted + invoiceStats.failed} |
-              Auto: {automationStats.pending + automationStats.validated + automationStats.submitted + automationStats.failed}
+              {invoiceStats.draft + invoiceStats.validated + invoiceStats.posted + invoiceStats.failed}
             </p>
           </div>
           <div className="text-center sm:text-right">
             <p className="text-sm font-semibold text-white/80">Success Rate</p>
             <p className="text-2xl sm:text-3xl font-bold mt-2">
               {(() => {
-                const manualTotal = invoiceStats.draft + invoiceStats.validated + invoiceStats.posted + invoiceStats.failed;
-                const autoTotal = automationStats.pending + automationStats.validated + automationStats.submitted + automationStats.failed;
-                const total = manualTotal + autoTotal;
-                const successful = invoiceStats.validated + invoiceStats.posted + automationStats.validated + automationStats.submitted;
+                const total = invoiceStats.draft + invoiceStats.validated + invoiceStats.posted + invoiceStats.failed;
+                const successful = invoiceStats.validated + invoiceStats.posted;
                 return total > 0 ? Math.round((successful / total) * 100) : 0;
               })()}%
             </p>

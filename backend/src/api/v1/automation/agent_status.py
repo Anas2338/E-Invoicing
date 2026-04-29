@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlmodel import Session, select, func
 from datetime import datetime
 
-from src.database.session import get_db
+from src.database.session import get_automation_db
 from src.models.ai_agent_health_check import AIAgentHealthCheck
 from src.models.automation_log import AutomationLog
 from src.models.automation_invoice import AutomationInvoice, AutomationInvoiceStatus
@@ -18,6 +18,7 @@ from src.schemas.agent import (
     AIAgentStatusSummary
 )
 from src.api.middleware.auth_middleware import require_authentication
+from src.middleware.rbac import require_automation_access
 
 router = APIRouter(prefix="/agent", tags=["ai-agent-status"])
 
@@ -25,8 +26,8 @@ router = APIRouter(prefix="/agent", tags=["ai-agent-status"])
 @router.get("/health", response_model=AIAgentHealthCheckResponse)
 async def get_agent_health(
     request: Request,
-    user_id: str = Depends(require_authentication),
-    db: Session = Depends(get_db)
+    user_id: str = Depends(require_automation_access),
+    db: Session = Depends(get_automation_db)
 ):
     """
     Get latest AI Agent health check result.
@@ -54,13 +55,13 @@ async def get_agent_health(
 @router.get("/decisions", response_model=AIAgentDecisionListResponse)
 async def get_agent_decisions(
     request: Request,
-    user_id: str = Depends(require_authentication),
+    user_id: str = Depends(require_automation_access),
     invoice_id: Optional[UUID] = Query(None, description="Filter by invoice ID"),
     action: Optional[str] = Query(None, description="Filter by action type"),
     status: Optional[str] = Query(None, description="Filter by status"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_automation_db)
 ):
     """
     Get paginated list of AI Agent decision logs.
@@ -121,8 +122,8 @@ async def get_agent_decisions(
 @router.get("/status", response_model=AIAgentStatusSummary)
 async def get_agent_status_summary(
     request: Request,
-    user_id: str = Depends(require_authentication),
-    db: Session = Depends(get_db)
+    user_id: str = Depends(require_automation_access),
+    db: Session = Depends(get_automation_db)
 ):
     """
     Get AI Agent status summary.

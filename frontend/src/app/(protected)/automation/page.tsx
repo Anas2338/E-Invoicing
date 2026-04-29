@@ -1,12 +1,38 @@
 'use client';
 
+import { useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
+import { useAuth } from '@/providers/auth-provider';
+import { toast } from 'react-toastify';
 
 export default function AutomationPage() {
   const router = useRouter();
+  const { user, loading } = useAuth();
+
+  useEffect(() => {
+    if (!loading && user && !user.automation_enabled) {
+      toast.error('Automation access not enabled. Please contact your administrator.');
+      router.push('/dashboard');
+    }
+  }, [user, loading, router]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#008060] dark:border-[#00a876] mx-auto"></div>
+          <p className="mt-4 text-[#6d7175] dark:text-[#8c9196]">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user?.automation_enabled) {
+    return null;
+  }
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -64,7 +90,7 @@ export default function AutomationPage() {
             </Link>
 
             <Link
-              href="/automation/upload"
+              href="/automation/uploads"
               className="block p-6 bg-[#ffedd5] dark:bg-[#431407]/30 rounded-xl border-2 border-[#fed7aa] dark:border-[#7c2d12] hover:border-[#fb923c] dark:hover:border-[#fb923c] transition-all duration-150 hover:shadow-md"
             >
               <div className="flex items-center mb-3">

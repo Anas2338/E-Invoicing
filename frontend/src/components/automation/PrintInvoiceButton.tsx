@@ -22,12 +22,12 @@ export function PrintInvoiceButton({
   const [isGenerating, setIsGenerating] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
 
-  // Only submitted/posted invoices can be printed
-  const isDisabled = status !== 'submitted' && status !== 'POSTED';
+  // Only transferred invoices can be printed
+  const isDisabled = status !== 'transferred';
 
   const handlePrintClick = () => {
     if (isDisabled) {
-      toast.error('Only submitted/posted invoices can be printed');
+      toast.error('Only transferred invoices can be printed');
       return;
     }
 
@@ -150,7 +150,7 @@ export function PrintInvoiceButton({
         `}
         title={
           isDisabled
-            ? 'Only submitted invoices can be printed'
+            ? 'Only transferred invoices can be printed'
             : isGenerating
             ? 'Generating PDF...'
             : 'Print invoice'

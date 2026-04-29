@@ -10,7 +10,7 @@ import logging
 
 from src.database.session import get_db
 from src.models.user import User
-from src.schemas.user import UserCreate, UserLogin, UserToken, UserProfile
+from src.schemas.user import UserCreate, UserLogin, UserToken, UserProfile, UserProfileUpdate
 from src.api.middleware.auth_middleware import require_authentication
 from src.utils.jwt_utils import create_access_token, create_refresh_token
 from src.utils.helpers import sanitize_input
@@ -180,7 +180,8 @@ def login_user(request: Request, user_login: UserLogin, db: Session = Depends(ge
             "updated_at": user.updated_at.isoformat() if user.updated_at else None,
             "approval_flags": user.approval_flags or {},
             "has_production_access": user.approval_flags.get('has_production_access', False) if user.approval_flags else False,
-            "can_post_to_production": user.approval_flags.get('can_post_to_production', False) if user.approval_flags else False
+            "can_post_to_production": user.approval_flags.get('can_post_to_production', False) if user.approval_flags else False,
+            "automation_enabled": user.automation_enabled
         }
 
         # Create response with httpOnly cookie and CSRF token in body for cross-origin support
@@ -231,6 +232,8 @@ def login_user(request: Request, user_login: UserLogin, db: Session = Depends(ge
     except HTTPException:
         raise
     except Exception as e:
+        # SECURITY: Log error without exposing sensitive details to user
+        logger.error(f"Authentication failed: {type(e).__name__}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication failed",  # Generic message for security
@@ -337,9 +340,11 @@ def register_user(request: Request, user_create: UserCreate, db: Session = Depen
     except HTTPException:
         raise
     except Exception as e:
+        # SECURITY: Log error without exposing sensitive details to user
+        logger.error(f"Registration failed for {email}: {type(e).__name__}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Registration failed: {str(e)}"
+            detail="Registration failed. Please try again."
         )
 
 
@@ -370,11 +375,13 @@ def get_profile(
             email=user.email,
             name=user.name,
             is_active=user.is_active,
+            role=user.role,
             created_at=user.created_at,
             updated_at=user.updated_at,
             approval_flags=user.approval_flags or {},
             has_production_access=user.approval_flags.get('has_production_access', False) if user.approval_flags else False,
             can_post_to_production=user.approval_flags.get('can_post_to_production', False) if user.approval_flags else False,
+            automation_enabled=user.automation_enabled,
             fbr_seller_ntn=user.fbr_seller_ntn,
             fbr_business_name=user.fbr_business_name,
             fbr_seller_province=user.fbr_seller_province,
@@ -383,21 +390,23 @@ def get_profile(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Profile fetch failed for user {current_user_id}: {type(e).__name__}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User not found: {str(e)}"
+            detail="User not found"
         )
 
 
 @router.put("/profile", response_model=UserProfile)
 def update_profile(
     request: Request,
-    user_update: dict,
+    user_update: UserProfileUpdate,
     current_user_id: str = Depends(require_authentication),
     db: Session = Depends(get_db)
 ):
     """
     Update the profile of the currently authenticated user.
+    Only allows updating name field for security.
     """
     try:
         user = db.get(User, current_user_id)
@@ -408,9 +417,9 @@ def update_profile(
                 detail="User not found"
             )
 
-        # Update name if provided
-        if "name" in user_update:
-            user.name = sanitize_input(user_update["name"])
+        # Update name if provided (validated by Pydantic schema)
+        if user_update.name is not None:
+            user.name = sanitize_input(user_update.name)
 
         db.add(user)
         db.commit()
@@ -421,11 +430,13 @@ def update_profile(
             email=user.email,
             name=user.name,
             is_active=user.is_active,
+            role=user.role,
             created_at=user.created_at,
             updated_at=user.updated_at,
             approval_flags=user.approval_flags or {},
             has_production_access=user.approval_flags.get('has_production_access', False) if user.approval_flags else False,
             can_post_to_production=user.approval_flags.get('can_post_to_production', False) if user.approval_flags else False,
+            automation_enabled=user.automation_enabled,
             fbr_seller_ntn=user.fbr_seller_ntn,
             fbr_business_name=user.fbr_business_name,
             fbr_seller_province=user.fbr_seller_province,
@@ -434,9 +445,10 @@ def update_profile(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Profile update failed for user {current_user_id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to update profile: {str(e)}"
+            detail="Failed to update profile"
         )
 
 
@@ -497,13 +509,14 @@ def refresh_token(request: Request, db: Session = Depends(get_db)):
         # Create response
         response = JSONResponse(content={"message": "Token refreshed successfully"})
 
-        # Set new access token cookie
+        # SECURITY: Use SameSite=None for cross-origin support (consistent with login)
+        # Required for Vercel frontend + Hugging Face backend deployment
         response.set_cookie(
             key="access_token",
             value=new_access_token,
             httponly=True,
             secure=True,
-            samesite="lax",
+            samesite="none",  # Changed from "lax" to "none" for cross-origin consistency
             max_age=7200,  # 2 hours
             path="/",
             domain=None
@@ -515,7 +528,7 @@ def refresh_token(request: Request, db: Session = Depends(get_db)):
             value=new_refresh_token,
             httponly=True,
             secure=True,
-            samesite="lax",
+            samesite="none",  # Changed from "lax" to "none" for cross-origin consistency
             max_age=604800,  # 7 days
             path="/",
             domain=None
@@ -528,7 +541,7 @@ def refresh_token(request: Request, db: Session = Depends(get_db)):
             value=csrf_token,
             httponly=False,
             secure=True,
-            samesite="lax",
+            samesite="none",  # Changed from "lax" to "none" for cross-origin consistency
             max_age=7200,
             path="/",
             domain=None
@@ -537,9 +550,11 @@ def refresh_token(request: Request, db: Session = Depends(get_db)):
         return response
 
     except Exception as e:
+        # SECURITY: Log error without exposing sensitive details to user
+        logger.error(f"Token refresh failed: {type(e).__name__}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Could not refresh token: {str(e)}",
+            detail="Could not refresh token",  # Generic message, no exception details
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -576,9 +591,10 @@ def get_permissions(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Permissions fetch failed for user {current_user_id}: {type(e).__name__}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User not found: {str(e)}"
+            detail="User not found"
         )
 
 @router.put("/profile/fbr-credentials")
@@ -658,6 +674,24 @@ def update_fbr_credentials(
         if "fbr_seller_address" in credentials:
             user.fbr_seller_address = credentials["fbr_seller_address"].strip() if credentials["fbr_seller_address"] else None
 
+        # Admin-only: Update system sync token for daily FBR master data sync
+        if "fbr_system_sync_token" in credentials:
+            if user.role != "admin":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only admin users can set the system sync token"
+                )
+
+            token = credentials["fbr_system_sync_token"]
+            if token and token.strip():
+                # Encrypt and store token
+                user.fbr_system_sync_token = encryption_service.encrypt(token.strip())
+                logger.info(f"Admin {current_user_id} updated system sync token")
+            else:
+                # Empty string means delete the token
+                user.fbr_system_sync_token = None
+                logger.info(f"Admin {current_user_id} removed system sync token")
+
         # Explicitly add to session and commit
         db.add(user)
         db.flush()  # Flush to ensure changes are written
@@ -667,7 +701,7 @@ def update_fbr_credentials(
         logger.info(f"FBR credentials updated for user {current_user_id}, environment: {target_environment}")
         logger.info(f"Has sandbox token: {bool(user.fbr_sandbox_token)}, Has production token: {bool(user.fbr_production_token)}")
 
-        return {
+        response_data = {
             "success": True,
             "message": f"FBR credentials updated successfully for {target_environment}",
             "fbr_environment": user.fbr_environment,
@@ -678,12 +712,19 @@ def update_fbr_credentials(
             "has_sandbox_token": bool(user.fbr_sandbox_token),
             "has_production_token": bool(user.fbr_production_token)
         }
+
+        # Include system token status for admin users
+        if user.role == "admin":
+            response_data["has_system_sync_token"] = bool(user.fbr_system_sync_token)
+
+        return response_data
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"FBR credentials update failed for user {current_user_id}: {type(e).__name__}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to update FBR credentials: {str(e)}"
+            detail="Failed to update FBR credentials"
         )
 
 
@@ -711,20 +752,43 @@ def get_fbr_credentials(
 
         sandbox_token = None
         production_token = None
+        system_sync_token = None
 
         if user.fbr_sandbox_token:
             try:
                 sandbox_token = encryption_service.decrypt(user.fbr_sandbox_token)
             except Exception as e:
-                logger.error(f"Failed to decrypt sandbox token: {e}")
+                logger.error(f"Failed to decrypt sandbox token for user {current_user_id}: {type(e).__name__}")
+                # Return error to user indicating token corruption
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="FBR sandbox token is corrupted. Please re-enter your credentials in settings."
+                )
 
         if user.fbr_production_token:
             try:
                 production_token = encryption_service.decrypt(user.fbr_production_token)
             except Exception as e:
-                logger.error(f"Failed to decrypt production token: {e}")
+                logger.error(f"Failed to decrypt production token for user {current_user_id}: {type(e).__name__}")
+                # Return error to user indicating token corruption
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="FBR production token is corrupted. Please re-enter your credentials in settings."
+                )
 
-        return {
+        # Admin-only: Decrypt system sync token
+        if user.role == "admin" and user.fbr_system_sync_token:
+            try:
+                system_sync_token = encryption_service.decrypt(user.fbr_system_sync_token)
+            except Exception as e:
+                logger.error(f"Failed to decrypt system sync token: {type(e).__name__}")
+                # Return error to admin indicating token corruption
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="System sync token is corrupted. Please re-enter the token in admin settings."
+                )
+
+        response_data = {
             "fbr_environment": user.fbr_environment or "SANDBOX",
             "fbr_seller_ntn": user.fbr_seller_ntn,
             "fbr_business_name": user.fbr_business_name,
@@ -735,12 +799,20 @@ def get_fbr_credentials(
             "has_sandbox_token": bool(user.fbr_sandbox_token),
             "has_production_token": bool(user.fbr_production_token),
         }
+
+        # Include system sync token for admin users
+        if user.role == "admin":
+            response_data["fbr_system_sync_token"] = system_sync_token
+            response_data["has_system_sync_token"] = bool(user.fbr_system_sync_token)
+
+        return response_data
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"FBR credentials fetch failed for user {current_user_id}: {type(e).__name__}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User not found: {str(e)}"
+            detail="User not found"
         )
 
 
@@ -753,7 +825,7 @@ def delete_fbr_credentials(
 ):
     """
     Delete FBR access token for a specific environment.
-    Query parameter 'environment' should be 'SANDBOX' or 'PRODUCTION'.
+    Query parameter 'environment' should be 'SANDBOX', 'PRODUCTION', or 'SYSTEM' (admin only).
     If not specified, deletes the token for the current environment.
     """
     try:
@@ -768,14 +840,23 @@ def delete_fbr_credentials(
         # Determine which environment to delete
         env_to_delete = environment or user.fbr_environment or "SANDBOX"
 
-        if env_to_delete not in ["SANDBOX", "PRODUCTION"]:
+        if env_to_delete not in ["SANDBOX", "PRODUCTION", "SYSTEM"]:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Environment must be SANDBOX or PRODUCTION"
+                detail="Environment must be SANDBOX, PRODUCTION, or SYSTEM"
             )
 
+        # Admin-only: Delete system sync token
+        if env_to_delete == "SYSTEM":
+            if user.role != "admin":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only admin users can delete the system sync token"
+                )
+            user.fbr_system_sync_token = None
+            message = "System sync token deleted successfully"
         # Clear the appropriate token
-        if env_to_delete == "SANDBOX":
+        elif env_to_delete == "SANDBOX":
             user.fbr_sandbox_token = None
             message = "Sandbox FBR access token deleted successfully"
         else:
@@ -786,19 +867,26 @@ def delete_fbr_credentials(
         db.commit()
         db.refresh(user)
 
-        return {
+        response_data = {
             "success": True,
             "message": message,
             "environment": env_to_delete,
             "has_sandbox_token": bool(user.fbr_sandbox_token),
             "has_production_token": bool(user.fbr_production_token)
         }
+
+        # Include system token status for admin users
+        if user.role == "admin":
+            response_data["has_system_sync_token"] = bool(user.fbr_system_sync_token)
+
+        return response_data
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"FBR credentials deletion failed for user {current_user_id}: {type(e).__name__}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to delete FBR credentials: {str(e)}"
+            detail="Failed to delete FBR credentials"
         )
 
 
@@ -831,9 +919,10 @@ def get_environment_preference(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Environment preference fetch failed for user {current_user_id}: {type(e).__name__}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to get environment preference: {str(e)}"
+            detail="Failed to get environment preference"
         )
 
 
@@ -887,7 +976,8 @@ def update_environment_preference(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Environment preference update failed for user {current_user_id}: {type(e).__name__}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to update environment preference: {str(e)}"
+            detail="Failed to update environment preference"
         )

@@ -24,11 +24,34 @@ This is a FastAPI-based backend service that provides:
 ## Tech Stack
 
 - **Framework**: FastAPI 0.115+
-- **Database**: PostgreSQL with SQLModel ORM
+- **Database**: PostgreSQL with SQLModel ORM (Multi-database architecture)
 - **Authentication**: JWT tokens (Better Auth integration)
 - **Migrations**: Alembic
 - **Package Manager**: uv
 - **Python**: 3.11+
+
+## Multi-Database Architecture
+
+This application uses a **two-database architecture** to separate concerns:
+
+### Main Database
+- **Purpose**: Stores manual invoices, user accounts, FBR master data
+- **Connection**: `DATABASE_URL` environment variable
+- **Migrations**: `alembic upgrade head`
+- **Access**: `get_db()` dependency in FastAPI endpoints
+
+### Automation Database
+- **Purpose**: Stores bulk uploads, scheduled invoices, automation logs
+- **Connection**: `AUTOMATION_DATABASE_URL` environment variable
+- **Migrations**: `alembic -c alembic_automation.ini upgrade head`
+- **Access**: `get_automation_db()` dependency in FastAPI endpoints
+
+### Why Two Databases?
+
+1. **Data Isolation**: Automation data is isolated from production invoice data
+2. **Independent Scaling**: Each database can be scaled independently
+3. **Simplified Cleanup**: Automation data can be cleaned up without affecting main data
+4. **Clear Separation**: Automation workflow is distinct from manual workflow
 
 ## Project Structure
 
@@ -82,9 +105,22 @@ cp .env.example .env
 # Edit .env with your configuration
 ```
 
-5. Run database migrations:
+**Important**: For multi-database setup, you need to configure both databases:
+- `DATABASE_URL`: Main database connection string (existing)
+- `AUTOMATION_DATABASE_URL`: Automation database connection string (new)
+
+5. Run database migrations for both databases:
 ```bash
+# Main database
 uv run alembic upgrade head
+
+# Automation database
+uv run alembic -c alembic_automation.ini upgrade head
+```
+
+6. Test database connections:
+```bash
+uv run python test_db_connections.py
 ```
 
 ### Running the Server
