@@ -1,11 +1,6 @@
-import { Zap, CheckCircle, Shield, BarChart3 } from 'lucide-react';
+import { CheckCircle, Shield, BarChart3 } from 'lucide-react';
 
 const features = [
-  {
-    icon: Zap,
-    title: 'Automated Invoice Processing',
-    description: 'Upload Excel files and process multiple invoices automatically. Save time with intelligent data extraction and batch operations.',
-  },
   {
     icon: CheckCircle,
     title: 'Real-time Validation',
