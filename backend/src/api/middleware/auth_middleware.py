@@ -62,7 +62,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     request.state.current_user = None
                 else:
                     # Verify token version matches user's current version
-                    # This invalidates all tokens when password changes
+                    # This invalidates all tokens when password changes or user logs out
                     from src.models.user import User
                     db_gen = get_db()
                     db = next(db_gen)
@@ -70,10 +70,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         user = db.get(User, user_id)
                         if user and user.token_version != token_version:
                             # Token version mismatch - token has been invalidated
-                            logger.warning(f"Token version mismatch for user {user_id}")
+                            logger.warning(f"Token version mismatch for user {user_id}: token={token_version}, user={user.token_version}")
+                            request.state.user_id = None
+                            request.state.current_user = None
+                        elif not user:
+                            # User not found
+                            logger.warning(f"User not found for token: {user_id}")
                             request.state.user_id = None
                             request.state.current_user = None
                         else:
+                            # Valid token with matching version
+                            logger.debug(f"Token validated for user {user_id}, version {token_version}")
                             # Store user ID in request state for downstream handlers
                             request.state.user_id = user_id
                             request.state.current_user = None

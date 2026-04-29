@@ -72,12 +72,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const checkAuthStatus = async () => {
       try {
         // Check if user just logged out (prevent immediate re-authentication)
-        const justLoggedOut = sessionStorage.getItem('just_logged_out');
-        if (justLoggedOut) {
-          sessionStorage.removeItem('just_logged_out');
-          setUser(null);
-          setLoading(false);
-          return;
+        const logoutTimestamp = sessionStorage.getItem('logout_timestamp');
+        if (logoutTimestamp) {
+          const logoutTime = parseInt(logoutTimestamp);
+          const now = Date.now();
+          // If logout was within last 5 seconds, don't attempt to authenticate
+          if (now - logoutTime < 5000) {
+            sessionStorage.removeItem('logout_timestamp');
+            setUser(null);
+            setLoading(false);
+            return;
+          }
+          // Clear old timestamp
+          sessionStorage.removeItem('logout_timestamp');
         }
 
         // With httpOnly cookies, we can't check the token directly
@@ -183,6 +190,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    // SECURITY: Clear React state immediately to prevent UI from showing authenticated state
+    setUser(null);
+
     try {
       // Get CSRF token from cookie
       const getCookie = (name: string): string | null => {
@@ -200,16 +210,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers['X-CSRF-Token'] = csrfToken;
       }
 
-      // Call backend logout endpoint to clear httpOnly cookies and invalidate tokens
+      // CRITICAL: Call backend logout endpoint and WAIT for it to complete
+      // This increments token_version on the server, invalidating all tokens
       await fetch(`${API_BASE_URL}/auth/logout`, {
         method: 'POST',
-        credentials: 'include', // Important: send cookies to be cleared
+        credentials: 'include',
         headers,
       });
 
-      // Clear all cookies manually (for cross-origin scenarios where backend clearing might fail)
+      // Clear all cookies manually (may not work in cross-origin, but try anyway)
       const clearCookie = (name: string) => {
-        // Clear with various path and domain combinations to ensure removal
         document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
         document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
         document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; secure; samesite=none;`;
@@ -221,16 +231,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     } catch (error) {
       console.error('Sign out error:', error);
-    } finally {
-      // SECURITY: Clear only React state (memory), no localStorage
-      setUser(null);
-
-      // Set flag to prevent immediate re-authentication on next page load
-      sessionStorage.setItem('just_logged_out', 'true');
-
-      // Use window.location.href for hard redirect to clear all state
-      window.location.href = '/login';
+      // Continue with logout even if backend call fails
     }
+
+    // Set timestamp to prevent immediate re-authentication on next page load
+    // This timestamp is checked in the auth status check
+    sessionStorage.setItem('logout_timestamp', Date.now().toString());
+
+    // CRITICAL: Use window.location.href for hard redirect
+    // This clears all React state and forces a fresh page load
+    window.location.href = '/login';
   };
 
   const value = {
