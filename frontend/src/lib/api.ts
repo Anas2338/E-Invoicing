@@ -44,7 +44,8 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
   if (!response.ok) {
     // Handle 401 Unauthorized - token expired or invalid
     if (response.status === 401) {
-      localStorage.removeItem('user');
+      // SECURITY: No localStorage usage - redirect to login
+      // The auth provider will handle clearing React state
       window.location.href = '/login';
       throw new ApiError(401, 'Session expired. Please login again.');
     }

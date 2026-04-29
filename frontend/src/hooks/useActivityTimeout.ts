@@ -65,8 +65,7 @@ export function useActivityTimeout({
       console.error('Logout error:', error);
     }
 
-    // Clear user data
-    localStorage.removeItem('user');
+    // SECURITY: No localStorage usage - user data is only in React state (memory)
 
     // Call onTimeout callback if provided
     if (onTimeout) {

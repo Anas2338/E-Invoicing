@@ -71,6 +71,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const checkAuthStatus = async () => {
       try {
+        // Check if user just logged out (prevent immediate re-authentication)
+        const justLoggedOut = sessionStorage.getItem('just_logged_out');
+        if (justLoggedOut) {
+          sessionStorage.removeItem('just_logged_out');
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+
         // With httpOnly cookies, we can't check the token directly
         // Instead, try to fetch user profile from the API
         // The cookie will be sent automatically
@@ -82,17 +91,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (response.ok) {
           const userData = await response.json();
           setUser(userData);
-          // Optionally store user data in localStorage for quick access
-          localStorage.setItem('user', JSON.stringify(userData));
+          // SECURITY: Don't store user data in localStorage (XSS vulnerability)
+          // Keep it only in React state (memory)
         } else {
           // Not authenticated or token expired
           setUser(null);
-          localStorage.removeItem('user');
         }
       } catch (error) {
         console.error('Error checking auth status:', error);
         setUser(null);
-        localStorage.removeItem('user');
       } finally {
         setLoading(false);
       }
@@ -120,17 +127,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const data = await response.json();
 
-      // With httpOnly cookies, token is set automatically by the browser
-      // We only need to store user data and CSRF token
+      // SECURITY: With httpOnly cookies, token is set automatically by the browser
+      // We only store user data in React state (memory), NOT localStorage
       if (data.user) {
         setUser(data.user);
-        localStorage.setItem('user', JSON.stringify(data.user));
       }
 
-      // Store CSRF token for cross-origin requests
-      if (data.csrf_token) {
-        localStorage.setItem('csrf_token', data.csrf_token);
-      }
+      // SECURITY: CSRF token is also in httpOnly cookie, no need to store separately
+      // The browser will send it automatically with requests
 
       await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -163,9 +167,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         // Auto-approved: user data is returned
+        // SECURITY: Store only in React state (memory), NOT localStorage
         if (data.user) {
           setUser(data.user);
-          localStorage.setItem('user', JSON.stringify(data.user));
           router.push('/dashboard');
         }
       } else {
@@ -196,19 +200,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers['X-CSRF-Token'] = csrfToken;
       }
 
-      // Call backend logout endpoint to clear httpOnly cookies
+      // Call backend logout endpoint to clear httpOnly cookies and invalidate tokens
       await fetch(`${API_BASE_URL}/auth/logout`, {
         method: 'POST',
         credentials: 'include', // Important: send cookies to be cleared
         headers,
       });
+
+      // Clear all cookies manually (for cross-origin scenarios where backend clearing might fail)
+      const clearCookie = (name: string) => {
+        // Clear with various path and domain combinations to ensure removal
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; domain=${window.location.hostname};`;
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; secure; samesite=none;`;
+      };
+
+      clearCookie('access_token');
+      clearCookie('refresh_token');
+      clearCookie('csrf_token');
+
     } catch (error) {
       console.error('Sign out error:', error);
     } finally {
+      // SECURITY: Clear only React state (memory), no localStorage
       setUser(null);
-      localStorage.removeItem('user');
-      localStorage.removeItem('csrf_token');
-      router.push('/login');
+
+      // Set flag to prevent immediate re-authentication on next page load
+      sessionStorage.setItem('just_logged_out', 'true');
+
+      // Use window.location.href for hard redirect to clear all state
+      window.location.href = '/login';
     }
   };
 

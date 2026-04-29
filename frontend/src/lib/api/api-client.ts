@@ -16,15 +16,9 @@ function getCookie(name: string): string | null {
   return null;
 }
 
-// Helper function to get CSRF token from localStorage or cookie
+// Helper function to get CSRF token from cookie
+// SECURITY: Only use cookies, never localStorage (XSS vulnerability)
 function getCsrfToken(): string | null {
-  // Try localStorage first (for cross-origin deployments)
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('csrf_token');
-    if (token) return token;
-  }
-
-  // Fallback to cookie (for same-origin deployments)
   return getCookie('csrf_token');
 }
 

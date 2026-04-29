@@ -6,6 +6,8 @@ from sqlmodel import Session, select
 from passlib.context import CryptContext
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from jose import jwt
+from jose.exceptions import JWTError
 import logging
 
 from src.database.session import get_db
@@ -242,35 +244,67 @@ def login_user(request: Request, user_login: UserLogin, db: Session = Depends(ge
 
 
 @router.post("/logout")
-def logout_user():
+def logout_user(request: Request, db: Session = Depends(get_db)):
     """
     Logout user by clearing authentication cookies.
+    Increments token_version to invalidate all existing tokens.
     """
+    # Try to get user from token before clearing cookies
+    user_id = None
+    try:
+        token = request.cookies.get("access_token")
+        if token:
+            payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+            user_id = payload.get("sub")
+
+            # Increment token version to invalidate all tokens
+            if user_id:
+                user = db.get(User, user_id)
+                if user:
+                    user.token_version += 1
+                    db.add(user)
+                    db.commit()
+                    logger.info(f"Token version incremented for user: {user_id}")
+    except Exception as e:
+        logger.warning(f"Could not invalidate tokens: {e}")
+
     response = JSONResponse(content={"message": "Successfully logged out"})
 
-    # Clear access token cookie with matching SameSite settings
-    response.delete_cookie(
+    # Clear cookies by setting them to expire immediately
+    # Use max_age=0 instead of delete_cookie for better cross-origin support
+    cookie_params = {
+        "path": "/",
+        "secure": True,
+        "samesite": "none",
+        "httponly": True,
+        "max_age": 0,  # Expire immediately
+        "domain": None
+    }
+
+    # Clear access token cookie
+    response.set_cookie(
         key="access_token",
-        path="/",
-        secure=True,
-        samesite="none"
+        value="",
+        **cookie_params
     )
 
-    # Clear refresh token cookie with matching SameSite settings
-    response.delete_cookie(
+    # Clear refresh token cookie
+    response.set_cookie(
         key="refresh_token",
-        path="/",
-        secure=True,
-        samesite="none"
+        value="",
+        **cookie_params
     )
 
-    # Clear CSRF token cookie
-    response.delete_cookie(
+    # Clear CSRF token cookie (not httponly)
+    csrf_params = cookie_params.copy()
+    csrf_params["httponly"] = False
+    response.set_cookie(
         key="csrf_token",
-        path="/",
-        secure=True,
-        samesite="none"
+        value="",
+        **csrf_params
     )
+
+    return response
 
     return response
 
