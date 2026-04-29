@@ -134,6 +134,13 @@ export const api = {
     },
   },
 
+  // Dashboard endpoints
+  dashboard: {
+    getStats: async () => {
+      return fetchWithAuth('/dashboard/stats');
+    },
+  },
+
   // Auth endpoints
   auth: {
     getProfile: async () => {

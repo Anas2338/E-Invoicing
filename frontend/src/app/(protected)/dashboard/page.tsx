@@ -37,16 +37,7 @@ export default function DashboardPage() {
         // PERFORMANCE: Single optimized API call instead of 6 separate calls
         // Old: 6 queries × 4-5s each = 24-30s total
         // New: 1 query = 4-5s total (6x faster)
-        const response = await fetch('/api/v1/dashboard/stats', {
-          method: 'GET',
-          credentials: 'include',
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch dashboard data');
-        }
-
-        const data = await response.json();
+        const data = await api.dashboard.getStats();
 
         // Set stats from optimized response - manual invoices only
         setInvoiceStats({
