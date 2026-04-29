@@ -32,6 +32,7 @@ const nextConfig = {
   // SECURITY: Add security headers including Content Security Policy
   async headers() {
     const isDevelopment = process.env.NODE_ENV === 'development';
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8001';
 
     // CSP directives
     const cspDirectives = [
@@ -40,7 +41,8 @@ const nextConfig = {
       "style-src 'self' 'unsafe-inline'", // Tailwind requires unsafe-inline
       "img-src 'self' data: https:",
       "font-src 'self' data:",
-      "connect-src 'self' https://localhost:8001 http://localhost:8001", // API connections
+      "media-src 'self' data:", // Allow audio/video data URIs
+      `connect-src 'self' https://localhost:8001 http://localhost:8001 ${backendUrl}`, // API connections
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
