@@ -76,8 +76,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (logoutTimestamp) {
           const logoutTime = parseInt(logoutTimestamp);
           const now = Date.now();
-          // If logout was within last 5 seconds, don't attempt to authenticate
-          if (now - logoutTime < 5000) {
+          // If logout was within last 30 seconds, don't attempt to authenticate
+          // This gives time for token_version to propagate and cookies to clear
+          if (now - logoutTime < 30000) {
+            console.log('[Auth] Logout detected within 30s, skipping auth check');
             sessionStorage.removeItem('logout_timestamp');
             setUser(null);
             setLoading(false);
@@ -90,6 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // With httpOnly cookies, we can't check the token directly
         // Instead, try to fetch user profile from the API
         // The cookie will be sent automatically
+        console.log('[Auth] Checking authentication status...');
         const response = await fetch(`${API_BASE_URL}/auth/profile`, {
           method: 'GET',
           credentials: 'include', // Important: send cookies with request
@@ -97,15 +100,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (response.ok) {
           const userData = await response.json();
+          console.log('[Auth] User authenticated:', userData.email);
           setUser(userData);
           // SECURITY: Don't store user data in localStorage (XSS vulnerability)
           // Keep it only in React state (memory)
         } else {
           // Not authenticated or token expired
+          console.log('[Auth] Not authenticated, status:', response.status);
           setUser(null);
         }
       } catch (error) {
-        console.error('Error checking auth status:', error);
+        console.error('[Auth] Error checking auth status:', error);
         setUser(null);
       } finally {
         setLoading(false);
@@ -190,6 +195,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    console.log('[Auth] Starting logout process...');
+
     // SECURITY: Clear React state immediately to prevent UI from showing authenticated state
     setUser(null);
 
@@ -210,13 +217,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers['X-CSRF-Token'] = csrfToken;
       }
 
+      console.log('[Auth] Calling backend logout endpoint...');
+
       // CRITICAL: Call backend logout endpoint and WAIT for it to complete
       // This increments token_version on the server, invalidating all tokens
-      await fetch(`${API_BASE_URL}/auth/logout`, {
+      const response = await fetch(`${API_BASE_URL}/auth/logout`, {
         method: 'POST',
         credentials: 'include',
         headers,
       });
+
+      if (response.ok) {
+        console.log('[Auth] Backend logout successful');
+      } else {
+        console.error('[Auth] Backend logout failed:', response.status);
+      }
 
       // Clear all cookies manually (may not work in cross-origin, but try anyway)
       const clearCookie = (name: string) => {
@@ -228,18 +243,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearCookie('access_token');
       clearCookie('refresh_token');
       clearCookie('csrf_token');
+      console.log('[Auth] Cookies cleared');
 
     } catch (error) {
-      console.error('Sign out error:', error);
+      console.error('[Auth] Sign out error:', error);
       // Continue with logout even if backend call fails
     }
 
     // Set timestamp to prevent immediate re-authentication on next page load
     // This timestamp is checked in the auth status check
-    sessionStorage.setItem('logout_timestamp', Date.now().toString());
+    const timestamp = Date.now().toString();
+    sessionStorage.setItem('logout_timestamp', timestamp);
+    console.log('[Auth] Logout timestamp set:', timestamp);
 
     // CRITICAL: Use window.location.href for hard redirect
     // This clears all React state and forces a fresh page load
+    console.log('[Auth] Redirecting to login...');
     window.location.href = '/login';
   };
 

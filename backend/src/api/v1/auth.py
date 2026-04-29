@@ -254,19 +254,24 @@ def logout_user(request: Request, db: Session = Depends(get_db)):
     try:
         token = request.cookies.get("access_token")
         if token:
-            payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+            # Use the same decode function as the middleware
+            from src.utils.jwt_utils import decode_jwt_token
+            payload = decode_jwt_token(token)
             user_id = payload.get("sub")
 
             # Increment token version to invalidate all tokens
             if user_id:
                 user = db.get(User, user_id)
                 if user:
+                    old_version = user.token_version
                     user.token_version += 1
                     db.add(user)
                     db.commit()
-                    logger.info(f"Token version incremented for user: {user_id}")
+                    logger.info(f"Token version incremented for user {user_id}: {old_version} -> {user.token_version}")
+                else:
+                    logger.warning(f"User not found during logout: {user_id}")
     except Exception as e:
-        logger.warning(f"Could not invalidate tokens: {e}")
+        logger.error(f"Error invalidating tokens during logout: {e}", exc_info=True)
 
     response = JSONResponse(content={"message": "Successfully logged out"})
 
@@ -303,8 +308,6 @@ def logout_user(request: Request, db: Session = Depends(get_db)):
         value="",
         **csrf_params
     )
-
-    return response
 
     return response
 
