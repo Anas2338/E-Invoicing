@@ -35,9 +35,9 @@ export default function EditInvoicePage() {
         return;
       }
 
-      // Check if invoice can be edited (only DRAFT invoices)
-      if (invoice.status !== 'DRAFT') {
-        setError('Only draft invoices can be edited. This invoice has status: ' + invoice.status);
+      // Check if invoice can be edited (DRAFT or VALIDATED invoices)
+      if (invoice.status !== 'DRAFT' && invoice.status !== 'VALIDATED') {
+        setError('Only draft or validated invoices can be edited. This invoice has status: ' + invoice.status);
         return;
       }
 
@@ -112,16 +112,16 @@ export default function EditInvoicePage() {
 
   return (
     <div className="space-y-6 pb-8">
-      {/* Back to Dashboard Button */}
+      {/* Back to History Button */}
       <div className="flex items-center gap-4">
         <Button
           variant="outline"
           size="sm"
-          onClick={() => router.push('/dashboard')}
+          onClick={() => router.push('/invoices/history')}
           className="flex items-center gap-2"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to Dashboard
+          Back to History
         </Button>
       </div>
 

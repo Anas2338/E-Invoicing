@@ -2,14 +2,16 @@
 
 import { useState, useEffect } from 'react';
 import { automationApi, UploadSession } from '@/services/automationApi';
-import { Trash2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Trash2, AlertCircle, RefreshCw, FileX } from 'lucide-react';
 
 export default function UploadHistory() {
   const [sessions, setSessions] = useState<UploadSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
+  const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [showDeleteFileConfirm, setShowDeleteFileConfirm] = useState<string | null>(null);
 
   const loadSessions = async () => {
     try {
@@ -40,6 +42,25 @@ export default function UploadHistory() {
       setError(err instanceof Error ? err.message : 'Failed to delete upload session');
     } finally {
       setDeletingSessionId(null);
+    }
+  };
+
+  const handleDeleteExcelFile = async (sessionId: string) => {
+    try {
+      setDeletingFileId(sessionId);
+      await automationApi.deleteExcelFile(sessionId);
+
+      // Update local state to reflect file deletion
+      setSessions(sessions.map(s =>
+        s.id === sessionId
+          ? { ...s, has_file: false, can_delete_file: false }
+          : s
+      ));
+      setShowDeleteFileConfirm(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete Excel file');
+    } finally {
+      setDeletingFileId(null);
     }
   };
 
@@ -158,38 +179,69 @@ export default function UploadHistory() {
                   {session.blocked_count}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                  {session.can_delete ? (
-                    showDeleteConfirm === session.id ? (
-                      <div className="flex items-center justify-end gap-2">
+                  <div className="flex items-center justify-end gap-2">
+                    {session.can_delete ? (
+                      showDeleteConfirm === session.id ? (
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => handleDeleteSession(session.id)}
+                            disabled={deletingSessionId === session.id}
+                            className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 text-xs"
+                          >
+                            {deletingSessionId === session.id ? 'Deleting...' : 'Confirm'}
+                          </button>
+                          <button
+                            onClick={() => setShowDeleteConfirm(null)}
+                            disabled={deletingSessionId === session.id}
+                            className="px-3 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 text-xs"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
                         <button
-                          onClick={() => handleDeleteSession(session.id)}
-                          disabled={deletingSessionId === session.id}
-                          className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 text-xs"
+                          onClick={() => setShowDeleteConfirm(session.id)}
+                          className="flex items-center gap-1 px-3 py-1 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
+                          title="Delete session and all invoices"
                         >
-                          {deletingSessionId === session.id ? 'Deleting...' : 'Confirm'}
+                          <Trash2 className="w-4 h-4" />
+                          Delete Session
                         </button>
+                      )
+                    ) : session.can_delete_file ? (
+                      showDeleteFileConfirm === session.id ? (
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => handleDeleteExcelFile(session.id)}
+                            disabled={deletingFileId === session.id}
+                            className="px-3 py-1 bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50 text-xs"
+                          >
+                            {deletingFileId === session.id ? 'Deleting...' : 'Confirm'}
+                          </button>
+                          <button
+                            onClick={() => setShowDeleteFileConfirm(null)}
+                            disabled={deletingFileId === session.id}
+                            className="px-3 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 text-xs"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
                         <button
-                          onClick={() => setShowDeleteConfirm(null)}
-                          disabled={deletingSessionId === session.id}
-                          className="px-3 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 text-xs"
+                          onClick={() => setShowDeleteFileConfirm(session.id)}
+                          className="flex items-center gap-1 px-3 py-1 text-orange-600 dark:text-orange-400 hover:text-orange-800 dark:hover:text-orange-300"
+                          title="Delete Excel file only (keeps session and invoice records)"
                         >
-                          Cancel
+                          <FileX className="w-4 h-4" />
+                          Delete Excel File
                         </button>
-                      </div>
+                      )
                     ) : (
-                      <button
-                        onClick={() => setShowDeleteConfirm(session.id)}
-                        className="flex items-center gap-1 px-3 py-1 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        Delete
-                      </button>
-                    )
-                  ) : (
-                    <span className="text-gray-400 dark:text-gray-600 text-xs">
-                      Cannot delete (has transferred invoices)
-                    </span>
-                  )}
+                      <span className="text-gray-400 dark:text-gray-600 text-xs">
+                        {session.has_file ? 'Cannot delete (has non-transferred invoices)' : 'No file to delete'}
+                      </span>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

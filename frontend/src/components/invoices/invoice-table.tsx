@@ -64,12 +64,6 @@ export function InvoiceTable({
     }
   };
 
-  const getSourceColor = (source: string) => {
-    return source === 'manual'
-      ? 'bg-[#dbeafe] text-[#1e40af] border-[#bfdbfe] dark:bg-[#1e3a8a]/30 dark:text-[#60a5fa] dark:border-[#1e3a8a]'
-      : 'bg-[#d1fae5] text-[#065f46] border-[#a7f3d0] dark:bg-[#064e3b]/30 dark:text-[#34d399] dark:border-[#065f46]';
-  };
-
   const getEnvironmentColor = (env: string) => {
     return env === 'PRODUCTION'
       ? 'bg-[#fee2e2] text-[#991b1b] border-[#fecaca] dark:bg-[#7f1d1d]/30 dark:text-[#f87171] dark:border-[#7f1d1d]'
@@ -170,9 +164,6 @@ export function InvoiceTable({
                   </div>
                 </div>
                 <div className="flex gap-2 flex-wrap justify-end">
-                  <Badge className={`${getSourceColor(invoice.source)} border text-xs font-semibold`}>
-                    {invoice.source === 'manual' ? 'Manual' : 'Automated'}
-                  </Badge>
                   <Badge className={`${getStatusColor(invoice.status)} border text-xs font-semibold`}>
                     {formatStatus(invoice.status)}
                   </Badge>
@@ -230,7 +221,7 @@ export function InvoiceTable({
                     View
                   </Button>
                 )}
-                {onEdit && invoice.status === 'DRAFT' && (
+                {onEdit && (invoice.status === 'DRAFT' || invoice.status === 'VALIDATED') && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -319,9 +310,6 @@ export function InvoiceTable({
               Invoice #
             </th>
             <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
-              Source
-            </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
               Date
             </th>
             <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
@@ -364,11 +352,6 @@ export function InvoiceTable({
               <td className="px-6 py-4 whitespace-nowrap">
                 <div className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3]">{invoice.invoiceNumber}</div>
                 <div className="text-xs text-[#6d7175] dark:text-[#8c9196]">{invoice.invoiceType}</div>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                <Badge className={`${getSourceColor(invoice.source)} border text-xs font-semibold`}>
-                  {invoice.source === 'manual' ? 'Manual' : 'Automated'}
-                </Badge>
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-[#6d7175] dark:text-[#8c9196]">
                 {new Date(invoice.date).toLocaleDateString('en-US', {
@@ -416,8 +399,8 @@ export function InvoiceTable({
                     </Button>
                   )}
 
-                  {/* Edit Button - Only for DRAFT */}
-                  {onEdit && invoice.status === 'DRAFT' && (
+                  {/* Edit Button - For DRAFT and VALIDATED */}
+                  {onEdit && (invoice.status === 'DRAFT' || invoice.status === 'VALIDATED') && (
                     <Button
                       variant="outline"
                       size="sm"

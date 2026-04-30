@@ -125,10 +125,10 @@ class AIAgent:
 
     def _process_invoices_job(self):
         """
-        5-minute invoice processing job.
+        5-minute invoice processing and transfer job.
 
-        Queries pending invoices, applies prioritization, validates,
-        posts to FBR, handles errors, and logs decisions.
+        Queries validated invoices whose scheduled time has arrived,
+        and immediately transfers them to main database.
         """
         logger.info("=" * 80)
         logger.info("AI Agent: Starting invoice processing cycle")
@@ -138,105 +138,129 @@ class AIAgent:
             # Update heartbeat at start of job
             self._update_heartbeat()
 
-            with get_db_session() as db:
-                # Query validated invoices scheduled for processing
-                # These invoices have already been validated during upload
-                # Now we just need to post them to FBR at their scheduled time
+            # Import transfer service
+            from src.services.transfer_service import TransferService
+            import asyncio
 
-                # Convert UTC to PKT (Pakistan Time, UTC+5)
-                now_utc = datetime.utcnow()
-                now_pkt = now_utc + timedelta(hours=5)  # PKT is UTC+5
+            with get_db_session() as automation_db:
+                with get_db_session() as main_db:
+                    # Convert UTC to PKT (Pakistan Time, UTC+5)
+                    now_utc = datetime.utcnow()
+                    now_pkt = now_utc + timedelta(hours=5)  # PKT is UTC+5
 
-                logger.info(f"AI Agent: Current time - UTC: {now_utc.strftime('%Y-%m-%d %H:%M:%S')}, PKT: {now_pkt.strftime('%Y-%m-%d %H:%M:%S')}")
+                    logger.info(f"AI Agent: Current time - UTC: {now_utc.strftime('%Y-%m-%d %H:%M:%S')}, PKT: {now_pkt.strftime('%Y-%m-%d %H:%M:%S')}")
 
-                # SECURITY FIX: Process invoices per user to ensure data isolation
-                # Step 1: Get distinct users with validated invoices ready for processing
-                users_with_pending_query = select(AutomationInvoice.user_id).distinct().where(
-                    and_(
-                        AutomationInvoice.status == AutomationInvoiceStatus.VALIDATED,
-                        AutomationInvoice.scheduled_date <= now_pkt.date(),
-                        AutomationInvoice.scheduled_time <= now_pkt.time()
-                    )
-                )
-                users_with_pending = db.execute(users_with_pending_query).scalars().all()
-
-                if not users_with_pending:
-                    logger.info("AI Agent: No validated invoices ready for posting")
-                    return
-
-                logger.info(f"AI Agent: Found {len(users_with_pending)} user(s) with validated invoices ready for posting")
-
-                # Step 2: Process each user's invoices separately with fair batch limits
-                all_validated_invoices = []
-                for user_id in users_with_pending:
-                    # Query this user's validated invoices with per-user limit
-                    user_query = select(AutomationInvoice).where(
+                    # SECURITY: Process invoices per user to ensure data isolation
+                    # Step 1: Get distinct users with validated invoices ready for transfer
+                    users_with_pending_query = select(AutomationInvoice.user_id).distinct().where(
                         and_(
-                            AutomationInvoice.user_id == user_id,  # ✅ USER ISOLATION
                             AutomationInvoice.status == AutomationInvoiceStatus.VALIDATED,
                             AutomationInvoice.scheduled_date <= now_pkt.date(),
                             AutomationInvoice.scheduled_time <= now_pkt.time()
                         )
-                    ).order_by(
-                        AutomationInvoice.scheduled_date.asc(),
-                        AutomationInvoice.scheduled_time.asc(),
-                        AutomationInvoice.priority.asc()
-                    ).limit(config.BATCH_SIZE_PER_USER)
+                    )
+                    users_with_pending = automation_db.execute(users_with_pending_query).scalars().all()
 
-                    user_invoices = db.execute(user_query).scalars().all()
-                    all_validated_invoices.extend(user_invoices)
+                    if not users_with_pending:
+                        logger.info("AI Agent: No validated invoices ready for transfer")
+                        return
 
-                    logger.info(f"AI Agent: User {user_id} - {len(user_invoices)} invoice(s) queued for processing")
+                    logger.info(f"AI Agent: Found {len(users_with_pending)} user(s) with validated invoices ready for transfer")
 
-                if not all_validated_invoices:
-                    logger.info("AI Agent: No validated invoices ready for posting")
-                    return
+                    # Step 2: Process each user's invoices separately with fair batch limits
+                    all_validated_invoices = []
+                    for user_id in users_with_pending:
+                        # Query this user's validated invoices with per-user limit
+                        user_query = select(AutomationInvoice).where(
+                            and_(
+                                AutomationInvoice.user_id == user_id,  # ✅ USER ISOLATION
+                                AutomationInvoice.status == AutomationInvoiceStatus.VALIDATED,
+                                AutomationInvoice.scheduled_date <= now_pkt.date(),
+                                AutomationInvoice.scheduled_time <= now_pkt.time()
+                            )
+                        ).order_by(
+                            AutomationInvoice.scheduled_date.asc(),
+                            AutomationInvoice.scheduled_time.asc(),
+                            AutomationInvoice.priority.asc()
+                        ).limit(config.BATCH_SIZE_PER_USER)
 
-                logger.info(f"AI Agent: Total {len(all_validated_invoices)} validated invoice(s) ready for transfer across {len(users_with_pending)} user(s)")
+                        user_invoices = automation_db.execute(user_query).scalars().all()
+                        all_validated_invoices.extend(user_invoices)
 
-                validated_invoices = all_validated_invoices
+                        logger.info(f"AI Agent: User {user_id} - {len(user_invoices)} invoice(s) queued for transfer")
 
-                # Log validated invoices ready for transfer
-                # NOTE: AI Agent no longer posts to FBR
-                # Validated invoices will be transferred to main DB at 6 PM PKT daily
-                # Users can then manually post them from the main invoice system
-                stats = {"validated_ready": 0}
+                    if not all_validated_invoices:
+                        logger.info("AI Agent: No validated invoices ready for transfer")
+                        return
 
-                for invoice in validated_invoices:
-                    try:
-                        # Log that invoice is ready for transfer
-                        logger.info(
-                            f"AI Agent: Invoice {invoice.invoice_number} (ID: {invoice.id}) "
-                            f"validated and ready for transfer. "
-                            f"Scheduled: {invoice.scheduled_date} {invoice.scheduled_time}"
-                        )
+                    logger.info(f"AI Agent: Total {len(all_validated_invoices)} validated invoice(s) ready for immediate transfer")
 
-                        # Log decision for audit trail
-                        self._log_decision(
-                            db,
-                            invoice.id,
-                            "validated_ready_for_transfer",
-                            {
-                                "message": "Invoice validated and ready for daily transfer to main database",
-                                "scheduled_date": str(invoice.scheduled_date),
-                                "scheduled_time": str(invoice.scheduled_time),
-                                "transfer_time": "Daily at 6 PM PKT"
-                            }
-                        )
+                    # Transfer invoices immediately using TransferService
+                    transfer_service = TransferService()
 
-                        stats["validated_ready"] += 1
+                    transferred_count = 0
+                    failed_count = 0
 
-                    except Exception as e:
-                        logger.error(f"Error logging invoice {invoice.invoice_number}: {str(e)}", exc_info=True)
+                    for invoice in all_validated_invoices:
+                        try:
+                            logger.info(
+                                f"AI Agent: Transferring invoice {invoice.invoice_number} (ID: {invoice.id}) "
+                                f"scheduled for {invoice.scheduled_date} {invoice.scheduled_time}"
+                            )
 
-                # Commit all changes
-                db.commit()
+                            # Transform and transfer invoice
+                            manual_invoice = transfer_service.transform_invoice_data(invoice)
 
-                logger.info("AI Agent: Invoice processing cycle completed")
-                logger.info(f"  Validated invoices ready for transfer: {stats['validated_ready']}")
-                logger.info(f"  Note: Invoices will be transferred to main DB at 6 PM PKT daily")
-                logger.info(f"  Users can manually post transferred invoices from the main system")
-                logger.info("=" * 80)
+                            # Check for duplicate
+                            if transfer_service.check_duplicate(main_db, invoice.user_id, invoice.id):
+                                logger.warning(f"Duplicate detected: invoice {invoice.id} already transferred")
+                                invoice.status = AutomationInvoiceStatus.TRANSFERRED
+                                invoice.transferred_at = datetime.utcnow()
+                                invoice.transfer_error = "Duplicate - already transferred"
+                                automation_db.add(invoice)
+                                automation_db.commit()
+                                failed_count += 1
+                                continue
+
+                            # Insert into main database
+                            main_db.add(manual_invoice)
+                            main_db.flush()
+
+                            # Update automation invoice status
+                            invoice.status = AutomationInvoiceStatus.TRANSFERRED
+                            invoice.transferred_at = datetime.utcnow()
+                            invoice.transfer_error = None
+                            automation_db.add(invoice)
+
+                            # Commit both databases
+                            main_db.commit()
+                            automation_db.commit()
+
+                            transferred_count += 1
+                            logger.info(f"✓ Transferred invoice {invoice.invoice_number} -> Main DB ID: {manual_invoice.id}")
+
+                        except Exception as e:
+                            # Rollback both sessions
+                            main_db.rollback()
+                            automation_db.rollback()
+
+                            error_type = transfer_service.classify_error(e)
+                            error_details = f"[{error_type}] {type(e).__name__}: {str(e)}"
+                            logger.error(f"✗ Transfer failed for invoice {invoice.invoice_number}: {error_details}")
+
+                            # Mark as failed
+                            invoice.status = AutomationInvoiceStatus.TRANSFER_FAILED
+                            invoice.transfer_error = error_details[:2000]
+                            automation_db.add(invoice)
+                            automation_db.commit()
+
+                            failed_count += 1
+
+                    logger.info("AI Agent: Invoice processing cycle completed")
+                    logger.info(f"  ✓ Invoices transferred: {transferred_count}")
+                    logger.info(f"  ✗ Invoices failed: {failed_count}")
+                    logger.info(f"  → Check http://localhost:3000/invoices/history for transferred invoices")
+                    logger.info("=" * 80)
 
         except Exception as e:
             logger.error(f"AI Agent: Error in invoice processing job: {str(e)}", exc_info=True)

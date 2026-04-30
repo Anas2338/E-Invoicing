@@ -27,9 +27,10 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
   };
 
   // Add CSRF token for state-changing requests
+  // Try cookie first, then sessionStorage (for cross-origin scenarios)
   const method = options.method?.toUpperCase() || 'GET';
   if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
-    const csrfToken = getCookie('csrf_token');
+    const csrfToken = getCookie('csrf_token') || (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('csrf_token') : null);
     if (csrfToken) {
       headers['X-CSRF-Token'] = csrfToken;
     }

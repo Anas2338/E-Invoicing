@@ -50,6 +50,7 @@ export default function InvoiceHistoryPage() {
     invoiceNumber?: string;
     fbrNumber?: string;
     errors?: any[];
+    invoiceId?: string;
   }>({
     success: false,
     title: '',
@@ -80,9 +81,9 @@ export default function InvoiceHistoryPage() {
       // Fetch unified invoices from backend (manual + automated)
       const response = await api.invoices.getUnifiedHistory({ page_size: 100 });
 
-      // Transform backend data to match our interface and filter only manual invoices
+      // Transform backend data to match our interface
+      // NOTE: Filter removed - now includes both manual and transferred automation invoices
       const transformedInvoices: Invoice[] = response.invoices
-        .filter((invoice: any) => invoice.source === 'manual')
         .map((invoice: any) => ({
           id: invoice.id,
           source: invoice.source,
@@ -162,7 +163,8 @@ export default function InvoiceHistoryPage() {
         title: response.success ? 'Validation Successful' : 'Validation Failed',
         message: response.message || (response.success ? 'Invoice validated successfully' : 'Validation failed'),
         invoiceNumber: invoice.invoiceNumber,
-        errors: response.errors || []
+        errors: response.errors || [],
+        invoiceId: id
       });
       setDialogOpen(true);
 
@@ -176,7 +178,8 @@ export default function InvoiceHistoryPage() {
         title: 'Validation Error',
         message: err instanceof ApiError ? err.message : 'Failed to validate invoice. Please try again.',
         invoiceNumber: invoices.find(inv => inv.id === id)?.invoiceNumber,
-        errors: []
+        errors: [],
+        invoiceId: id
       });
       setDialogOpen(true);
       console.error('Error validating invoice:', err);
@@ -589,6 +592,8 @@ export default function InvoiceHistoryPage() {
         invoiceNumber={dialogData.invoiceNumber}
         fbrNumber={dialogData.fbrNumber}
         errors={dialogData.errors}
+        invoiceId={dialogData.invoiceId}
+        onRetry={dialogData.invoiceId ? () => handleValidateInvoice(dialogData.invoiceId!) : undefined}
       />
     </div>
   );

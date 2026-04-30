@@ -80,6 +80,40 @@ async def delete_upload_session(
     )
 
 
+@router.delete("/upload-session/{session_id}/file", response_model=DeleteUploadSessionResponse)
+async def delete_excel_file(
+    session_id: str,
+    request: Request,
+    user_id: str = Depends(require_automation_access),
+    db: Session = Depends(get_automation_db),
+):
+    """
+    Delete only the Excel file for an upload session.
+
+    Allowed for sessions where all invoices have been transferred.
+    The session and invoice records remain for audit purposes.
+
+    Args:
+        session_id: Upload session ID
+
+    Returns:
+        Success message
+
+    Raises:
+        HTTPException 404: Session not found
+    """
+    service = FileManagementService(db)
+    success, deleted_count, message = service.delete_upload_session(
+        session_id, user_id, delete_file_only=True
+    )
+
+    return DeleteUploadSessionResponse(
+        success=success,
+        deleted_count=deleted_count,
+        message=message,
+    )
+
+
 @router.post("/invoice/{invoice_id}/block", status_code=status.HTTP_200_OK)
 async def block_invoice(
     invoice_id: str,

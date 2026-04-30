@@ -20,6 +20,8 @@ interface ValidationResultDialogProps {
   invoiceNumber?: string;
   fbrNumber?: string;
   errors?: ValidationError[];
+  onRetry?: () => void;
+  invoiceId?: string;
 }
 
 export function ValidationResultDialog({
@@ -30,7 +32,9 @@ export function ValidationResultDialog({
   message,
   invoiceNumber,
   fbrNumber,
-  errors = []
+  errors = [],
+  onRetry,
+  invoiceId
 }: ValidationResultDialogProps) {
   if (!isOpen) return null;
 
@@ -152,6 +156,17 @@ export function ValidationResultDialog({
           >
             Close
           </Button>
+          {!success && title === 'Validation Failed' && onRetry && invoiceId && (
+            <Button
+              onClick={() => {
+                onClose();
+                onRetry();
+              }}
+              className="bg-[#008060] hover:bg-[#006e52] text-white"
+            >
+              Retry Validation
+            </Button>
+          )}
           {success && title === 'Validation Successful' && (
             <Button
               onClick={onClose}

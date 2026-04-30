@@ -141,8 +141,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(data.user);
       }
 
-      // SECURITY: CSRF token is also in httpOnly cookie, no need to store separately
-      // The browser will send it automatically with requests
+      // SECURITY: Store CSRF token in sessionStorage (not localStorage)
+      // sessionStorage is cleared when tab closes, more secure than localStorage
+      // Needed for cross-origin requests where cookie isn't accessible to JavaScript
+      if (data.csrf_token) {
+        sessionStorage.setItem('csrf_token', data.csrf_token);
+      }
 
       await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -195,7 +199,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
 
     try {
-      // Get CSRF token from cookie
+      // Get CSRF token from cookie or sessionStorage
       const getCookie = (name: string): string | null => {
         const value = `; ${document.cookie}`;
         const parts = value.split(`; ${name}=`);
@@ -205,7 +209,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return null;
       };
 
-      const csrfToken = getCookie('csrf_token');
+      const csrfToken = getCookie('csrf_token') || sessionStorage.getItem('csrf_token');
       const headers: Record<string, string> = {};
       if (csrfToken) {
         headers['X-CSRF-Token'] = csrfToken;
@@ -229,6 +233,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearCookie('access_token');
       clearCookie('refresh_token');
       clearCookie('csrf_token');
+
+      // Clear CSRF token from sessionStorage
+      sessionStorage.removeItem('csrf_token');
 
     } catch (error) {
       console.error('Sign out error:', error);

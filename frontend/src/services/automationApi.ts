@@ -83,6 +83,8 @@ export interface UploadSession {
   blocked_count: number;
   expired_count: number;
   can_delete: boolean;
+  can_delete_file: boolean;
+  has_file: boolean;
 }
 
 export interface UploadSessionsResponse {
@@ -103,8 +105,8 @@ class AutomationApiClient {
   private getHeaders(includeContentType: boolean = false): HeadersInit {
     const headers: Record<string, string> = {};
 
-    // Add CSRF token
-    const csrfToken = getCookie('csrf_token');
+    // Add CSRF token - try cookie first, then sessionStorage (for cross-origin)
+    const csrfToken = getCookie('csrf_token') || (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('csrf_token') : null);
     if (csrfToken) {
       headers['X-CSRF-Token'] = csrfToken;
     }
@@ -320,6 +322,26 @@ class AutomationApiClient {
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.detail || 'Failed to delete upload session');
+    }
+  }
+
+  /**
+   * Delete only the Excel file for an upload session.
+   * Session and invoice records remain for audit purposes.
+   */
+  async deleteExcelFile(sessionId: string): Promise<void> {
+    const response = await fetch(
+      `${this.baseUrl}/automation/upload-session/${sessionId}/file`,
+      {
+        method: 'DELETE',
+        headers: this.getHeaders(),
+        credentials: 'include',
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to delete Excel file');
     }
   }
 

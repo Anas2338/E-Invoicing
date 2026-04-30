@@ -120,32 +120,32 @@ export default function AdminUsersPage() {
   const users = activeTab === 'pending' ? pendingUsers : allUsers;
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-[#202223] dark:text-[#e3e3e3] mb-2">
+    <div className="container mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8">
+      <div className="mb-6 sm:mb-8">
+        <h1 className="text-2xl sm:text-3xl font-bold text-[#202223] dark:text-[#e3e3e3] mb-2">
           User Management
         </h1>
-        <p className="text-[#6d7175] dark:text-[#8c9196]">
+        <p className="text-sm sm:text-base text-[#6d7175] dark:text-[#8c9196]">
           Approve or reject user registrations
         </p>
       </div>
 
       {/* Tabs */}
-      <div className="mb-6 border-b border-[#e1e3e5] dark:border-[#2e2e2e]">
-        <div className="flex gap-4">
+      <div className="mb-4 sm:mb-6 border-b border-[#e1e3e5] dark:border-[#2e2e2e] overflow-x-auto">
+        <div className="flex gap-2 sm:gap-4 min-w-max">
           <button
             onClick={() => setActiveTab('pending')}
-            className={`pb-3 px-1 font-semibold transition-colors ${
+            className={`pb-3 px-1 text-sm sm:text-base font-semibold transition-colors whitespace-nowrap ${
               activeTab === 'pending'
                 ? 'text-[#008060] dark:text-[#00a876] border-b-2 border-[#008060] dark:border-[#00a876]'
                 : 'text-[#6d7175] dark:text-[#8c9196] hover:text-[#202223] dark:hover:text-[#e3e3e3]'
             }`}
           >
-            Pending Approvals ({pendingUsers.length})
+            Pending ({pendingUsers.length})
           </button>
           <button
             onClick={() => setActiveTab('all')}
-            className={`pb-3 px-1 font-semibold transition-colors ${
+            className={`pb-3 px-1 text-sm sm:text-base font-semibold transition-colors whitespace-nowrap ${
               activeTab === 'all'
                 ? 'text-[#008060] dark:text-[#00a876] border-b-2 border-[#008060] dark:border-[#00a876]'
                 : 'text-[#6d7175] dark:text-[#8c9196] hover:text-[#202223] dark:hover:text-[#e3e3e3]'
@@ -161,171 +161,269 @@ export default function AdminUsersPage() {
         <button
           onClick={loadUsers}
           disabled={loading}
-          className="flex items-center gap-2 px-4 py-2 bg-[#008060] dark:bg-[#00a876] text-white rounded-lg hover:bg-[#006e52] dark:hover:bg-[#008f64] disabled:opacity-50 transition-colors"
+          className="flex items-center gap-2 px-3 sm:px-4 py-2 text-sm sm:text-base bg-[#008060] dark:bg-[#00a876] text-white rounded-lg hover:bg-[#006e52] dark:hover:bg-[#008f64] disabled:opacity-50 transition-colors"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
+          <span className="hidden sm:inline">Refresh</span>
         </button>
       </div>
 
       {/* Error Message */}
       {error && (
-        <div className="mb-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-          <p className="text-red-800 dark:text-red-400">{error}</p>
+        <div className="mb-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 sm:p-4">
+          <p className="text-sm sm:text-base text-red-800 dark:text-red-400">{error}</p>
         </div>
       )}
 
-      {/* Users Table */}
+      {/* Loading/Empty States */}
       {loading ? (
         <div className="flex items-center justify-center py-12">
-          <div className="text-[#6d7175] dark:text-[#8c9196]">Loading users...</div>
+          <div className="text-sm sm:text-base text-[#6d7175] dark:text-[#8c9196]">Loading users...</div>
         </div>
       ) : users.length === 0 ? (
-        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-[#e1e3e5] dark:border-[#2e2e2e] p-12 text-center">
-          <p className="text-[#6d7175] dark:text-[#8c9196]">
+        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-[#e1e3e5] dark:border-[#2e2e2e] p-8 sm:p-12 text-center">
+          <p className="text-sm sm:text-base text-[#6d7175] dark:text-[#8c9196]">
             {activeTab === 'pending' ? 'No pending users' : 'No users found'}
           </p>
         </div>
       ) : (
-        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-[#e1e3e5] dark:border-[#2e2e2e] overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-[#f6f6f7] dark:bg-[#2e2e2e]">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
-                  Name
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
-                  Email
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
-                  Registered
-                </th>
-                {activeTab === 'all' && (
-                  <>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
-                      Automation
-                    </th>
-                  </>
-                )}
-                <th className="px-6 py-3 text-right text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#e1e3e5] dark:divide-[#2e2e2e]">
-              {users.map((user) => (
-                <tr key={user.id} className="hover:bg-[#f6f6f7] dark:hover:bg-[#2e2e2e] transition-colors">
-                  <td className="px-6 py-4 whitespace-nowrap">
+        <>
+          {/* Mobile/Tablet Card View */}
+          <div className="md:hidden space-y-4">
+            {users.map((user) => (
+              <div
+                key={user.id}
+                className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-[#e1e3e5] dark:border-[#2e2e2e] p-4 space-y-3"
+              >
+                {/* User Info */}
+                <div className="space-y-2">
+                  <div>
+                    <div className="text-xs text-[#6d7175] dark:text-[#8c9196] mb-1">Name</div>
                     <div className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3]">
                       {user.name || 'N/A'}
                     </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-[#6d7175] dark:text-[#8c9196]">{user.email}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-[#6d7175] dark:text-[#8c9196]">
+                  </div>
+                  <div>
+                    <div className="text-xs text-[#6d7175] dark:text-[#8c9196] mb-1">Email</div>
+                    <div className="text-sm text-[#202223] dark:text-[#e3e3e3] break-all">
+                      {user.email}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-[#6d7175] dark:text-[#8c9196] mb-1">Registered</div>
+                    <div className="text-sm text-[#202223] dark:text-[#e3e3e3]">
                       {new Date(user.created_at).toLocaleDateString()}
                     </div>
-                  </td>
+                  </div>
                   {activeTab === 'all' && (
                     <>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 py-1 text-xs font-semibold rounded-lg ${getStatusBadge(user.account_status)}`}>
+                      <div>
+                        <div className="text-xs text-[#6d7175] dark:text-[#8c9196] mb-1">Status</div>
+                        <span className={`inline-block px-2 py-1 text-xs font-semibold rounded-lg ${getStatusBadge(user.account_status)}`}>
                           {user.account_status}
                         </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      </div>
+                      <div>
+                        <div className="text-xs text-[#6d7175] dark:text-[#8c9196] mb-2">Automation</div>
                         <button
                           onClick={() => {
                             console.log('Toggle clicked for user:', user.id, 'Current status:', user.automation_enabled);
                             handleToggleAutomation(user.id, user.automation_enabled);
                           }}
                           disabled={togglingAutomation === user.id || user.account_status !== 'approved'}
-                          className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all duration-200 border-2 cursor-pointer ${
+                          className={`w-full px-4 py-2 text-xs font-semibold rounded-lg transition-all duration-200 border-2 ${
                             user.automation_enabled
-                              ? 'bg-green-500 text-white border-green-600 hover:bg-green-600 hover:shadow-md'
-                              : 'bg-gray-500 text-white border-gray-600 hover:bg-gray-600 hover:shadow-md'
-                          } disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none`}
+                              ? 'bg-green-500 text-white border-green-600 hover:bg-green-600'
+                              : 'bg-gray-500 text-white border-gray-600 hover:bg-gray-600'
+                          } disabled:opacity-50 disabled:cursor-not-allowed`}
                         >
                           {togglingAutomation === user.id ? 'Updating...' : (user.automation_enabled ? '✓ Enabled' : '✗ Disabled')}
                         </button>
-                      </td>
+                      </div>
                     </>
                   )}
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <div className="flex items-center justify-end gap-2">
-                      {user.account_status === 'pending' && (
-                        <>
-                          <button
-                            onClick={() => handleApprove(user.id)}
-                            disabled={actionLoading === user.id}
-                            className="flex items-center gap-1 px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
-                          >
-                            <CheckCircle className="w-4 h-4" />
-                            Approve
-                          </button>
-                          <button
-                            onClick={() => setShowRejectModal(user.id)}
-                            disabled={actionLoading === user.id}
-                            className="flex items-center gap-1 px-3 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
-                          >
-                            <XCircle className="w-4 h-4" />
-                            Reject
-                          </button>
-                        </>
-                      )}
-                      {activeTab === 'all' && (
-                        <button
-                          onClick={() => handleDelete(user.id)}
-                          disabled={actionLoading === user.id}
-                          className="flex items-center gap-1 px-3 py-1 bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          Delete
-                        </button>
-                      )}
+                </div>
+
+                {/* Actions */}
+                <div className="pt-3 border-t border-[#e1e3e5] dark:border-[#2e2e2e] space-y-2">
+                  {user.account_status === 'pending' && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleApprove(user.id)}
+                        disabled={actionLoading === user.id}
+                        className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+                      >
+                        <CheckCircle className="w-4 h-4" />
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => setShowRejectModal(user.id)}
+                        disabled={actionLoading === user.id}
+                        className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                      >
+                        <XCircle className="w-4 h-4" />
+                        Reject
+                      </button>
                     </div>
-                  </td>
+                  )}
+                  {activeTab === 'all' && (
+                    <button
+                      onClick={() => handleDelete(user.id)}
+                      disabled={actionLoading === user.id}
+                      className="w-full flex items-center justify-center gap-1 px-3 py-2 text-sm bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Delete
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop Table View */}
+          <div className="hidden md:block bg-white dark:bg-[#1a1a1a] rounded-xl border border-[#e1e3e5] dark:border-[#2e2e2e] overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-[#f6f6f7] dark:bg-[#2e2e2e]">
+                <tr>
+                  <th className="px-4 lg:px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
+                    Name
+                  </th>
+                  <th className="px-4 lg:px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
+                    Email
+                  </th>
+                  <th className="px-4 lg:px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
+                    Registered
+                  </th>
+                  {activeTab === 'all' && (
+                    <>
+                      <th className="px-4 lg:px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-4 lg:px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
+                        Automation
+                      </th>
+                    </>
+                  )}
+                  <th className="px-4 lg:px-6 py-3 text-right text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
+                    Actions
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-[#e1e3e5] dark:divide-[#2e2e2e]">
+                {users.map((user) => (
+                  <tr key={user.id} className="hover:bg-[#f6f6f7] dark:hover:bg-[#2e2e2e] transition-colors">
+                    <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3]">
+                        {user.name || 'N/A'}
+                      </div>
+                    </td>
+                    <td className="px-4 lg:px-6 py-4">
+                      <div className="text-sm text-[#6d7175] dark:text-[#8c9196] max-w-xs truncate">
+                        {user.email}
+                      </div>
+                    </td>
+                    <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-[#6d7175] dark:text-[#8c9196]">
+                        {new Date(user.created_at).toLocaleDateString()}
+                      </div>
+                    </td>
+                    {activeTab === 'all' && (
+                      <>
+                        <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
+                          <span className={`px-2 py-1 text-xs font-semibold rounded-lg ${getStatusBadge(user.account_status)}`}>
+                            {user.account_status}
+                          </span>
+                        </td>
+                        <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
+                          <button
+                            onClick={() => {
+                              console.log('Toggle clicked for user:', user.id, 'Current status:', user.automation_enabled);
+                              handleToggleAutomation(user.id, user.automation_enabled);
+                            }}
+                            disabled={togglingAutomation === user.id || user.account_status !== 'approved'}
+                            className={`px-3 lg:px-4 py-2 text-xs font-semibold rounded-lg transition-all duration-200 border-2 cursor-pointer ${
+                              user.automation_enabled
+                                ? 'bg-green-500 text-white border-green-600 hover:bg-green-600 hover:shadow-md'
+                                : 'bg-gray-500 text-white border-gray-600 hover:bg-gray-600 hover:shadow-md'
+                            } disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none`}
+                          >
+                            {togglingAutomation === user.id ? 'Updating...' : (user.automation_enabled ? '✓ Enabled' : '✗ Disabled')}
+                          </button>
+                        </td>
+                      </>
+                    )}
+                    <td className="px-4 lg:px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <div className="flex items-center justify-end gap-2">
+                        {user.account_status === 'pending' && (
+                          <>
+                            <button
+                              onClick={() => handleApprove(user.id)}
+                              disabled={actionLoading === user.id}
+                              className="flex items-center gap-1 px-2 lg:px-3 py-1 text-xs lg:text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+                            >
+                              <CheckCircle className="w-4 h-4" />
+                              <span className="hidden lg:inline">Approve</span>
+                            </button>
+                            <button
+                              onClick={() => setShowRejectModal(user.id)}
+                              disabled={actionLoading === user.id}
+                              className="flex items-center gap-1 px-2 lg:px-3 py-1 text-xs lg:text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                            >
+                              <XCircle className="w-4 h-4" />
+                              <span className="hidden lg:inline">Reject</span>
+                            </button>
+                          </>
+                        )}
+                        {activeTab === 'all' && (
+                          <button
+                            onClick={() => handleDelete(user.id)}
+                            disabled={actionLoading === user.id}
+                            className="flex items-center gap-1 px-2 lg:px-3 py-1 text-xs lg:text-sm bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            <span className="hidden lg:inline">Delete</span>
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {/* Reject Modal */}
       {showRejectModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-[#1a1a1a] rounded-xl p-6 max-w-md w-full mx-4 border border-[#e1e3e5] dark:border-[#2e2e2e]">
-            <h3 className="text-lg font-bold text-[#202223] dark:text-[#e3e3e3] mb-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-[#1a1a1a] rounded-xl p-4 sm:p-6 max-w-md w-full border border-[#e1e3e5] dark:border-[#2e2e2e]">
+            <h3 className="text-base sm:text-lg font-bold text-[#202223] dark:text-[#e3e3e3] mb-3 sm:mb-4">
               Reject User Registration
             </h3>
-            <p className="text-sm text-[#6d7175] dark:text-[#8c9196] mb-4">
+            <p className="text-xs sm:text-sm text-[#6d7175] dark:text-[#8c9196] mb-3 sm:mb-4">
               Please provide a reason for rejecting this user's registration:
             </p>
             <textarea
               value={rejectionReason[showRejectModal] || ''}
               onChange={(e) => setRejectionReason({ ...rejectionReason, [showRejectModal]: e.target.value })}
-              className="w-full px-3 py-2 border border-[#c9cccf] dark:border-[#2e2e2e] rounded-lg bg-white dark:bg-[#1a1a1a] text-[#202223] dark:text-[#e3e3e3] focus:outline-none focus:ring-2 focus:ring-[#008060] dark:focus:ring-[#00a876]"
+              className="w-full px-3 py-2 text-sm sm:text-base border border-[#c9cccf] dark:border-[#2e2e2e] rounded-lg bg-white dark:bg-[#1a1a1a] text-[#202223] dark:text-[#e3e3e3] focus:outline-none focus:ring-2 focus:ring-[#008060] dark:focus:ring-[#00a876]"
               rows={4}
               placeholder="Enter rejection reason..."
             />
-            <div className="flex gap-2 mt-4">
+            <div className="flex flex-col sm:flex-row gap-2 mt-4">
               <button
                 onClick={() => handleReject(showRejectModal)}
                 disabled={actionLoading === showRejectModal}
-                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                className="flex-1 px-4 py-2 text-sm sm:text-base bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
               >
                 Confirm Reject
               </button>
               <button
                 onClick={() => setShowRejectModal(null)}
                 disabled={actionLoading === showRejectModal}
-                className="flex-1 px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                className="flex-1 px-4 py-2 text-sm sm:text-base bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
               >
                 Cancel
               </button>

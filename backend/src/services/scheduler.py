@@ -90,21 +90,10 @@ def start_scheduler():
 
     scheduler = AsyncIOScheduler(timezone=PAKISTAN_TZ)
 
-    # Job 1: Transfer validated invoices (daily at 7 PM PKT)
-    scheduler.add_job(
-        transfer_validated_invoices_job,
-        trigger=CronTrigger(
-            hour=settings.transfer_schedule_hour,
-            minute=settings.transfer_schedule_minute,
-            timezone=PAKISTAN_TZ
-        ),
-        id='transfer_validated_invoices',
-        name='Transfer Validated Invoices',
-        replace_existing=True,
-        max_instances=1
-    )
+    # NOTE: Daily transfer job REMOVED - AI Agent now transfers invoices every 5 minutes
+    # when their scheduled time arrives (real-time transfer based on invoice schedule)
 
-    # Job 2: Cleanup old automation data (daily at 2 AM PKT)
+    # Job 1: Cleanup old automation data (daily at 2 AM PKT)
     scheduler.add_job(
         cleanup_automation_data_job,
         trigger=CronTrigger(
@@ -118,7 +107,7 @@ def start_scheduler():
         max_instances=1
     )
 
-    # Job 3: Cleanup old logs (daily at 2:30 AM PKT)
+    # Job 2: Cleanup old logs (daily at 2:30 AM PKT)
     scheduler.add_job(
         cleanup_automation_logs_job,
         trigger=CronTrigger(
@@ -134,10 +123,10 @@ def start_scheduler():
 
     scheduler.start()
     logger.info(
-        f"Scheduler started with 3 jobs:\n"
-        f"  - Transfer (Last 24h Sales): Daily at {settings.transfer_schedule_hour}:{settings.transfer_schedule_minute:02d} PKT\n"
+        f"Scheduler started with 2 jobs:\n"
         f"  - Cleanup Data: Daily at {settings.cleanup_schedule_hour}:{settings.cleanup_schedule_minute:02d} PKT\n"
-        f"  - Cleanup Logs: Daily at {settings.cleanup_schedule_hour}:{settings.cleanup_schedule_minute + 30:02d} PKT"
+        f"  - Cleanup Logs: Daily at {settings.cleanup_schedule_hour}:{settings.cleanup_schedule_minute + 30:02d} PKT\n"
+        f"  Note: Invoice transfer now handled by AI Agent every 5 minutes (real-time based on schedule)"
     )
 
 def stop_scheduler():

@@ -16,10 +16,20 @@ function getCookie(name: string): string | null {
   return null;
 }
 
-// Helper function to get CSRF token from cookie
-// SECURITY: Only use cookies, never localStorage (XSS vulnerability)
+// Helper function to get CSRF token from cookie or sessionStorage
+// SECURITY: Try cookie first (same-origin), then sessionStorage (cross-origin)
+// sessionStorage is more secure than localStorage (cleared on tab close)
 function getCsrfToken(): string | null {
-  return getCookie('csrf_token');
+  // Try cookie first
+  const cookieToken = getCookie('csrf_token');
+  if (cookieToken) return cookieToken;
+
+  // Fallback to sessionStorage for cross-origin scenarios
+  if (typeof sessionStorage !== 'undefined') {
+    return sessionStorage.getItem('csrf_token');
+  }
+
+  return null;
 }
 
 // Base API client

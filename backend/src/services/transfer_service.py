@@ -4,6 +4,7 @@ Transfer Service for moving validated invoices from automation DB to main DB.
 This service handles the daily transfer of validated invoices at 6 PM PKT.
 """
 
+import os
 from datetime import datetime, date, timedelta
 from typing import Optional, List
 from uuid import UUID
@@ -17,6 +18,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError, DatabaseError
 from src.models.automation_invoice import AutomationInvoice, AutomationInvoiceStatus
 from src.models.invoice import Invoice, InvoiceStatus
 from src.models.transfer_log import TransferLog
+from src.models.excel_upload_session import ExcelUploadSession
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +91,8 @@ class TransferService:
         invoice_data = automation_invoice.invoice_data
 
         # Create Invoice with structured fields
+        # NOTE: source="manual" makes transferred invoices appear identical to manually created ones
+        # Audit trail preserved via automation_invoice_id and transferred_at fields
         invoice = Invoice(
             external_id=automation_invoice.invoice_number,
             user_id=automation_invoice.user_id,
@@ -108,10 +112,10 @@ class TransferService:
             items=invoice_data.get("items", []),
             environment=invoice_data.get("environment", "SANDBOX"),
             status=InvoiceStatus.VALIDATED,
-            # Transfer tracking fields
-            source="automation",
-            transferred_at=datetime.utcnow(),
-            automation_invoice_id=automation_invoice.id,
+            # Transfer tracking fields - source="manual" for seamless UI integration
+            source="manual",  # Changed from "automation" to merge with manual invoices
+            transferred_at=datetime.utcnow(),  # Audit trail: when transferred
+            automation_invoice_id=automation_invoice.id,  # Audit trail: original automation invoice
             # Copy FBR validation response
             validation_errors=None,
             fbr_response_id=None
@@ -142,6 +146,72 @@ class TransferService:
         )
         existing = main_db.exec(statement).first()
         return existing is not None
+
+    def cleanup_excel_files_for_completed_sessions(self, automation_db: Session) -> int:
+        """
+        Automatically delete Excel files for sessions where all invoices are transferred.
+
+        This runs after the transfer job to clean up Excel files that are no longer needed.
+        The session records remain for audit purposes.
+
+        Args:
+            automation_db: Automation database session
+
+        Returns:
+            Number of Excel files deleted
+        """
+        deleted_count = 0
+
+        try:
+            # Get all sessions that have a file_path
+            sessions_with_files = automation_db.exec(
+                select(ExcelUploadSession).where(
+                    ExcelUploadSession.file_path.isnot(None)
+                )
+            ).all()
+
+            for session in sessions_with_files:
+                # Get all invoices for this session
+                invoices = automation_db.exec(
+                    select(AutomationInvoice).where(
+                        AutomationInvoice.excel_upload_session_id == session.id
+                    )
+                ).all()
+
+                if not invoices:
+                    continue
+
+                # Check if all invoices are transferred
+                all_transferred = all(
+                    invoice.status == AutomationInvoiceStatus.TRANSFERRED
+                    for invoice in invoices
+                )
+
+                if all_transferred and session.file_path:
+                    # Delete the Excel file from disk
+                    if os.path.exists(session.file_path):
+                        try:
+                            os.remove(session.file_path)
+                            logger.info(f"Auto-deleted Excel file: {session.file_path}")
+                            deleted_count += 1
+                        except Exception as e:
+                            logger.warning(f"Failed to delete Excel file {session.file_path}: {e}")
+                            continue
+
+                    # Update session to remove file_path
+                    session.file_path = None
+                    automation_db.add(session)
+
+            automation_db.commit()
+
+            if deleted_count > 0:
+                logger.info(f"Auto-cleanup: deleted {deleted_count} Excel files for completed sessions")
+
+        except Exception as e:
+            logger.error(f"Excel file auto-cleanup failed: {e}")
+            automation_db.rollback()
+
+        return deleted_count
 
     async def transfer_validated_invoices(
         self,
@@ -299,6 +369,12 @@ class TransferService:
                 f"Transfer job completed: {result.invoices_transferred} transferred, "
                 f"{result.invoices_failed} failed, {result.duration_seconds:.2f}s"
             )
+
+            # Auto-cleanup Excel files for fully transferred sessions
+            try:
+                self.cleanup_excel_files_for_completed_sessions(automation_db)
+            except Exception as cleanup_error:
+                logger.error(f"Excel file cleanup failed (non-critical): {cleanup_error}")
 
         except Exception as e:
             logger.error(f"Transfer job failed: {e}")

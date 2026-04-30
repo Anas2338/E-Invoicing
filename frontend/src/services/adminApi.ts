@@ -46,8 +46,8 @@ class AdminApiClient {
       'Content-Type': 'application/json',
     };
 
-    // Add CSRF token
-    const csrfToken = getCookie('csrf_token');
+    // Add CSRF token - try cookie first, then sessionStorage (for cross-origin)
+    const csrfToken = getCookie('csrf_token') || (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('csrf_token') : null);
     if (csrfToken) {
       headers['X-CSRF-Token'] = csrfToken;
     }

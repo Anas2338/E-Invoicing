@@ -4,6 +4,7 @@ File Management Service
 Business logic for managing upload sessions and invoice blocking/deletion.
 """
 
+import os
 from datetime import datetime
 from typing import List, Optional, Tuple
 from uuid import UUID
@@ -54,8 +55,16 @@ class FileManagementService:
             blocked_count = sum(1 for inv in invoices if inv.status == "blocked")
             expired_count = sum(1 for inv in invoices if inv.status == "expired")
 
-            # Can delete if no transferred invoices
+            # Can delete session if no transferred invoices
             can_delete = transferred_count == 0
+
+            # Can delete Excel file if it exists and all invoices are transferred
+            can_delete_file = (
+                session.file_path is not None and
+                os.path.exists(session.file_path) and
+                len(invoices) > 0 and
+                transferred_count == len(invoices)
+            )
 
             result.append({
                 "id": str(session.id),
@@ -69,23 +78,26 @@ class FileManagementService:
                 "blocked_count": blocked_count,
                 "expired_count": expired_count,
                 "can_delete": can_delete,
+                "can_delete_file": can_delete_file,
+                "has_file": session.file_path is not None,
             })
 
         return result
 
-    def delete_upload_session(self, session_id: str, user_id: str) -> Tuple[bool, int, str]:
+    def delete_upload_session(self, session_id: str, user_id: str, delete_file_only: bool = False) -> Tuple[bool, int, str]:
         """
-        Delete an upload session and all its invoices if no invoices are transferred.
+        Delete an upload session and all its invoices, or just delete the Excel file.
 
         Args:
             session_id: Upload session ID
             user_id: User ID for authorization
+            delete_file_only: If True, only delete the Excel file, keep session and invoices
 
         Returns:
             Tuple of (success, deleted_count, message)
 
         Raises:
-            HTTPException: If session not found or has transferred invoices
+            HTTPException: If session not found
         """
         # Verify session exists and belongs to user
         session = self.db.exec(
@@ -103,6 +115,35 @@ class FileManagementService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Upload session not found"
             )
+
+        # Delete Excel file from disk if it exists
+        if session.file_path and os.path.exists(session.file_path):
+            try:
+                os.remove(session.file_path)
+            except Exception as e:
+                # Log but don't fail if file deletion fails
+                print(f"Warning: Failed to delete Excel file {session.file_path}: {e}")
+
+        # If only deleting file, update session and return
+        if delete_file_only:
+            session.file_path = None
+            self.db.add(session)
+            self.db.commit()
+
+            log_entry = AutomationLog(
+                user_id=user_id,
+                action=AutomationLogAction.DELETE_SESSION,
+                status=AutomationLogStatus.SUCCESS,
+                details={
+                    "session_id": session_id,
+                    "action": "delete_excel_file_only",
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            )
+            self.db.add(log_entry)
+            self.db.commit()
+
+            return True, 0, "Excel file deleted successfully"
 
         # Check for transferred invoices
         transferred_count = self.db.exec(
@@ -151,7 +192,7 @@ class FileManagementService:
 
         self.db.commit()
 
-        return True, deleted_count, f"Successfully deleted {deleted_count} invoices"
+        return True, deleted_count, f"Successfully deleted {deleted_count} invoices and Excel file"
 
     def block_invoice(self, invoice_id: str, user_id: str, reason: Optional[str] = None) -> AutomationInvoice:
         """

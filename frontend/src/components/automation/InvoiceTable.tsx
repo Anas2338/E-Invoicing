@@ -5,11 +5,9 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ChevronLeft, ChevronRight, Download, Eye, RefreshCw, Printer, FileText } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Eye, RefreshCw } from 'lucide-react';
 import { automationApi } from '@/services/automationApi';
 import { toast } from 'sonner';
-import { BatchPrintProgress } from './BatchPrintProgress';
-import { PrintInvoiceButton } from './PrintInvoiceButton';
 
 interface Invoice {
   id: string;
@@ -59,8 +57,6 @@ export function InvoiceTable({
   onRetry
 }: InvoiceTableProps) {
   const [localFilters, setLocalFilters] = useState(filters);
-  const [selectedInvoices, setSelectedInvoices] = useState<Set<string>>(new Set());
-  const [isPrintingBatch, setIsPrintingBatch] = useState(false);
 
   const handleApplyFilters = () => {
     onFilterChange(localFilters);
@@ -75,85 +71,6 @@ export function InvoiceTable({
     };
     setLocalFilters(clearedFilters);
     onFilterChange(clearedFilters);
-  };
-
-  // Checkbox selection handlers
-  const handleSelectAll = () => {
-    if (selectedInvoices.size === transferredInvoices.length) {
-      // Deselect all
-      setSelectedInvoices(new Set());
-    } else {
-      // Select all transferred invoices
-      setSelectedInvoices(new Set(transferredInvoices.map(inv => inv.id)));
-    }
-  };
-
-  const handleSelectInvoice = (invoiceId: string) => {
-    const newSelection = new Set(selectedInvoices);
-    if (newSelection.has(invoiceId)) {
-      newSelection.delete(invoiceId);
-    } else {
-      newSelection.add(invoiceId);
-    }
-    setSelectedInvoices(newSelection);
-  };
-
-  // Filter transferred invoices (only transferred invoices can be printed)
-  const transferredInvoices = invoices.filter(inv => inv.status === 'transferred');
-
-  // Batch print handler
-  const handleBatchPrint = async () => {
-    if (selectedInvoices.size === 0) {
-      toast.error('Please select at least one invoice to print');
-      return;
-    }
-
-    if (selectedInvoices.size > 50) {
-      toast.error('Cannot print more than 50 invoices at once');
-      return;
-    }
-
-    setIsPrintingBatch(true);
-
-    try {
-      // Convert Set to Array (preserves selection order)
-      const invoiceIds = Array.from(selectedInvoices);
-
-      // Generate batch PDF
-      const pdfBlob = await automationApi.printBatchInvoices(invoiceIds);
-
-      // Create download link
-      const url = window.URL.createObjectURL(pdfBlob);
-      const link = document.createElement('a');
-      link.href = url;
-
-      // Generate filename with timestamp
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-      link.download = `batch_invoices_${selectedInvoices.size}_${timestamp}.pdf`;
-
-      // Trigger download
-      document.body.appendChild(link);
-      link.click();
-
-      // Cleanup
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(link);
-
-      toast.success(`Batch PDF with ${selectedInvoices.size} invoices downloaded successfully`);
-
-      // Clear selection after successful download
-      setSelectedInvoices(new Set());
-    } catch (error) {
-      console.error('Batch PDF generation failed:', error);
-
-      const errorMessage = error instanceof Error
-        ? error.message
-        : 'Failed to generate batch PDF';
-
-      toast.error(errorMessage);
-    } finally {
-      setIsPrintingBatch(false);
-    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -297,26 +214,6 @@ export function InvoiceTable({
           </div>
         </div>
 
-        {/* Batch Print Button - Only show when invoices are selected */}
-        {selectedInvoices.size > 0 && (
-          <div className="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-            <div className="text-sm text-blue-900 dark:text-blue-100">
-              <span className="font-semibold">
-                {selectedInvoices.size} invoice{selectedInvoices.size !== 1 ? 's' : ''} selected
-              </span>
-            </div>
-            <Button
-              onClick={handleBatchPrint}
-              disabled={isPrintingBatch}
-              size="sm"
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              <Printer className="h-4 w-4 mr-2" />
-              {isPrintingBatch ? 'Generating...' : 'Print Selected'}
-            </Button>
-          </div>
-        )}
-
         {/* Table */}
         <div className="overflow-x-auto">
           {loading ? (
@@ -327,17 +224,6 @@ export function InvoiceTable({
             <table className="min-w-full divide-y divide-[#e1e3e5] dark:divide-[#2e2e2e]">
               <thead className="bg-[#f6f6f7] dark:bg-[#2e2e2e]">
                 <tr>
-                  {transferredInvoices.length > 0 && (
-                    <th className="px-6 py-3 text-left">
-                      <input
-                        type="checkbox"
-                        checked={selectedInvoices.size === transferredInvoices.length && transferredInvoices.length > 0}
-                        onChange={handleSelectAll}
-                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        title="Select all transferred invoices"
-                      />
-                    </th>
-                  )}
                   <th className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
                     Invoice Number
                   </th>
@@ -360,25 +246,8 @@ export function InvoiceTable({
               </thead>
               <tbody className="bg-white dark:bg-[#1a1a1a] divide-y divide-[#e1e3e5] dark:divide-[#2e2e2e]">
                 {invoices.map((invoice) => {
-                  const isTransferred = invoice.status === 'transferred';
-                  const isSelected = selectedInvoices.has(invoice.id);
-
                   return (
                     <tr key={invoice.id} className="hover:bg-[#f6f6f7] dark:hover:bg-[#2e2e2e] transition-colors duration-150">
-                      {transferredInvoices.length > 0 && (
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          {isTransferred ? (
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => handleSelectInvoice(invoice.id)}
-                              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                            />
-                          ) : (
-                            <div className="w-4 h-4" />
-                          )}
-                        </td>
-                      )}
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-[#202223] dark:text-[#e3e3e3]">
                         {invoice.invoice_number}
                       </td>
@@ -414,13 +283,6 @@ export function InvoiceTable({
                               <RefreshCw className="h-4 w-4 mr-1" />
                               Retry
                             </Button>
-                          )}
-                          {invoice.status === 'transferred' && (
-                            <PrintInvoiceButton
-                              invoiceId={invoice.id}
-                              invoiceNumber={invoice.invoice_number}
-                              status={invoice.status}
-                            />
                           )}
                         </div>
                       </td>
@@ -468,14 +330,6 @@ export function InvoiceTable({
           </div>
         )}
       </div>
-
-      {/* Batch Print Progress Indicator (for 20+ invoices) */}
-      {selectedInvoices.size >= 20 && (
-        <BatchPrintProgress
-          isGenerating={isPrintingBatch}
-          invoiceCount={selectedInvoices.size}
-        />
-      )}
     </Card>
   );
 }
