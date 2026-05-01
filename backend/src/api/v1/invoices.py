@@ -456,7 +456,7 @@ async def validate_invoice_with_fbr(
 ):
     """
     Validate an invoice with FBR Digital Invoicing System.
-    Invoice must be in DRAFT status.
+    Invoice must be in DRAFT or FAILED status.
     """
     service = InvoiceService()
     user_uuid = UUID(user_id)
@@ -469,11 +469,11 @@ async def validate_invoice_with_fbr(
             detail="Invoice not found"
         )
 
-    # Check if invoice is in DRAFT status
-    if invoice.status != InvoiceStatus.DRAFT:
+    # Check if invoice is in DRAFT or FAILED status (allow retry for failed invoices)
+    if invoice.status != InvoiceStatus.DRAFT and invoice.status != InvoiceStatus.FAILED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invoice must be in DRAFT status to validate. Current status: {invoice.status}"
+            detail=f"Only DRAFT or FAILED invoices can be validated. Current status: {invoice.status}"
         )
 
     # Get user's FBR access token from database based on environment

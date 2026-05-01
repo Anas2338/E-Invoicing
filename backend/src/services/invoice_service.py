@@ -293,7 +293,7 @@ class InvoiceService:
     def update_invoice_from_dict(self, db: Session, invoice_id: UUID, update_data: dict, user_id: UUID) -> Optional[Invoice]:
         """
         Update an invoice directly from a dictionary (bypasses Pydantic exclude_none issue).
-        If a VALIDATED invoice is edited, it will be moved back to DRAFT status.
+        If a VALIDATED or FAILED invoice is edited, it will be moved back to DRAFT status.
 
         Args:
             db: Database session
@@ -309,16 +309,16 @@ class InvoiceService:
         if not invoice:
             return None
 
-        # Check if this is a VALIDATED invoice being edited (not just status update)
+        # Check if this is a VALIDATED or FAILED invoice being edited (not just status update)
         is_content_update = any(key not in ['status', 'validated_at', 'posted_at', 'fbr_reference_number', 'validation_errors']
                                for key in update_data.keys())
 
-        if invoice.status == InvoiceStatus.VALIDATED and is_content_update:
-            # Move back to DRAFT when validated invoice is edited
+        if (invoice.status == InvoiceStatus.VALIDATED or invoice.status == InvoiceStatus.FAILED) and is_content_update:
+            # Move back to DRAFT when validated or failed invoice is edited
             invoice.status = InvoiceStatus.DRAFT
             invoice.validated_at = None
             invoice.validation_errors = None
-            logger.info(f"Invoice {invoice_id} moved from VALIDATED to DRAFT due to content update")
+            logger.info(f"Invoice {invoice_id} moved from {invoice.status} to DRAFT due to content update")
 
         # Update fields directly from the dict
         for field, value in update_data.items():

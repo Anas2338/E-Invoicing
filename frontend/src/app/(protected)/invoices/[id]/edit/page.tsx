@@ -35,9 +35,9 @@ export default function EditInvoicePage() {
         return;
       }
 
-      // Check if invoice can be edited (DRAFT or VALIDATED invoices)
-      if (invoice.status !== 'DRAFT' && invoice.status !== 'VALIDATED') {
-        setError('Only draft or validated invoices can be edited. This invoice has status: ' + invoice.status);
+      // Check if invoice can be edited (DRAFT, VALIDATED, or FAILED invoices)
+      if (invoice.status !== 'DRAFT' && invoice.status !== 'VALIDATED' && invoice.status !== 'FAILED') {
+        setError('Only draft, validated, or failed invoices can be edited. This invoice has status: ' + invoice.status);
         return;
       }
 

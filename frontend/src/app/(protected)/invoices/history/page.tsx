@@ -324,21 +324,21 @@ export default function InvoiceHistoryPage() {
   const handleBulkValidate = async () => {
     if (selectedInvoices.size === 0) return;
 
-    // Filter to only include DRAFT invoices
+    // Filter to only include DRAFT and FAILED invoices
     const selectedInvoicesList = Array.from(selectedInvoices);
-    const draftInvoices = selectedInvoicesList.filter(id => {
+    const validatableInvoices = selectedInvoicesList.filter(id => {
       const invoice = invoices.find(inv => inv.id === id);
-      return invoice?.status === 'DRAFT';
+      return invoice?.status === 'DRAFT' || invoice?.status === 'FAILED';
     });
 
-    const alreadyValidatedCount = selectedInvoicesList.length - draftInvoices.length;
+    const skippedCount = selectedInvoicesList.length - validatableInvoices.length;
 
-    // If no draft invoices, show message
-    if (draftInvoices.length === 0) {
+    // If no validatable invoices, show message
+    if (validatableInvoices.length === 0) {
       setDialogData({
         success: false,
-        title: 'No Draft Invoices Selected',
-        message: 'All selected invoices are already validated or posted. Only DRAFT invoices can be validated.',
+        title: 'No Validatable Invoices Selected',
+        message: 'All selected invoices are already validated or posted. Only DRAFT and FAILED invoices can be validated.',
         errors: []
       });
       setDialogOpen(true);
@@ -346,9 +346,9 @@ export default function InvoiceHistoryPage() {
     }
 
     // Show confirmation with info about skipped invoices
-    const confirmMessage = alreadyValidatedCount > 0
-      ? `Validate ${draftInvoices.length} DRAFT invoice${draftInvoices.length > 1 ? 's' : ''} with FBR?\n\n${alreadyValidatedCount} already validated invoice${alreadyValidatedCount > 1 ? 's' : ''} will be skipped.\n\nThis will validate each invoice one by one.`
-      : `Validate ${draftInvoices.length} selected invoice${draftInvoices.length > 1 ? 's' : ''} with FBR?\n\nThis will validate each invoice one by one.`;
+    const confirmMessage = skippedCount > 0
+      ? `Validate ${validatableInvoices.length} invoice${validatableInvoices.length > 1 ? 's' : ''} with FBR?\n\n${skippedCount} already validated/posted invoice${skippedCount > 1 ? 's' : ''} will be skipped.\n\nThis will validate each invoice one by one.`
+      : `Validate ${validatableInvoices.length} selected invoice${validatableInvoices.length > 1 ? 's' : ''} with FBR?\n\nThis will validate each invoice one by one.`;
 
     if (!confirm(confirmMessage)) {
       return;
@@ -360,8 +360,8 @@ export default function InvoiceHistoryPage() {
     const errors: string[] = [];
 
     try {
-      // Validate each DRAFT invoice one by one
-      for (const invoiceId of draftInvoices) {
+      // Validate each DRAFT or FAILED invoice one by one
+      for (const invoiceId of validatableInvoices) {
         const invoice = invoices.find(inv => inv.id === invoiceId);
 
         try {
@@ -381,7 +381,7 @@ export default function InvoiceHistoryPage() {
       }
 
       // Show result dialog
-      const skippedMessage = alreadyValidatedCount > 0 ? ` ${alreadyValidatedCount} invoice${alreadyValidatedCount > 1 ? 's were' : ' was'} skipped (already validated).` : '';
+      const skippedMessage = skippedCount > 0 ? ` ${skippedCount} invoice${skippedCount > 1 ? 's were' : ' was'} skipped (already validated/posted).` : '';
       setDialogData({
         success: failCount === 0,
         title: failCount === 0 ? 'Bulk Validation Successful' : 'Bulk Validation Completed with Errors',

@@ -1,7 +1,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Eye, Edit, CheckCircle, Send, Trash2, Loader2 } from 'lucide-react';
+import { Eye, Edit, CheckCircle, Send, Trash2, Loader2, RefreshCw } from 'lucide-react';
 import { PrintInvoiceButton } from '@/components/automation/PrintInvoiceButton';
 
 interface Invoice {
@@ -221,7 +221,7 @@ export function InvoiceTable({
                     View
                   </Button>
                 )}
-                {onEdit && (invoice.status === 'DRAFT' || invoice.status === 'VALIDATED') && (
+                {onEdit && (invoice.status === 'DRAFT' || invoice.status === 'VALIDATED' || invoice.status === 'FAILED') && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -246,6 +246,22 @@ export function InvoiceTable({
                       <CheckCircle className="h-4 w-4 mr-1" />
                     )}
                     {validatingInvoiceId === invoice.id ? 'Validating...' : 'Validate'}
+                  </Button>
+                )}
+                {onValidate && invoice.status === 'FAILED' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onValidate(invoice.id)}
+                    disabled={validatingInvoiceId === invoice.id}
+                    className="flex-1 min-w-[80px] h-9 border-[#008060] text-[#008060] hover:bg-[#008060] hover:text-white"
+                  >
+                    {validatingInvoiceId === invoice.id ? (
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4 mr-1" />
+                    )}
+                    {validatingInvoiceId === invoice.id ? 'Retrying...' : 'Retry'}
                   </Button>
                 )}
                 {onPost && invoice.status === 'VALIDATED' && (
@@ -399,8 +415,8 @@ export function InvoiceTable({
                     </Button>
                   )}
 
-                  {/* Edit Button - For DRAFT and VALIDATED */}
-                  {onEdit && (invoice.status === 'DRAFT' || invoice.status === 'VALIDATED') && (
+                  {/* Edit Button - For DRAFT, VALIDATED, and FAILED */}
+                  {onEdit && (invoice.status === 'DRAFT' || invoice.status === 'VALIDATED' || invoice.status === 'FAILED') && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -426,6 +442,24 @@ export function InvoiceTable({
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
                         <CheckCircle className="h-4 w-4" />
+                      )}
+                    </Button>
+                  )}
+
+                  {/* Retry Button - Only for FAILED */}
+                  {onValidate && invoice.status === 'FAILED' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onValidate(invoice.id)}
+                      disabled={validatingInvoiceId === invoice.id}
+                      className="h-8 px-3 border-[#008060] text-[#008060] hover:bg-[#008060] hover:text-white"
+                      title="Retry Validation"
+                    >
+                      {validatingInvoiceId === invoice.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-4 w-4" />
                       )}
                     </Button>
                   )}
