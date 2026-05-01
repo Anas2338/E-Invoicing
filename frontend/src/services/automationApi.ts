@@ -1,8 +1,9 @@
 /**
  * Automation API client for Excel upload and dashboard endpoints.
+ * Uses separate AI Agent backend for automation features.
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8001/api/v1';
+const API_BASE_URL = process.env.NEXT_PUBLIC_AI_AGENT_URL || process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8001/api/v1';
 
 // Helper function to get cookie value by name
 function getCookie(name: string): string | null {
