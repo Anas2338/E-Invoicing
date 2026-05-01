@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { toast } from 'react-toastify';
+import type { Route } from 'next';
 
 export default function AutomationPage() {
   const router = useRouter();
@@ -90,7 +91,7 @@ export default function AutomationPage() {
             </Link>
 
             <Link
-              href="/automation/uploads"
+              href={"/automation/uploads" as Route}
               className="block p-6 bg-[#ffedd5] dark:bg-[#431407]/30 rounded-xl border-2 border-[#fed7aa] dark:border-[#7c2d12] hover:border-[#fb923c] dark:hover:border-[#fb923c] transition-all duration-150 hover:shadow-md"
             >
               <div className="flex items-center mb-3">
