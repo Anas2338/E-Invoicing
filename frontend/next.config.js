@@ -42,7 +42,7 @@ const nextConfig = {
       "img-src 'self' data: https:",
       "font-src 'self' data:",
       "media-src 'self' data:", // Allow audio/video data URIs
-      `connect-src 'self' https://localhost:8001 http://localhost:8001 ${backendUrl}`, // API connections
+      `connect-src 'self' https://localhost:8001 http://localhost:8001 ${backendUrl}`, // API connections to main backend only
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
