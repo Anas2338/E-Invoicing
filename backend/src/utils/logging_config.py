@@ -62,7 +62,13 @@ def setup_logging(
             log_dir = Path.cwd()
         else:
             log_dir = Path(log_dir)
-            log_dir.mkdir(parents=True, exist_ok=True)
+            # Only create directory if it doesn't exist (lazy creation)
+            try:
+                log_dir.mkdir(parents=True, exist_ok=True)
+            except (PermissionError, OSError) as e:
+                # If we can't create the log directory, fall back to console-only logging
+                logger.warning(f"Cannot create log directory {log_dir}: {e}. Falling back to console logging only.")
+                return logger
 
         # Rotating file handler for general logs
         file_handler = logging.handlers.RotatingFileHandler(

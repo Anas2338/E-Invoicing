@@ -1,0 +1,257 @@
+openapi: 3.0.3
+info:
+  title: Auto-Posting Configuration API
+  description: API endpoints for managing user auto-posting configuration
+  version: 1.0.0
+  contact:
+    name: FBR Invoice Portal API
+
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local development
+  - url: https://api.example.com/api/v1
+    description: Production
+
+paths:
+  /profile/auto-posting:
+    get:
+      summary: Get auto-posting configuration
+      description: Retrieve the current user's auto-posting configuration
+      operationId: getAutoPostingConfig
+      tags:
+        - Auto-Posting
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Auto-posting configuration retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutoPostingConfig'
+              example:
+                auto_posting_enabled: true
+                auto_posting_start_time: "09:00:00"
+                auto_posting_end_time: "18:00:00"
+                auto_posting_environment: "SANDBOX"
+                auto_posting_daily_limit: 100
+                auto_posting_paused_until: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      summary: Update auto-posting configuration
+      description: Update the current user's auto-posting configuration
+      operationId: updateAutoPostingConfig
+      tags:
+        - Auto-Posting
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AutoPostingConfigUpdate'
+            examples:
+              enableAutoPosting:
+                summary: Enable auto-posting
+                value:
+                  auto_posting_enabled: true
+                  auto_posting_start_time: "09:00:00"
+                  auto_posting_end_time: "18:00:00"
+                  auto_posting_environment: "SANDBOX"
+                  auto_posting_daily_limit: 100
+              midnightSpanning:
+                summary: Midnight-spanning window
+                value:
+                  auto_posting_enabled: true
+                  auto_posting_start_time: "22:00:00"
+                  auto_posting_end_time: "02:00:00"
+                  auto_posting_environment: "PRODUCTION"
+                  auto_posting_daily_limit: 50
+      responses:
+        '200':
+          description: Configuration updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutoPostingConfig'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Production posting not allowed (credentials not validated)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                detail: "Production posting requires validated FBR credentials"
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /profile/auto-posting/emergency-pause:
+    post:
+      summary: Emergency pause auto-posting
+      description: Immediately disable auto-posting (requires manual re-enable)
+      operationId: emergencyPauseAutoPosting
+      tags:
+        - Auto-Posting
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Auto-posting disabled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Auto-posting disabled. Please re-enable in profile settings when ready."
+                  auto_posting_enabled:
+                    type: boolean
+                    example: false
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    AutoPostingConfig:
+      type: object
+      required:
+        - auto_posting_enabled
+        - auto_posting_start_time
+        - auto_posting_end_time
+        - auto_posting_environment
+        - auto_posting_daily_limit
+      properties:
+        auto_posting_enabled:
+          type: boolean
+          description: Master toggle for auto-posting
+          example: true
+        auto_posting_start_time:
+          type: string
+          format: time
+          pattern: '^([01]\d|2[0-3]):([0-5]\d):([0-5]\d)$'
+          description: Start time of posting window (HH:MM:SS format)
+          example: "09:00:00"
+        auto_posting_end_time:
+          type: string
+          format: time
+          pattern: '^([01]\d|2[0-3]):([0-5]\d):([0-5]\d)$'
+          description: End time of posting window (HH:MM:SS format, can be before start_time for midnight-spanning)
+          example: "18:00:00"
+        auto_posting_environment:
+          type: string
+          enum: [SANDBOX, PRODUCTION]
+          description: Target FBR environment
+          example: "SANDBOX"
+        auto_posting_daily_limit:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          description: Maximum invoices to post per day
+          example: 100
+        auto_posting_paused_until:
+          type: string
+          format: date-time
+          nullable: true
+          description: Temporary pause until this timestamp (null if not paused)
+          example: null
+
+    AutoPostingConfigUpdate:
+      type: object
+      properties:
+        auto_posting_enabled:
+          type: boolean
+          description: Master toggle for auto-posting
+          example: true
+        auto_posting_start_time:
+          type: string
+          format: time
+          pattern: '^([01]\d|2[0-3]):([0-5]\d):([0-5]\d)$'
+          description: Start time of posting window (HH:MM:SS format)
+          example: "09:00:00"
+        auto_posting_end_time:
+          type: string
+          format: time
+          pattern: '^([01]\d|2[0-3]):([0-5]\d):([0-5]\d)$'
+          description: End time of posting window (HH:MM:SS format)
+          example: "18:00:00"
+        auto_posting_environment:
+          type: string
+          enum: [SANDBOX, PRODUCTION]
+          description: Target FBR environment
+          example: "SANDBOX"
+        auto_posting_daily_limit:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          description: Maximum invoices to post per day
+          example: 100
+        auto_posting_paused_until:
+          type: string
+          format: date-time
+          nullable: true
+          description: Temporary pause until this timestamp
+          example: null
+      minProperties: 1
+
+    Error:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: Error message
+          example: "Invalid configuration"
+
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            detail: "Not authenticated"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            detail: "User not found"
+
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalidTimeRange:
+              summary: Invalid time range
+              value:
+                detail: "Daily limit must be between 1 and 1000"
+            invalidEnvironment:
+              summary: Invalid environment
+              value:
+                detail: "Environment must be SANDBOX or PRODUCTION"

@@ -44,7 +44,6 @@ export function safeLocalStorage(): Storage | null {
     try {
       return window.localStorage;
     } catch (e) {
-      console.warn('localStorage is not available', e);
       return null;
     }
   }

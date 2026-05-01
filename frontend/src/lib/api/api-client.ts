@@ -73,7 +73,6 @@ class ApiClient {
       const errorData = await response.json().catch(() => ({}));
       // FastAPI validation errors are in 'detail', other errors might be in 'error'
       const errorMessage = errorData.detail || errorData.error || `HTTP error! status: ${response.status}`;
-      console.error('API Error:', errorMessage, errorData);
       throw new Error(typeof errorMessage === 'string' ? errorMessage : JSON.stringify(errorMessage));
     }
 
@@ -195,7 +194,6 @@ export class InvoiceService extends ApiClient {
       const errorData = await response.json().catch(() => ({}));
       // FastAPI validation errors are in 'detail', other errors might be in 'error'
       const errorMessage = errorData.detail || errorData.error || `HTTP error! status: ${response.status}`;
-      console.error('API Error:', errorMessage, errorData);
       throw new Error(typeof errorMessage === 'string' ? errorMessage : JSON.stringify(errorMessage));
     }
 

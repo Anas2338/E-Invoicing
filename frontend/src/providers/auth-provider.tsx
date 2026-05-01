@@ -106,7 +106,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(null);
         }
       } catch (error) {
-        console.error('Error checking auth status:', error);
         setUser(null);
       } finally {
         setLoading(false);
@@ -238,7 +237,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       sessionStorage.removeItem('csrf_token');
 
     } catch (error) {
-      console.error('Sign out error:', error);
       // Continue with logout even if backend call fails
     }
 

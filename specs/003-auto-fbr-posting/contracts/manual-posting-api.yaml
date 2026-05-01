@@ -1,0 +1,354 @@
+openapi: 3.0.3
+info:
+  title: Manual FBR Posting API
+  description: API endpoints for manually posting invoices to FBR
+  version: 1.0.0
+  contact:
+    name: FBR Invoice Portal API
+
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local development
+  - url: https://api.example.com/api/v1
+    description: Production
+
+paths:
+  /invoices/{invoice_id}/post-to-fbr:
+    post:
+      summary: Manually post invoice to FBR
+      description: |
+        Manually trigger FBR posting for a specific invoice, regardless of auto-posting settings.
+        Works even when auto-posting is disabled or outside configured time window.
+        Counts toward daily limit.
+      operationId: manualPostToFBR
+      tags:
+        - Manual Posting
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          description: UUID of the invoice to post
+          schema:
+            type: string
+            format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        '200':
+          description: Invoice posted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualPostingResponse'
+              example:
+                success: true
+                message: "Invoice posted to FBR successfully"
+                invoice_id: "123e4567-e89b-12d3-a456-426614174000"
+                status: "FBR_POSTED"
+                fbr_reference_number: "FBR-2026-001234"
+                environment: "SANDBOX"
+                posted_at: "2026-05-01T14:30:00Z"
+        '400':
+          description: Invalid request or invoice not eligible for posting
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalidStatus:
+                  summary: Invoice not in TRANSFERRED status
+                  value:
+                    detail: "Invoice must be in TRANSFERRED status to post"
+                alreadyPosting:
+                  summary: Invoice already being posted
+                  value:
+                    detail: "Invoice is already being posted (status: FBR_POSTING)"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: User not authorized to post this invoice
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                detail: "You do not have permission to post this invoice"
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Daily limit exceeded (with option to override)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyLimitWarning'
+              example:
+                warning: "Daily limit reached"
+                current_count: 100
+                daily_limit: 100
+                can_override: true
+                message: "You have reached your daily posting limit of 100 invoices. Do you want to proceed anyway?"
+        '500':
+          description: FBR posting failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostingError'
+              examples:
+                networkFailure:
+                  summary: Network failure
+                  value:
+                    success: false
+                    message: "Network failure during posting"
+                    invoice_id: "123e4567-e89b-12d3-a456-426614174000"
+                    status: "FBR_FAILED"
+                    error_code: "NETWORK_TIMEOUT"
+                    error_message: "Network failure during posting. Invoice may or may not have been accepted by FBR. Please verify manually before reposting to avoid duplicates."
+                    retry_allowed: false
+                fbrRejection:
+                  summary: FBR validation error
+                  value:
+                    success: false
+                    message: "FBR rejected the invoice"
+                    invoice_id: "123e4567-e89b-12d3-a456-426614174000"
+                    status: "FBR_FAILED"
+                    error_code: "FBR_VALIDATION_ERROR"
+                    error_message: "Invalid buyer NTN format"
+                    retry_allowed: false
+
+  /invoices/{invoice_id}/post-to-fbr/override-limit:
+    post:
+      summary: Manually post invoice with daily limit override
+      description: |
+        Post invoice even when daily limit is exceeded.
+        Requires explicit confirmation from user.
+      operationId: manualPostWithOverride
+      tags:
+        - Manual Posting
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          description: UUID of the invoice to post
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - confirm_override
+              properties:
+                confirm_override:
+                  type: boolean
+                  description: User confirmation to exceed daily limit
+                  example: true
+      responses:
+        '200':
+          description: Invoice posted successfully with limit override
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualPostingResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          description: FBR posting failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostingError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    ManualPostingResponse:
+      type: object
+      required:
+        - success
+        - message
+        - invoice_id
+        - status
+        - environment
+      properties:
+        success:
+          type: boolean
+          description: Whether posting was successful
+          example: true
+        message:
+          type: string
+          description: Human-readable message
+          example: "Invoice posted to FBR successfully"
+        invoice_id:
+          type: string
+          format: uuid
+          description: UUID of the posted invoice
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        status:
+          type: string
+          enum: [FBR_POSTING, FBR_POSTED, FBR_FAILED]
+          description: New invoice status
+          example: "FBR_POSTED"
+        fbr_reference_number:
+          type: string
+          nullable: true
+          description: FBR reference number (if successful)
+          example: "FBR-2026-001234"
+        environment:
+          type: string
+          enum: [SANDBOX, PRODUCTION]
+          description: Environment where invoice was posted
+          example: "SANDBOX"
+        posted_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp when posted (if successful)
+          example: "2026-05-01T14:30:00Z"
+
+    PostingError:
+      type: object
+      required:
+        - success
+        - message
+        - invoice_id
+        - status
+        - error_code
+        - error_message
+        - retry_allowed
+      properties:
+        success:
+          type: boolean
+          description: Always false for errors
+          example: false
+        message:
+          type: string
+          description: Human-readable error message
+          example: "FBR posting failed"
+        invoice_id:
+          type: string
+          format: uuid
+          description: UUID of the invoice
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        status:
+          type: string
+          enum: [FBR_FAILED]
+          description: New invoice status
+          example: "FBR_FAILED"
+        error_code:
+          type: string
+          description: Machine-readable error code
+          enum:
+            - NETWORK_TIMEOUT
+            - NETWORK_ERROR
+            - FBR_VALIDATION_ERROR
+            - FBR_AUTHENTICATION_ERROR
+            - FBR_RATE_LIMIT
+            - UNKNOWN_ERROR
+          example: "NETWORK_TIMEOUT"
+        error_message:
+          type: string
+          description: Detailed error message
+          example: "Network failure during posting. Invoice may or may not have been accepted by FBR."
+        retry_allowed:
+          type: boolean
+          description: Whether retry is allowed (false for network failures to prevent duplicates)
+          example: false
+        fbr_response:
+          type: object
+          nullable: true
+          description: Raw FBR API response (if available)
+          additionalProperties: true
+
+    DailyLimitWarning:
+      type: object
+      required:
+        - warning
+        - current_count
+        - daily_limit
+        - can_override
+        - message
+      properties:
+        warning:
+          type: string
+          description: Warning type
+          example: "Daily limit reached"
+        current_count:
+          type: integer
+          description: Current number of invoices posted today
+          example: 100
+        daily_limit:
+          type: integer
+          description: Configured daily limit
+          example: 100
+        can_override:
+          type: boolean
+          description: Whether user can override the limit
+          example: true
+        message:
+          type: string
+          description: Human-readable warning message
+          example: "You have reached your daily posting limit of 100 invoices. Do you want to proceed anyway?"
+
+    Error:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: Error message
+          example: "Invoice not found"
+
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            detail: "Not authenticated"
+
+    Forbidden:
+      description: User not authorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            detail: "You do not have permission to post this invoice"
+
+    NotFound:
+      description: Invoice not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            detail: "Invoice not found"
+
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            detail: "Invalid request parameters"

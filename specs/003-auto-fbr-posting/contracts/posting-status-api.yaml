@@ -1,0 +1,475 @@
+openapi: 3.0.3
+info:
+  title: Posting Status API
+  description: API endpoints for retrieving auto-posting status and statistics
+  version: 1.0.0
+  contact:
+    name: FBR Invoice Portal API
+
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local development
+  - url: https://api.example.com/api/v1
+    description: Production
+
+paths:
+  /invoices/posting-status:
+    get:
+      summary: Get posting status and statistics
+      description: |
+        Retrieve current auto-posting status, today's statistics, and next check time.
+        Used by frontend to display real-time status indicators.
+      operationId: getPostingStatus
+      tags:
+        - Posting Status
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Posting status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostingStatus'
+              examples:
+                activePosting:
+                  summary: Auto-posting active
+                  value:
+                    status: "active"
+                    status_message: "Auto-posting active"
+                    auto_posting_enabled: true
+                    current_time: "2026-05-01T14:30:00+05:00"
+                    time_window:
+                      start_time: "09:00:00"
+                      end_time: "18:00:00"
+                      is_within_window: true
+                      is_midnight_spanning: false
+                    today_statistics:
+                      date: "2026-05-01"
+                      posted_count: 45
+                      failed_count: 2
+                      daily_limit: 100
+                      remaining_limit: 55
+                    next_check_in_seconds: 180
+                    next_check_at: "2026-05-01T14:33:00+05:00"
+                    environment: "SANDBOX"
+                outsideHours:
+                  summary: Outside active hours
+                  value:
+                    status: "outside_hours"
+                    status_message: "Outside active hours (9:00 AM - 6:00 PM)"
+                    auto_posting_enabled: true
+                    current_time: "2026-05-01T20:30:00+05:00"
+                    time_window:
+                      start_time: "09:00:00"
+                      end_time: "18:00:00"
+                      is_within_window: false
+                      is_midnight_spanning: false
+                    today_statistics:
+                      date: "2026-05-01"
+                      posted_count: 87
+                      failed_count: 3
+                      daily_limit: 100
+                      remaining_limit: 13
+                    next_check_in_seconds: null
+                    next_check_at: null
+                    environment: "SANDBOX"
+                disabled:
+                  summary: Auto-posting disabled
+                  value:
+                    status: "disabled"
+                    status_message: "Auto-posting disabled"
+                    auto_posting_enabled: false
+                    current_time: "2026-05-01T14:30:00+05:00"
+                    time_window:
+                      start_time: "09:00:00"
+                      end_time: "18:00:00"
+                      is_within_window: true
+                      is_midnight_spanning: false
+                    today_statistics:
+                      date: "2026-05-01"
+                      posted_count: 0
+                      failed_count: 0
+                      daily_limit: 100
+                      remaining_limit: 100
+                    next_check_in_seconds: null
+                    next_check_at: null
+                    environment: "SANDBOX"
+                paused:
+                  summary: Temporarily paused
+                  value:
+                    status: "paused"
+                    status_message: "Paused until 2026-05-02 09:00 AM"
+                    auto_posting_enabled: true
+                    current_time: "2026-05-01T14:30:00+05:00"
+                    time_window:
+                      start_time: "09:00:00"
+                      end_time: "18:00:00"
+                      is_within_window: true
+                      is_midnight_spanning: false
+                    paused_until: "2026-05-02T09:00:00+05:00"
+                    today_statistics:
+                      date: "2026-05-01"
+                      posted_count: 25
+                      failed_count: 1
+                      daily_limit: 100
+                      remaining_limit: 75
+                    next_check_in_seconds: null
+                    next_check_at: null
+                    environment: "SANDBOX"
+                limitReached:
+                  summary: Daily limit reached
+                  value:
+                    status: "limit_reached"
+                    status_message: "Daily limit reached (100/100)"
+                    auto_posting_enabled: true
+                    current_time: "2026-05-01T14:30:00+05:00"
+                    time_window:
+                      start_time: "09:00:00"
+                      end_time: "18:00:00"
+                      is_within_window: true
+                      is_midnight_spanning: false
+                    today_statistics:
+                      date: "2026-05-01"
+                      posted_count: 100
+                      failed_count: 5
+                      daily_limit: 100
+                      remaining_limit: 0
+                    next_check_in_seconds: null
+                    next_check_at: null
+                    environment: "PRODUCTION"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /invoices/posting-history:
+    get:
+      summary: Get posting history
+      description: |
+        Retrieve paginated posting history with filters.
+        Used for analytics and troubleshooting.
+      operationId: getPostingHistory
+      tags:
+        - Posting Status
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          description: Page number (1-indexed)
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          description: Number of records per page
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: action
+          in: query
+          description: Filter by action type
+          schema:
+            type: string
+            enum: [auto, manual]
+        - name: result
+          in: query
+          description: Filter by result
+          schema:
+            type: string
+            enum: [success, failure]
+        - name: date_from
+          in: query
+          description: Filter by date range (start)
+          schema:
+            type: string
+            format: date
+        - name: date_to
+          in: query
+          description: Filter by date range (end)
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Posting history retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostingHistoryResponse'
+              example:
+                logs:
+                  - id: "log-001"
+                    invoice_id: "inv-001"
+                    invoice_number: "INV-2026-001"
+                    action: "auto"
+                    result: "success"
+                    environment: "SANDBOX"
+                    created_at: "2026-05-01T10:15:00+05:00"
+                    error_details: null
+                  - id: "log-002"
+                    invoice_id: "inv-002"
+                    invoice_number: "INV-2026-002"
+                    action: "manual"
+                    result: "failure"
+                    environment: "PRODUCTION"
+                    created_at: "2026-05-01T11:30:00+05:00"
+                    error_details:
+                      error_code: "FBR_VALIDATION_ERROR"
+                      error_message: "Invalid buyer NTN"
+                pagination:
+                  total: 150
+                  page: 1
+                  page_size: 20
+                  total_pages: 8
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    PostingStatus:
+      type: object
+      required:
+        - status
+        - status_message
+        - auto_posting_enabled
+        - current_time
+        - time_window
+        - today_statistics
+        - environment
+      properties:
+        status:
+          type: string
+          enum: [active, outside_hours, disabled, paused, limit_reached]
+          description: Current auto-posting status
+          example: "active"
+        status_message:
+          type: string
+          description: Human-readable status message
+          example: "Auto-posting active"
+        auto_posting_enabled:
+          type: boolean
+          description: Whether auto-posting is enabled
+          example: true
+        current_time:
+          type: string
+          format: date-time
+          description: Current server time (PKT timezone)
+          example: "2026-05-01T14:30:00+05:00"
+        time_window:
+          $ref: '#/components/schemas/TimeWindow'
+        paused_until:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp when pause ends (if paused)
+          example: null
+        today_statistics:
+          $ref: '#/components/schemas/TodayStatistics'
+        next_check_in_seconds:
+          type: integer
+          nullable: true
+          description: Seconds until next agent check (null if not active)
+          example: 180
+        next_check_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp of next agent check (null if not active)
+          example: "2026-05-01T14:33:00+05:00"
+        environment:
+          type: string
+          enum: [SANDBOX, PRODUCTION]
+          description: Configured FBR environment
+          example: "SANDBOX"
+
+    TimeWindow:
+      type: object
+      required:
+        - start_time
+        - end_time
+        - is_within_window
+        - is_midnight_spanning
+      properties:
+        start_time:
+          type: string
+          format: time
+          description: Start time of posting window
+          example: "09:00:00"
+        end_time:
+          type: string
+          format: time
+          description: End time of posting window
+          example: "18:00:00"
+        is_within_window:
+          type: boolean
+          description: Whether current time is within window
+          example: true
+        is_midnight_spanning:
+          type: boolean
+          description: Whether window spans midnight
+          example: false
+
+    TodayStatistics:
+      type: object
+      required:
+        - date
+        - posted_count
+        - failed_count
+        - daily_limit
+        - remaining_limit
+      properties:
+        date:
+          type: string
+          format: date
+          description: Date for these statistics (PKT timezone)
+          example: "2026-05-01"
+        posted_count:
+          type: integer
+          description: Number of invoices posted today
+          example: 45
+        failed_count:
+          type: integer
+          description: Number of invoices failed today
+          example: 2
+        daily_limit:
+          type: integer
+          description: Configured daily limit
+          example: 100
+        remaining_limit:
+          type: integer
+          description: Remaining posting capacity today
+          example: 55
+
+    PostingHistoryResponse:
+      type: object
+      required:
+        - logs
+        - pagination
+      properties:
+        logs:
+          type: array
+          items:
+            $ref: '#/components/schemas/PostingLogEntry'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    PostingLogEntry:
+      type: object
+      required:
+        - id
+        - invoice_id
+        - invoice_number
+        - action
+        - result
+        - environment
+        - created_at
+      properties:
+        id:
+          type: string
+          description: Log entry ID
+          example: "log-001"
+        invoice_id:
+          type: string
+          format: uuid
+          description: Invoice UUID
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        invoice_number:
+          type: string
+          description: Invoice number
+          example: "INV-2026-001"
+        action:
+          type: string
+          enum: [auto, manual]
+          description: How invoice was posted
+          example: "auto"
+        result:
+          type: string
+          enum: [success, failure]
+          description: Posting result
+          example: "success"
+        environment:
+          type: string
+          enum: [SANDBOX, PRODUCTION]
+          description: Environment where posted
+          example: "SANDBOX"
+        created_at:
+          type: string
+          format: date-time
+          description: When posting occurred
+          example: "2026-05-01T10:15:00+05:00"
+        error_details:
+          type: object
+          nullable: true
+          description: Error details if failed
+          properties:
+            error_code:
+              type: string
+              example: "FBR_VALIDATION_ERROR"
+            error_message:
+              type: string
+              example: "Invalid buyer NTN"
+
+    Pagination:
+      type: object
+      required:
+        - total
+        - page
+        - page_size
+        - total_pages
+      properties:
+        total:
+          type: integer
+          description: Total number of records
+          example: 150
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        page_size:
+          type: integer
+          description: Records per page
+          example: 20
+        total_pages:
+          type: integer
+          description: Total number of pages
+          example: 8
+
+    Error:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: Error message
+          example: "User not found"
+
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            detail: "Not authenticated"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            detail: "User not found"

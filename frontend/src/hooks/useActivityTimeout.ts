@@ -62,7 +62,7 @@ export function useActivityTimeout({
         headers,
       });
     } catch (error) {
-      console.error('Logout error:', error);
+      // Logout error - continue anyway
     }
 
     // SECURITY: No localStorage usage - user data is only in React state (memory)
