@@ -337,6 +337,29 @@ async def upload_excel(
         except:
             pass  # Don't fail the error response if status update fails
 
+        # Provide user-friendly error messages for common issues
+        error_message = str(e)
+
+        # Handle duplicate invoice number error
+        if "duplicate key value violates unique constraint" in error_message and "idx_unique_invoice_per_user" in error_message:
+            # Extract invoice number from error message if possible
+            import re
+            match = re.search(r'invoice_number\)=\([^,]+,\s*([^)]+)\)', error_message)
+            invoice_num = match.group(1) if match else "one or more invoices"
+
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Duplicate invoice number detected: {invoice_num} already exists in your automation invoices. Please use unique invoice numbers or delete the existing invoice from the automation dashboard before uploading again."
+            )
+
+        # Handle other database errors
+        if "psycopg2" in error_message or "sqlalchemy" in error_message.lower():
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Database error occurred while processing your upload. Please try again or contact support if the issue persists."
+            )
+
+        # Generic error for other cases
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error processing upload: {str(e)}"
