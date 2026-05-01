@@ -1,6 +1,8 @@
 """
 Excel upload API endpoints.
 """
+import os
+from pathlib import Path
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Request
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session
@@ -28,6 +30,10 @@ logger = logging.getLogger(__name__)
 
 # Rate limiter: 5 uploads per hour per IP
 limiter = Limiter(key_func=get_remote_address)
+
+# Excel upload directory
+EXCEL_UPLOAD_DIR = Path("uploads/excel")
+EXCEL_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @router.get("/template/download")
@@ -136,13 +142,29 @@ async def upload_excel(
                 detail="Excel file contains no valid invoice data"
             )
 
-        # Create upload session (no file_path - in-memory parsing)
+        # Create upload session first to get session ID
         upload_session = automation_service.create_upload_session(
             user_id=user_uuid,
             original_filename=file.filename,
             total_rows=len(invoices),
-            file_path=None  # No file storage
+            file_path=None  # Will update after saving file
         )
+
+        # Save Excel file to disk with session ID in filename
+        file_extension = Path(file.filename or "upload.xlsx").suffix
+        safe_filename = f"{upload_session.id}{file_extension}"
+        file_path = EXCEL_UPLOAD_DIR / safe_filename
+
+        # Reset file position and save to disk
+        file_bytes.seek(0)
+        with open(file_path, "wb") as f:
+            f.write(file_bytes.read())
+
+        # Update session with file path
+        upload_session.file_path = str(file_path)
+        db.add(upload_session)
+        db.commit()
+        db.refresh(upload_session)
 
         # Store invoices in database
         stored_invoices = automation_service.store_invoices_from_excel(

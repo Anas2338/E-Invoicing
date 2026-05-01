@@ -607,22 +607,18 @@ export class MasterDataService extends ApiClient {
   // All data should be fetched from local database via getAllMasterData()
 
   async getSroSchedule(rateId: number, date: string, originationSupplierCsv: number): Promise<Array<{id: string, description: string}>> {
-    console.log('[Performance] getSroSchedule removed - using local database data synced at 6am');
     return [];
   }
 
   async getSaleTypeToRate(date: string, transTypeId: number, originationSupplier: number): Promise<any[]> {
-    console.log('[Performance] getSaleTypeToRate removed - using local database data synced at 6am');
     return [];
   }
 
   async getHsUom(hsCode: string, annexureId: number): Promise<Array<{code: string, name: string}>> {
-    console.log('[Performance] getHsUom removed - using local database data synced at 6am');
     return [];
   }
 
   async getSroItemDetails(date: string, sroId: number): Promise<any[]> {
-    console.log('[Performance] getSroItemDetails removed - using local database data synced at 6am');
     return [];
   }
 }
@@ -645,7 +641,6 @@ export class FBRIntegrationService extends ApiClient {
   // REMOVED: Buyer verification causes performance issues during peak times
   // Users should manually select registration type
   async verifyBuyer(ntnCnic: string, environment: string = 'SANDBOX'): Promise<BuyerVerificationResponse> {
-    console.log('[Performance] Buyer verification removed - manual selection required');
     return {
       success: false,
       registration_type: 'Registered',
@@ -656,7 +651,6 @@ export class FBRIntegrationService extends ApiClient {
 
   // REMOVED: HS code descriptions are synced to local DB at 6am daily
   async getHSCodeDescription(hsCode: string): Promise<{ hs_code: string; description: string | null; found: boolean; message?: string }> {
-    console.log('[Performance] HS code description lookup removed - using local database data synced at 6am');
     return {
       hs_code: hsCode,
       description: null,

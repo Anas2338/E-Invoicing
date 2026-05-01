@@ -17,6 +17,7 @@ export default function DashboardPage() {
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [retryingInvoiceId, setRetryingInvoiceId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && user && !user.automation_enabled) {
@@ -109,11 +110,14 @@ export default function DashboardPage() {
 
   const handleRetry = async (invoiceId: string) => {
     try {
-      await automationApi.retryInvoice(invoiceId);
-      toast.success('Invoice reset to pending status');
+      setRetryingInvoiceId(invoiceId);
+      const response = await automationApi.retryInvoice(invoiceId);
+      toast.success('Invoice queued for retry. AI agent will process it in the next cycle.');
       loadInvoices();
-    } catch (error) {
-      toast.error('Failed to retry invoice');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to retry invoice');
+    } finally {
+      setRetryingInvoiceId(null);
     }
   };
 
@@ -167,6 +171,7 @@ export default function DashboardPage() {
             onInvoiceClick={setSelectedInvoiceId}
             onDownload={handleDownload}
             onRetry={handleRetry}
+            retryingInvoiceId={retryingInvoiceId}
           />
         </div>
       )}

@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ChevronLeft, ChevronRight, Download, Eye, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Eye, RefreshCw, Loader2 } from 'lucide-react';
 import { automationApi } from '@/services/automationApi';
 import { toast } from 'sonner';
 
@@ -43,6 +43,7 @@ interface InvoiceTableProps {
   onInvoiceClick: (invoiceId: string) => void;
   onDownload: (sessionId: string) => void;
   onRetry?: (invoiceId: string) => void;
+  retryingInvoiceId?: string | null;
 }
 
 export function InvoiceTable({
@@ -54,7 +55,8 @@ export function InvoiceTable({
   onPageChange,
   onInvoiceClick,
   onDownload,
-  onRetry
+  onRetry,
+  retryingInvoiceId
 }: InvoiceTableProps) {
   const [localFilters, setLocalFilters] = useState(filters);
 
@@ -252,7 +254,7 @@ export function InvoiceTable({
                         {invoice.invoice_number}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-[#6d7175] dark:text-[#8c9196]">
-                        {invoice.invoice_data?.customer_name || 'N/A'}
+                        {invoice.invoice_data?.buyer_business_name || 'N/A'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-[#6d7175] dark:text-[#8c9196]">
                         {formatDate(invoice.scheduled_date)} {formatTime(invoice.scheduled_time)}
@@ -273,14 +275,19 @@ export function InvoiceTable({
                             <Eye className="h-4 w-4 mr-1" />
                             View
                           </Button>
-                          {invoice.status === 'pending' && onRetry && (
+                          {(invoice.status === 'pending' || invoice.status === 'transfer_failed') && onRetry && (
                             <Button
                               onClick={() => onRetry(invoice.id)}
                               variant="ghost"
                               size="sm"
-                              className="text-[#0070f3] hover:text-[#0070f3] hover:bg-[#0070f3]/10"
+                              disabled={retryingInvoiceId === invoice.id}
+                              className="text-[#0070f3] hover:text-[#0070f3] hover:bg-[#0070f3]/10 disabled:opacity-50"
                             >
-                              <RefreshCw className="h-4 w-4 mr-1" />
+                              {retryingInvoiceId === invoice.id ? (
+                                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                              ) : (
+                                <RefreshCw className="h-4 w-4 mr-1" />
+                              )}
                               Retry
                             </Button>
                           )}

@@ -137,7 +137,8 @@ class AutomationService:
                 AutomationInvoice.scheduled_date < current_date
             )
         )
-        past_invoices = self.db.exec(statement).all()
+        past_result = self.db.execute(statement)
+        past_invoices = past_result.scalars().all()
 
         # Also check invoices scheduled for today but in the past
         statement_today = select(AutomationInvoice).where(
@@ -149,7 +150,8 @@ class AutomationService:
                 AutomationInvoice.scheduled_time < current_time
             )
         )
-        past_invoices_today = self.db.exec(statement_today).all()
+        past_today_result = self.db.execute(statement_today)
+        past_invoices_today = past_today_result.scalars().all()
 
         all_past_invoices = past_invoices + past_invoices_today
 
@@ -180,7 +182,8 @@ class AutomationService:
                 func.extract('hour', AutomationInvoice.scheduled_time) == current_hour
             )
         )
-        return self.db.exec(statement).all()
+        result = self.db.execute(statement)
+        return result.scalars().all()
 
     def get_invoice_by_id(self, invoice_id: UUID) -> Optional[AutomationInvoice]:
         """
@@ -282,7 +285,8 @@ class AutomationService:
             func.sum(func.cast(AutomationInvoice.status == 'blocked', sa.Integer)).label('blocked'),
         ).where(AutomationInvoice.user_id == user_id)
 
-        result = self.db.exec(statement).first()
+        query_result = self.db.execute(statement)
+        result = query_result.first()
 
         return {
             "total_invoices": result.total or 0,

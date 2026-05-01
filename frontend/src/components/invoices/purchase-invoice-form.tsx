@@ -246,10 +246,30 @@ export function PurchaseInvoiceForm({
       setInvoiceRefNo(initialData.invoice_ref_no || '');
       setScenarioId(initialData.scenario_id || '');
       setEnvironment(initialData.environment || 'SANDBOX');
-      setTransactionTypeId(initialData.transaction_type_id || '');
 
-      // If transaction type exists in initial data, mark as selected
-      if (initialData.transaction_type_id) {
+      // Handle transaction_type_id: if empty but items have sale_type, reverse map it
+      let resolvedTransactionTypeId = initialData.transaction_type_id || '';
+
+      if (!resolvedTransactionTypeId && initialData.items && initialData.items.length > 0 && masterData) {
+        // For transferred invoices: derive transaction_type_id from sale_type
+        const firstItemSaleType = initialData.items[0].saleType || initialData.items[0].sale_type;
+
+        if (firstItemSaleType && masterData.transaction_types) {
+          // Find transaction type whose name matches the sale_type
+          const matchingTransactionType = masterData.transaction_types.find(
+            (t: any) => t.name?.trim() === firstItemSaleType.trim()
+          );
+
+          if (matchingTransactionType) {
+            resolvedTransactionTypeId = matchingTransactionType.code;
+          }
+        }
+      }
+
+      setTransactionTypeId(resolvedTransactionTypeId);
+
+      // If transaction type exists (either from data or resolved), mark as selected
+      if (resolvedTransactionTypeId) {
         setHasSelectedTransactionType(true);
       }
 

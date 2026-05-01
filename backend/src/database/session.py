@@ -77,6 +77,7 @@ validate_database_url_security(settings.automation_database_url)
 
 # Create the main database engine
 # PERFORMANCE: Optimized for cloud databases (Neon) with high latency
+# NEON FREE TIER: Increased timeout to handle auto-suspend wake-up (3-5 seconds)
 engine = create_engine(
     settings.database_url,
     echo=settings.db_echo,  # Only log SQL queries when explicitly enabled
@@ -85,9 +86,9 @@ engine = create_engine(
     max_overflow=10,  # Allow 10 extra connections under load
     pool_recycle=300,  # Recycle connections every 5 minutes
     pool_timeout=30,  # Wait up to 30s for a connection from pool
-    # Additional security: Set connection timeout
+    # Additional configuration for Neon cloud database
     connect_args={
-        "connect_timeout": 10,  # 10 second connection timeout
+        "connect_timeout": 60,  # 60 second connection timeout for cold start
     }
 )
 
@@ -102,7 +103,7 @@ automation_engine = create_engine(
     pool_recycle=300,
     pool_timeout=30,
     connect_args={
-        "connect_timeout": 10,
+        "connect_timeout": 60,
     }
 )
 

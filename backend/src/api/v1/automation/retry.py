@@ -17,16 +17,17 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.post("/automation/retry/{invoice_id}")
+@router.post("/invoice/{invoice_id}/retry")
 async def retry_failed_invoice(
     invoice_id: UUID,
     automation_db: Session = Depends(get_automation_db),
     user_id: str = Depends(require_authentication)
 ):
     """
-    Retry a failed automation invoice.
+    Retry a failed or transfer_failed automation invoice.
 
     This endpoint allows users to retry invoices that failed during automation processing.
+    The invoice status will be reset to VALIDATED so the AI agent can pick it up in the next processing cycle.
     """
     # Get the invoice
     statement = select(AutomationInvoice).where(
@@ -42,15 +43,17 @@ async def retry_failed_invoice(
         )
 
     # Check if invoice is in a retryable state
-    if invoice.status not in [AutomationInvoiceStatus.FAILED, AutomationInvoiceStatus.TRANSFER_FAILED]:
+    if invoice.status not in [AutomationInvoiceStatus.FAILED, AutomationInvoiceStatus.TRANSFER_FAILED, AutomationInvoiceStatus.PENDING]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invoice cannot be retried. Current status: {invoice.status}"
         )
 
     # Reset invoice to validated status for retry
+    from datetime import datetime
     invoice.status = AutomationInvoiceStatus.VALIDATED
     invoice.retry_count = (invoice.retry_count or 0) + 1
+    invoice.last_retry_at = datetime.utcnow()
     invoice.validation_errors = None
     invoice.transfer_error = None
 
@@ -58,11 +61,11 @@ async def retry_failed_invoice(
     automation_db.commit()
     automation_db.refresh(invoice)
 
-    logger.info(f"Invoice {invoice_id} reset for retry by user {user_id}")
+    logger.info(f"Invoice {invoice_id} reset for retry by user {user_id}. Retry count: {invoice.retry_count}")
 
     return {
         "success": True,
-        "message": "Invoice reset for retry",
+        "message": f"Invoice queued for retry. AI agent will process it in the next cycle (every 5 minutes).",
         "invoice_id": str(invoice.id),
         "retry_count": invoice.retry_count,
         "status": invoice.status

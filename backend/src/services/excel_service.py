@@ -247,9 +247,19 @@ class ExcelService:
         """
         try:
             # Read Excel file (pandas handles both str and BytesIO)
+            # Force hs_code and tax_rate to be read as strings to preserve formatting
             # Wrap in try-except to catch memory errors during large file parsing
             try:
-                df = pd.read_excel(file_source, engine='openpyxl')
+                df = pd.read_excel(
+                    file_source,
+                    engine='openpyxl',
+                    dtype={
+                        'hs_code': str,
+                        'tax_rate': str,
+                        'sro_schedule_no': str,
+                        'sro_item_serial_no': str
+                    }
+                )
             except MemoryError:
                 raise MemoryError(
                     "File is too large to process in memory. "
@@ -312,6 +322,7 @@ class ExcelService:
                         "hs_code": str(row['hs_code']).strip() if pd.notna(row['hs_code']) else "",
                         "product_description": str(row['product_description']).strip() if pd.notna(row['product_description']) else "",
                         "rate": str(row['tax_rate']).strip() if pd.notna(row['tax_rate']) else "18",
+                        "tax_rate": str(row['tax_rate']).strip() if pd.notna(row['tax_rate']) else "18",  # For frontend display
                         "uom": str(row['uom']).strip() if pd.notna(row['uom']) else "NOS",
                         "quantity": quantity,
                         "total_values": total_values,

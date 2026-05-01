@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { adminApi, PendingUser } from '@/services/adminApi';
-import { CheckCircle, XCircle, Trash2, RefreshCw } from 'lucide-react';
+import { CheckCircle, XCircle, Trash2, RefreshCw, Search, Filter, X } from 'lucide-react';
 
 export default function AdminUsersPage() {
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
@@ -14,6 +14,14 @@ export default function AdminUsersPage() {
   const [rejectionReason, setRejectionReason] = useState<{ [key: string]: string }>({});
   const [showRejectModal, setShowRejectModal] = useState<string | null>(null);
   const [togglingAutomation, setTogglingAutomation] = useState<string | null>(null);
+
+  // Filter states
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [automationFilter, setAutomationFilter] = useState<string>('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {
     loadUsers();
@@ -29,8 +37,6 @@ export default function AdminUsersPage() {
         setPendingUsers(response.users);
       } else {
         const response = await adminApi.getAllUsers();
-        console.log('All Users Response:', response);
-        console.log('First user automation_enabled:', response.users[0]?.automation_enabled);
         setAllUsers(response.users);
       }
     } catch (err) {
@@ -39,6 +45,59 @@ export default function AdminUsersPage() {
       setLoading(false);
     }
   };
+
+  // Filter users based on search and filters
+  const filteredUsers = useMemo(() => {
+    const users = activeTab === 'pending' ? pendingUsers : allUsers;
+
+    return users.filter((user) => {
+      // Search filter (name or email)
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const matchesName = user.name?.toLowerCase().includes(query);
+        const matchesEmail = user.email.toLowerCase().includes(query);
+        if (!matchesName && !matchesEmail) return false;
+      }
+
+      // Status filter (only for "all" tab)
+      if (activeTab === 'all' && statusFilter !== 'all') {
+        if (user.account_status !== statusFilter) return false;
+      }
+
+      // Automation filter (only for "all" tab)
+      if (activeTab === 'all' && automationFilter !== 'all') {
+        const isEnabled = user.automation_enabled === true;
+        if (automationFilter === 'enabled' && !isEnabled) return false;
+        if (automationFilter === 'disabled' && isEnabled) return false;
+      }
+
+      // Date range filter
+      if (dateFrom) {
+        const userDate = new Date(user.created_at);
+        const fromDate = new Date(dateFrom);
+        if (userDate < fromDate) return false;
+      }
+
+      if (dateTo) {
+        const userDate = new Date(user.created_at);
+        const toDate = new Date(dateTo);
+        toDate.setHours(23, 59, 59, 999); // Include the entire day
+        if (userDate > toDate) return false;
+      }
+
+      return true;
+    });
+  }, [pendingUsers, allUsers, activeTab, searchQuery, statusFilter, automationFilter, dateFrom, dateTo]);
+
+  const clearFilters = () => {
+    setSearchQuery('');
+    setStatusFilter('all');
+    setAutomationFilter('all');
+    setDateFrom('');
+    setDateTo('');
+  };
+
+  const hasActiveFilters = searchQuery || statusFilter !== 'all' || automationFilter !== 'all' || dateFrom || dateTo;
 
   const handleApprove = async (userId: string) => {
     try {
@@ -117,7 +176,7 @@ export default function AdminUsersPage() {
     }
   };
 
-  const users = activeTab === 'pending' ? pendingUsers : allUsers;
+  const users = filteredUsers;
 
   return (
     <div className="container mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8">
@@ -156,16 +215,149 @@ export default function AdminUsersPage() {
         </div>
       </div>
 
-      {/* Refresh Button */}
-      <div className="mb-4 flex justify-end">
-        <button
-          onClick={loadUsers}
-          disabled={loading}
-          className="flex items-center gap-2 px-3 sm:px-4 py-2 text-sm sm:text-base bg-[#008060] dark:bg-[#00a876] text-white rounded-lg hover:bg-[#006e52] dark:hover:bg-[#008f64] disabled:opacity-50 transition-colors"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          <span className="hidden sm:inline">Refresh</span>
-        </button>
+      {/* Search and Filter Bar */}
+      <div className="mb-4 space-y-3">
+        <div className="flex flex-col gap-3">
+          {/* Search Input */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-[#6d7175] dark:text-[#8c9196]" />
+            <input
+              type="text"
+              placeholder="Search by name or email..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 text-sm border border-[#c9cccf] dark:border-[#2e2e2e] rounded-lg bg-white dark:bg-[#1a1a1a] text-[#202223] dark:text-[#e3e3e3] placeholder-[#6d7175] dark:placeholder-[#8c9196] focus:outline-none focus:ring-2 focus:ring-[#008060] dark:focus:ring-[#00a876]"
+            />
+          </div>
+
+          {/* Action Buttons Row */}
+          <div className="flex gap-2">
+            {/* Filter Toggle Button */}
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors ${
+                showFilters || hasActiveFilters
+                  ? 'bg-[#008060] dark:bg-[#00a876] text-white'
+                  : 'bg-white dark:bg-[#1a1a1a] border border-[#c9cccf] dark:border-[#2e2e2e] text-[#202223] dark:text-[#e3e3e3] hover:bg-[#f6f6f7] dark:hover:bg-[#2e2e2e]'
+              }`}
+            >
+              <Filter className="w-4 h-4" />
+              <span>Filters</span>
+              {hasActiveFilters && (
+                <span className="ml-1 px-1.5 py-0.5 text-xs bg-white/20 rounded font-semibold">
+                  {[searchQuery, statusFilter !== 'all', automationFilter !== 'all', dateFrom, dateTo].filter(Boolean).length}
+                </span>
+              )}
+            </button>
+
+            {/* Refresh Button */}
+            <button
+              onClick={loadUsers}
+              disabled={loading}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium bg-[#008060] dark:bg-[#00a876] text-white rounded-lg hover:bg-[#006e52] dark:hover:bg-[#008f64] disabled:opacity-50 transition-colors"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Advanced Filters Panel */}
+        {showFilters && (
+          <div className="bg-white dark:bg-[#1a1a1a] border border-[#c9cccf] dark:border-[#2e2e2e] rounded-lg p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3]">Advanced Filters</h3>
+              {hasActiveFilters && (
+                <button
+                  onClick={clearFilters}
+                  className="flex items-center gap-1 text-xs text-[#008060] dark:text-[#00a876] hover:underline font-medium"
+                >
+                  <X className="w-3 h-3" />
+                  Clear all
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              {/* Status Filter (only for "all" tab) */}
+              {activeTab === 'all' && (
+                <div>
+                  <label className="block text-xs font-medium text-[#6d7175] dark:text-[#8c9196] mb-1.5">
+                    Status
+                  </label>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="w-full px-3 py-2.5 text-sm border border-[#c9cccf] dark:border-[#2e2e2e] rounded-lg bg-white dark:bg-[#1a1a1a] text-[#202223] dark:text-[#e3e3e3] focus:outline-none focus:ring-2 focus:ring-[#008060] dark:focus:ring-[#00a876]"
+                  >
+                    <option value="all">All Statuses</option>
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Automation Filter (only for "all" tab) */}
+              {activeTab === 'all' && (
+                <div>
+                  <label className="block text-xs font-medium text-[#6d7175] dark:text-[#8c9196] mb-1.5">
+                    Automation Access
+                  </label>
+                  <select
+                    value={automationFilter}
+                    onChange={(e) => setAutomationFilter(e.target.value)}
+                    className="w-full px-3 py-2.5 text-sm border border-[#c9cccf] dark:border-[#2e2e2e] rounded-lg bg-white dark:bg-[#1a1a1a] text-[#202223] dark:text-[#e3e3e3] focus:outline-none focus:ring-2 focus:ring-[#008060] dark:focus:ring-[#00a876]"
+                  >
+                    <option value="all">All Users</option>
+                    <option value="enabled">Enabled</option>
+                    <option value="disabled">Disabled</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Date Range Filters */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Date From */}
+                <div>
+                  <label className="block text-xs font-medium text-[#6d7175] dark:text-[#8c9196] mb-1.5">
+                    Registered From
+                  </label>
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="w-full px-3 py-2.5 text-sm border border-[#c9cccf] dark:border-[#2e2e2e] rounded-lg bg-white dark:bg-[#1a1a1a] text-[#202223] dark:text-[#e3e3e3] focus:outline-none focus:ring-2 focus:ring-[#008060] dark:focus:ring-[#00a876]"
+                  />
+                </div>
+
+                {/* Date To */}
+                <div>
+                  <label className="block text-xs font-medium text-[#6d7175] dark:text-[#8c9196] mb-1.5">
+                    Registered To
+                  </label>
+                  <input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="w-full px-3 py-2.5 text-sm border border-[#c9cccf] dark:border-[#2e2e2e] rounded-lg bg-white dark:bg-[#1a1a1a] text-[#202223] dark:text-[#e3e3e3] focus:outline-none focus:ring-2 focus:ring-[#008060] dark:focus:ring-[#00a876]"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Results Count */}
+            <div className="pt-3 border-t border-[#e1e3e5] dark:border-[#2e2e2e]">
+              <p className="text-xs text-[#6d7175] dark:text-[#8c9196]">
+                Showing <span className="font-semibold text-[#202223] dark:text-[#e3e3e3]">{users.length}</span> of{' '}
+                <span className="font-semibold text-[#202223] dark:text-[#e3e3e3]">
+                  {activeTab === 'pending' ? pendingUsers.length : allUsers.length}
+                </span>{' '}
+                users
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Error Message */}
@@ -226,10 +418,7 @@ export default function AdminUsersPage() {
                       <div>
                         <div className="text-xs text-[#6d7175] dark:text-[#8c9196] mb-2">Automation</div>
                         <button
-                          onClick={() => {
-                            console.log('Toggle clicked for user:', user.id, 'Current status:', user.automation_enabled);
-                            handleToggleAutomation(user.id, user.automation_enabled);
-                          }}
+                          onClick={() => handleToggleAutomation(user.id, user.automation_enabled)}
                           disabled={togglingAutomation === user.id || user.account_status !== 'approved'}
                           className={`w-full px-4 py-2 text-xs font-semibold rounded-lg transition-all duration-200 border-2 ${
                             user.automation_enabled
@@ -337,10 +526,7 @@ export default function AdminUsersPage() {
                         </td>
                         <td className="px-4 lg:px-6 py-4 whitespace-nowrap">
                           <button
-                            onClick={() => {
-                              console.log('Toggle clicked for user:', user.id, 'Current status:', user.automation_enabled);
-                              handleToggleAutomation(user.id, user.automation_enabled);
-                            }}
+                            onClick={() => handleToggleAutomation(user.id, user.automation_enabled)}
                             disabled={togglingAutomation === user.id || user.account_status !== 'approved'}
                             className={`px-3 lg:px-4 py-2 text-xs font-semibold rounded-lg transition-all duration-200 border-2 cursor-pointer ${
                               user.automation_enabled

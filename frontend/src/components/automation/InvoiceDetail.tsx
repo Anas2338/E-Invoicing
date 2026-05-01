@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { automationApi } from '@/services/automationApi';
 import { Ban, Trash2, CheckCircle } from 'lucide-react';
-import { PrintInvoiceButton } from './PrintInvoiceButton';
 
 interface InvoiceDetailProps {
   invoiceId: string;
@@ -199,11 +198,6 @@ export default function InvoiceDetail({ invoiceId, onClose, onUpdate }: InvoiceD
 
       {/* Action Buttons */}
       <div className="flex gap-2">
-        <PrintInvoiceButton
-          invoiceId={invoice.id}
-          invoiceNumber={invoice.invoice_number}
-          status={invoice.status}
-        />
         {canBlock && (
           <button
             onClick={handleBlockInvoice}
@@ -321,41 +315,203 @@ export default function InvoiceDetail({ invoiceId, onClose, onUpdate }: InvoiceD
 
       {/* Invoice Data */}
       <div className="bg-white dark:bg-[#1a1a1a] border border-[#e1e3e5] dark:border-[#2e2e2e] rounded-xl p-6">
-        <h3 className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] mb-3">Invoice Data</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+        <h3 className="text-lg font-semibold text-[#202223] dark:text-[#e3e3e3] mb-4">Invoice Information</h3>
+
+        {/* Basic Invoice Info */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 pb-6 border-b border-[#e1e3e5] dark:border-[#2e2e2e]">
           <div>
-            <div className="text-[#6d7175] dark:text-[#8c9196]">Seller</div>
-            <div className="font-semibold text-[#202223] dark:text-[#e3e3e3]">
-              {invoice.invoice_data.seller_business_name}
-            </div>
-            <div className="text-[#6d7175] dark:text-[#8c9196] text-xs">
-              NTN: {invoice.invoice_data.seller_ntn_cnic}
+            <div className="text-xs text-[#6d7175] dark:text-[#8c9196] mb-1">Invoice Type</div>
+            <div className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3]">
+              {invoice.invoice_data.invoice_type || 'N/A'}
             </div>
           </div>
           <div>
-            <div className="text-[#6d7175] dark:text-[#8c9196]">Buyer</div>
-            <div className="font-semibold text-[#202223] dark:text-[#e3e3e3]">
-              {invoice.invoice_data.buyer_business_name}
+            <div className="text-xs text-[#6d7175] dark:text-[#8c9196] mb-1">Invoice Date</div>
+            <div className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3]">
+              {invoice.invoice_data.invoice_date || 'N/A'}
             </div>
-            <div className="text-[#6d7175] dark:text-[#8c9196] text-xs">
-              NTN: {invoice.invoice_data.buyer_ntn_cnic}
+          </div>
+          <div>
+            <div className="text-xs text-[#6d7175] dark:text-[#8c9196] mb-1">Environment</div>
+            <div className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3]">
+              {invoice.invoice_data.environment || 'N/A'}
             </div>
           </div>
         </div>
 
+        {/* Seller Information */}
+        <div className="mb-6 pb-6 border-b border-[#e1e3e5] dark:border-[#2e2e2e]">
+          <h4 className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] mb-3">Seller Information</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div>
+              <div className="text-xs text-[#6d7175] dark:text-[#8c9196] mb-1">Business Name</div>
+              <div className="font-semibold text-[#202223] dark:text-[#e3e3e3]">
+                {invoice.invoice_data.seller_business_name || 'N/A'}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-[#6d7175] dark:text-[#8c9196] mb-1">NTN/CNIC</div>
+              <div className="font-semibold text-[#202223] dark:text-[#e3e3e3]">
+                {invoice.invoice_data.seller_ntn_cnic || 'N/A'}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-[#6d7175] dark:text-[#8c9196] mb-1">Province</div>
+              <div className="text-sm text-[#202223] dark:text-[#e3e3e3]">
+                {invoice.invoice_data.seller_province || 'N/A'}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-[#6d7175] dark:text-[#8c9196] mb-1">Address</div>
+              <div className="text-sm text-[#202223] dark:text-[#e3e3e3]">
+                {invoice.invoice_data.seller_address || 'N/A'}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Buyer Information */}
+        <div className="mb-6 pb-6 border-b border-[#e1e3e5] dark:border-[#2e2e2e]">
+          <h4 className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] mb-3">Buyer Information</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div>
+              <div className="text-xs text-[#6d7175] dark:text-[#8c9196] mb-1">Business Name</div>
+              <div className="font-semibold text-[#202223] dark:text-[#e3e3e3]">
+                {invoice.invoice_data.buyer_business_name || 'N/A'}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-[#6d7175] dark:text-[#8c9196] mb-1">NTN/CNIC</div>
+              <div className="font-semibold text-[#202223] dark:text-[#e3e3e3]">
+                {invoice.invoice_data.buyer_ntn_cnic || 'N/A'}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-[#6d7175] dark:text-[#8c9196] mb-1">Province</div>
+              <div className="text-sm text-[#202223] dark:text-[#e3e3e3]">
+                {invoice.invoice_data.buyer_province || 'N/A'}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-[#6d7175] dark:text-[#8c9196] mb-1">Address</div>
+              <div className="text-sm text-[#202223] dark:text-[#e3e3e3]">
+                {invoice.invoice_data.buyer_address || 'N/A'}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-[#6d7175] dark:text-[#8c9196] mb-1">Registration Type</div>
+              <div className="text-sm text-[#202223] dark:text-[#e3e3e3]">
+                {invoice.invoice_data.buyer_registration_type || 'N/A'}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Items Details */}
         {invoice.invoice_data.items && invoice.invoice_data.items.length > 0 && (
-          <div className="mt-4">
-            <div className="text-[#6d7175] dark:text-[#8c9196] mb-2">Items</div>
-            <div className="space-y-2">
+          <div>
+            <h4 className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] mb-3">
+              Items ({invoice.invoice_data.items.length})
+            </h4>
+            <div className="space-y-4">
               {invoice.invoice_data.items.map((item: any, idx: number) => (
-                <div key={idx} className="bg-[#f6f6f7] dark:bg-[#2e2e2e] p-3 rounded-xl">
-                  <div className="font-semibold text-[#202223] dark:text-[#e3e3e3]">
-                    {item.product_description}
+                <div key={idx} className="bg-[#f6f6f7] dark:bg-[#2e2e2e] p-4 rounded-xl border border-[#e1e3e5] dark:border-[#404040]">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex-1">
+                      <div className="font-semibold text-[#202223] dark:text-[#e3e3e3] mb-1">
+                        {item.product_description || 'N/A'}
+                      </div>
+                      <div className="text-xs text-[#6d7175] dark:text-[#8c9196]">
+                        HS Code: {item.hs_code || 'N/A'}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-bold text-[#202223] dark:text-[#e3e3e3]">
+                        PKR {item.total_values?.toLocaleString() || '0'}
+                      </div>
+                      <div className="text-xs text-[#6d7175] dark:text-[#8c9196]">Total Value</div>
+                    </div>
                   </div>
-                  <div className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
-                    Quantity: {item.quantity} {item.uom} | Total: PKR{' '}
-                    {item.total_values?.toLocaleString()} | Tax: PKR{' '}
-                    {item.sales_tax_applicable?.toLocaleString()}
+
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 text-xs">
+                    <div>
+                      <div className="text-[#6d7175] dark:text-[#8c9196]">Quantity</div>
+                      <div className="font-semibold text-[#202223] dark:text-[#e3e3e3]">
+                        {item.quantity || 0} {item.uom || ''}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[#6d7175] dark:text-[#8c9196]">Tax Rate</div>
+                      <div className="font-semibold text-[#202223] dark:text-[#e3e3e3]">
+                        {item.tax_rate || 0}%
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[#6d7175] dark:text-[#8c9196]">Sales Tax</div>
+                      <div className="font-semibold text-[#202223] dark:text-[#e3e3e3]">
+                        PKR {item.sales_tax_applicable?.toLocaleString() || '0'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[#6d7175] dark:text-[#8c9196]">Value Excl. ST</div>
+                      <div className="font-semibold text-[#202223] dark:text-[#e3e3e3]">
+                        PKR {item.value_sales_excluding_st?.toLocaleString() || '0'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[#6d7175] dark:text-[#8c9196]">ST Withheld</div>
+                      <div className="font-semibold text-[#202223] dark:text-[#e3e3e3]">
+                        PKR {item.sales_tax_withheld_at_source?.toLocaleString() || '0'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[#6d7175] dark:text-[#8c9196]">Extra Tax</div>
+                      <div className="font-semibold text-[#202223] dark:text-[#e3e3e3]">
+                        PKR {item.extra_tax?.toLocaleString() || '0'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[#6d7175] dark:text-[#8c9196]">Further Tax</div>
+                      <div className="font-semibold text-[#202223] dark:text-[#e3e3e3]">
+                        PKR {item.further_tax?.toLocaleString() || '0'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[#6d7175] dark:text-[#8c9196]">FED Payable</div>
+                      <div className="font-semibold text-[#202223] dark:text-[#e3e3e3]">
+                        PKR {item.fed_payable?.toLocaleString() || '0'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[#6d7175] dark:text-[#8c9196]">Discount</div>
+                      <div className="font-semibold text-[#202223] dark:text-[#e3e3e3]">
+                        PKR {item.discount?.toLocaleString() || '0'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[#6d7175] dark:text-[#8c9196]">Fixed/Retail Price</div>
+                      <div className="font-semibold text-[#202223] dark:text-[#e3e3e3]">
+                        PKR {item.fixed_notified_value_or_retail_price?.toLocaleString() || '0'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[#6d7175] dark:text-[#8c9196]">Sale Type</div>
+                      <div className="font-semibold text-[#202223] dark:text-[#e3e3e3]">
+                        {item.sale_type || 'N/A'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[#6d7175] dark:text-[#8c9196]">SRO Schedule No</div>
+                      <div className="font-semibold text-[#202223] dark:text-[#e3e3e3]">
+                        {item.sro_schedule_no || 'N/A'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[#6d7175] dark:text-[#8c9196]">SRO Item Serial No</div>
+                      <div className="font-semibold text-[#202223] dark:text-[#e3e3e3]">
+                        {item.sro_item_serial_no || 'N/A'}
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}

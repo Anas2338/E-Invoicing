@@ -8,8 +8,8 @@ import logging
 from contextlib import contextmanager
 from typing import Generator
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import QueuePool
+from sqlmodel import Session
 
 from config import config
 
@@ -27,13 +27,6 @@ engine = create_engine(
     echo=False  # Set to True for SQL query logging in development
 )
 
-# Create session factory
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine
-)
-
 logger.info("AI Agent: Database connection pool initialized")
 logger.info(f"  Pool size: {config.DB_POOL_SIZE}")
 logger.info(f"  Max overflow: {config.DB_MAX_OVERFLOW}")
@@ -44,19 +37,19 @@ logger.info(f"  Pre-ping enabled: {config.DB_POOL_PRE_PING}")
 @contextmanager
 def get_db_session() -> Generator[Session, None, None]:
     """
-    Context manager for database sessions.
+    Context manager for database sessions using SQLModel.
 
     Ensures session is properly closed after use and handles
     transaction management (commit on success, rollback on error).
 
     Yields:
-        Database session
+        SQLModel Session with exec() method support
 
     Example:
         with get_db_session() as db:
-            invoices = db.query(AutomationInvoice).all()
+            invoices = db.exec(select(AutomationInvoice)).all()
     """
-    session = SessionLocal()
+    session = Session(engine)
     try:
         yield session
         session.commit()

@@ -98,6 +98,7 @@ class TransferService:
             user_id=automation_invoice.user_id,
             invoice_type=invoice_data.get("invoice_type", "Sale Invoice"),
             invoice_date=invoice_data.get("invoice_date"),
+            transaction_type_id=invoice_data.get("transaction_type_id"),
             seller_ntn_cnic=invoice_data.get("seller_ntn_cnic"),
             seller_business_name=invoice_data.get("seller_business_name"),
             seller_province=invoice_data.get("seller_province"),
@@ -144,7 +145,19 @@ class TransferService:
             Invoice.user_id == user_id,
             Invoice.automation_invoice_id == automation_invoice_id
         )
-        existing = main_db.exec(statement).first()
+
+        # DEBUG: Log which database we're querying
+        import logging
+        logger = logging.getLogger(__name__)
+        try:
+            db_url = str(main_db.bind.url)
+            logger.info(f"[DEBUG] Checking duplicate in database: {db_url.split('@')[1].split('/')[0] if '@' in db_url else 'unknown'}")
+        except:
+            logger.info("[DEBUG] Could not determine database URL")
+
+        # Use execute() for compatibility with both SQLModel and SQLAlchemy Session
+        result = main_db.execute(statement)
+        existing = result.scalars().first()
         return existing is not None
 
     def cleanup_excel_files_for_completed_sessions(self, automation_db: Session) -> int:

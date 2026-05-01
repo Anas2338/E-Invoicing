@@ -46,6 +46,20 @@ from skills.retry_manager import RetryManagerSkill
 from config import config
 from database import get_db_session, test_database_connection
 
+# Configure logging with UTF-8 encoding for Windows compatibility
+logging.basicConfig(
+    level=getattr(logging, config.LOG_LEVEL),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+
+# Set UTF-8 encoding for stdout on Windows to handle Unicode characters
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+
 logger = logging.getLogger(__name__)
 
 
@@ -140,10 +154,11 @@ class AIAgent:
 
             # Import transfer service
             from src.services.transfer_service import TransferService
+            from src.database.session import get_db_session as get_main_db_session
             import asyncio
 
             with get_db_session() as automation_db:
-                with get_db_session() as main_db:
+                with get_main_db_session() as main_db:
                     # Convert UTC to PKT (Pakistan Time, UTC+5)
                     now_utc = datetime.utcnow()
                     now_pkt = now_utc + timedelta(hours=5)  # PKT is UTC+5
@@ -237,7 +252,7 @@ class AIAgent:
                             automation_db.commit()
 
                             transferred_count += 1
-                            logger.info(f"✓ Transferred invoice {invoice.invoice_number} -> Main DB ID: {manual_invoice.id}")
+                            logger.info(f"[SUCCESS] Transferred invoice {invoice.invoice_number} -> Main DB ID: {manual_invoice.id}")
 
                         except Exception as e:
                             # Rollback both sessions
@@ -246,7 +261,7 @@ class AIAgent:
 
                             error_type = transfer_service.classify_error(e)
                             error_details = f"[{error_type}] {type(e).__name__}: {str(e)}"
-                            logger.error(f"✗ Transfer failed for invoice {invoice.invoice_number}: {error_details}")
+                            logger.error(f"[FAILED] Transfer failed for invoice {invoice.invoice_number}: {error_details}")
 
                             # Mark as failed
                             invoice.status = AutomationInvoiceStatus.TRANSFER_FAILED
@@ -257,9 +272,9 @@ class AIAgent:
                             failed_count += 1
 
                     logger.info("AI Agent: Invoice processing cycle completed")
-                    logger.info(f"  ✓ Invoices transferred: {transferred_count}")
-                    logger.info(f"  ✗ Invoices failed: {failed_count}")
-                    logger.info(f"  → Check http://localhost:3000/invoices/history for transferred invoices")
+                    logger.info(f"  [OK] Invoices transferred: {transferred_count}")
+                    logger.info(f"  [FAIL] Invoices failed: {failed_count}")
+                    logger.info(f"  -> Check http://localhost:3000/invoices/history for transferred invoices")
                     logger.info("=" * 80)
 
         except Exception as e:

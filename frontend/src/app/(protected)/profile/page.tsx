@@ -234,7 +234,6 @@ export default function ProfilePage() {
           Total Records: ${result.result.total_records}
           Changes Detected: ${result.result.total_changes}
         `;
-        console.log('Sync Summary:', summary);
       }
     } catch (err) {
       if (err instanceof Error) {

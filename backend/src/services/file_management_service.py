@@ -33,19 +33,21 @@ class FileManagementService:
             List of upload session dictionaries with counts
         """
         # Query all sessions for the user
-        sessions = self.db.exec(
+        result = self.db.execute(
             select(ExcelUploadSession)
             .where(ExcelUploadSession.user_id == user_id)
             .order_by(ExcelUploadSession.upload_timestamp.desc())
-        ).all()
+        )
+        sessions = result.scalars().all()
 
         result = []
         for session in sessions:
             # Count invoices by status for this session
-            invoices = self.db.exec(
+            invoices_result = self.db.execute(
                 select(AutomationInvoice)
                 .where(AutomationInvoice.excel_upload_session_id == session.id)
-            ).all()
+            )
+            invoices = invoices_result.scalars().all()
 
             pending_count = sum(1 for inv in invoices if inv.status == "pending")
             transferred_count = sum(1 for inv in invoices if inv.status == "transferred")
@@ -100,7 +102,7 @@ class FileManagementService:
             HTTPException: If session not found
         """
         # Verify session exists and belongs to user
-        session = self.db.exec(
+        result = self.db.execute(
             select(ExcelUploadSession)
             .where(
                 and_(
@@ -108,7 +110,8 @@ class FileManagementService:
                     ExcelUploadSession.user_id == user_id
                 )
             )
-        ).first()
+        )
+        session = result.scalars().first()
 
         if not session:
             raise HTTPException(
@@ -146,7 +149,7 @@ class FileManagementService:
             return True, 0, "Excel file deleted successfully"
 
         # Check for transferred invoices
-        transferred_count = self.db.exec(
+        transferred_result = self.db.execute(
             select(func.count(AutomationInvoice.id))
             .where(
                 and_(
@@ -154,7 +157,8 @@ class FileManagementService:
                     AutomationInvoice.status == "transferred"
                 )
             )
-        ).one()
+        )
+        transferred_count = transferred_result.scalar()
 
         if transferred_count > 0:
             raise HTTPException(
@@ -163,10 +167,11 @@ class FileManagementService:
             )
 
         # Get all invoices for this session
-        invoices = self.db.exec(
+        invoices_result = self.db.execute(
             select(AutomationInvoice)
             .where(AutomationInvoice.excel_upload_session_id == session.id)
-        ).all()
+        )
+        invoices = invoices_result.scalars().all()
 
         deleted_count = len(invoices)
 
@@ -209,7 +214,7 @@ class FileManagementService:
         Raises:
             HTTPException: If invoice not found or already transferred
         """
-        invoice = self.db.exec(
+        invoice_result = self.db.execute(
             select(AutomationInvoice)
             .where(
                 and_(
@@ -217,7 +222,8 @@ class FileManagementService:
                     AutomationInvoice.user_id == user_id
                 )
             )
-        ).first()
+        )
+        invoice = invoice_result.scalars().first()
 
         if not invoice:
             raise HTTPException(
@@ -268,7 +274,7 @@ class FileManagementService:
         Raises:
             HTTPException: If invoice not found or not blocked
         """
-        invoice = self.db.exec(
+        invoice_result = self.db.execute(
             select(AutomationInvoice)
             .where(
                 and_(
@@ -276,7 +282,8 @@ class FileManagementService:
                     AutomationInvoice.user_id == user_id
                 )
             )
-        ).first()
+        )
+        invoice = invoice_result.scalars().first()
 
         if not invoice:
             raise HTTPException(
@@ -326,7 +333,7 @@ class FileManagementService:
         Raises:
             HTTPException: If invoice not found or already transferred
         """
-        invoice = self.db.exec(
+        invoice_result = self.db.execute(
             select(AutomationInvoice)
             .where(
                 and_(
@@ -334,7 +341,8 @@ class FileManagementService:
                     AutomationInvoice.user_id == user_id
                 )
             )
-        ).first()
+        )
+        invoice = invoice_result.scalars().first()
 
         if not invoice:
             raise HTTPException(

@@ -215,6 +215,7 @@ def list_invoices(
             user_id=inv.user_id,
             invoice_type=inv.invoice_type,
             invoice_date=inv.invoice_date,
+            transaction_type_id=inv.transaction_type_id,
             seller_ntn_cnic=inv.seller_ntn_cnic,
             seller_business_name=inv.seller_business_name,
             seller_province=inv.seller_province,
@@ -234,7 +235,10 @@ def list_invoices(
             validated_at=inv.validated_at,
             posted_at=inv.posted_at,
             fbr_reference_number=inv.fbr_reference_number,
-            validation_errors=inv.validation_errors
+            validation_errors=inv.validation_errors,
+            source=inv.source,
+            transferred_at=inv.transferred_at,
+            automation_invoice_id=inv.automation_invoice_id
         )
         for inv in invoices
     ]
@@ -287,6 +291,7 @@ async def update_invoice(
         user_id=updated_invoice.user_id,
         invoice_type=updated_invoice.invoice_type,
         invoice_date=updated_invoice.invoice_date,
+        transaction_type_id=updated_invoice.transaction_type_id,
         seller_ntn_cnic=updated_invoice.seller_ntn_cnic,
         seller_business_name=updated_invoice.seller_business_name,
         seller_province=updated_invoice.seller_province,
@@ -306,7 +311,10 @@ async def update_invoice(
         validated_at=updated_invoice.validated_at,
         posted_at=updated_invoice.posted_at,
         fbr_reference_number=updated_invoice.fbr_reference_number,
-        validation_errors=updated_invoice.validation_errors
+        validation_errors=updated_invoice.validation_errors,
+        source=updated_invoice.source,
+        transferred_at=updated_invoice.transferred_at,
+        automation_invoice_id=updated_invoice.automation_invoice_id
     )
 
 
@@ -413,6 +421,7 @@ def update_invoice_status(
         user_id=updated_invoice.user_id,
         invoice_type=updated_invoice.invoice_type,
         invoice_date=updated_invoice.invoice_date,
+        transaction_type_id=updated_invoice.transaction_type_id,
         seller_ntn_cnic=updated_invoice.seller_ntn_cnic,
         seller_business_name=updated_invoice.seller_business_name,
         seller_province=updated_invoice.seller_province,
@@ -432,10 +441,11 @@ def update_invoice_status(
         validated_at=updated_invoice.validated_at,
         posted_at=updated_invoice.posted_at,
         fbr_reference_number=updated_invoice.fbr_reference_number,
-        validation_errors=updated_invoice.validation_errors
+        validation_errors=updated_invoice.validation_errors,
+        source=updated_invoice.source,
+        transferred_at=updated_invoice.transferred_at,
+        automation_invoice_id=updated_invoice.automation_invoice_id
     )
-
-@router.post("/{invoice_id}/validate")
 async def validate_invoice_with_fbr(
     invoice_id: UUID,
     db = Depends(get_database_session),
@@ -526,6 +536,7 @@ async def validate_invoice_with_fbr(
                     user_id=updated_invoice.user_id,
                     invoice_type=updated_invoice.invoice_type,
                     invoice_date=updated_invoice.invoice_date,
+                    transaction_type_id=updated_invoice.transaction_type_id,
                     seller_ntn_cnic=updated_invoice.seller_ntn_cnic,
                     seller_business_name=updated_invoice.seller_business_name,
                     seller_province=updated_invoice.seller_province,
@@ -545,7 +556,10 @@ async def validate_invoice_with_fbr(
                     validated_at=updated_invoice.validated_at,
                     posted_at=updated_invoice.posted_at,
                     fbr_reference_number=updated_invoice.fbr_reference_number,
-                    validation_errors=updated_invoice.validation_errors
+                    validation_errors=updated_invoice.validation_errors,
+                    source=updated_invoice.source,
+                    transferred_at=updated_invoice.transferred_at,
+                    automation_invoice_id=updated_invoice.automation_invoice_id
                 ),
                 "fbr_response": fbr_response
             }
@@ -669,6 +683,7 @@ async def post_invoice_to_fbr(
                     user_id=invoice.user_id,
                     invoice_type=invoice.invoice_type,
                     invoice_date=invoice.invoice_date,
+                    transaction_type_id=invoice.transaction_type_id,
                     seller_ntn_cnic=invoice.seller_ntn_cnic,
                     seller_business_name=invoice.seller_business_name,
                     seller_province=invoice.seller_province,
@@ -688,7 +703,10 @@ async def post_invoice_to_fbr(
                     validated_at=invoice.validated_at,
                     posted_at=invoice.posted_at,
                     fbr_reference_number=invoice.fbr_reference_number,
-                    validation_errors=invoice.validation_errors
+                    validation_errors=invoice.validation_errors,
+                    source=invoice.source,
+                    transferred_at=invoice.transferred_at,
+                    automation_invoice_id=invoice.automation_invoice_id
                 ),
                 "fbr_response": fbr_response
             }
