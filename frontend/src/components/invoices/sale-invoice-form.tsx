@@ -143,9 +143,6 @@ export function SaleInvoiceForm({
   // Fetch saved HS codes, descriptions, UOMs, and tax rates on component mount
   useEffect(() => {
     const fetchSavedData = async () => {
-      // Only fetch if not in edit mode
-      if (isEditMode) return;
-
       try {
         setLoadingSavedData(true);
 
@@ -174,7 +171,7 @@ export function SaleInvoiceForm({
     };
 
     fetchSavedData();
-  }, [isEditMode]);
+  }, []);
 
   // Auto-fill seller information from user profile
   useEffect(() => {
@@ -1007,7 +1004,7 @@ export function SaleInvoiceForm({
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Warning if no validated HS codes */}
-          {savedHSCodes.length === 0 && !isEditMode && (
+          {savedHSCodes.length === 0 && (
             <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
               <div className="flex items-start gap-3">
                 <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
@@ -1052,42 +1049,33 @@ export function SaleInvoiceForm({
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="relative">
                   <Label>HS Code *</Label>
-                  {!isEditMode ? (
-                    <Select
-                      value={item.hsCode}
-                      onValueChange={(val) => updateItem(index, 'hsCode', val)}
-                    >
-                      <SelectTrigger disabled={savedHSCodes.length === 0}>
-                        <SelectValue placeholder={savedHSCodes.length === 0 ? "No HS codes available" : "Select HS Code"} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {savedHSCodes.length === 0 ? (
-                          <SelectItem value="none" disabled>No records</SelectItem>
-                        ) : (
-                          savedHSCodes.map((hsCode) => (
-                            <SelectItem key={hsCode.id} value={hsCode.hs_code}>
-                              <div className="flex flex-col">
-                                <span className="font-medium">{hsCode.hs_code}</span>
-                                {hsCode.fbr_description && (
-                                  <span className="text-xs text-gray-500 truncate max-w-[400px]">
-                                    {hsCode.fbr_description}
-                                  </span>
-                                )}
-                              </div>
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Input
-                      value={item.hsCode}
-                      onChange={(e) => updateItem(index, 'hsCode', e.target.value)}
-                      placeholder="Enter HS Code"
-                      required
-                    />
-                  )}
-                  {!isEditMode && savedHSCodes.length === 0 && (
+                  <Select
+                    value={item.hsCode}
+                    onValueChange={(val) => updateItem(index, 'hsCode', val)}
+                  >
+                    <SelectTrigger disabled={savedHSCodes.length === 0}>
+                      <SelectValue placeholder={savedHSCodes.length === 0 ? "No HS codes available" : "Select HS Code"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {savedHSCodes.length === 0 ? (
+                        <SelectItem value="none" disabled>No records</SelectItem>
+                      ) : (
+                        savedHSCodes.map((hsCode) => (
+                          <SelectItem key={hsCode.id} value={hsCode.hs_code}>
+                            <div className="flex flex-col">
+                              <span className="font-medium">{hsCode.hs_code}</span>
+                              {hsCode.fbr_description && (
+                                <span className="text-xs text-gray-500 truncate max-w-[400px]">
+                                  {hsCode.fbr_description}
+                                </span>
+                              )}
+                            </div>
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {savedHSCodes.length === 0 && (
                     <p className="text-xs text-amber-600 mt-1">
                       Add HS codes in your profile first
                     </p>
@@ -1101,35 +1089,26 @@ export function SaleInvoiceForm({
                       <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
                     )}
                   </div>
-                  {!isEditMode ? (
-                    <Select
-                      value={item.productDescription}
-                      onValueChange={(val) => updateItem(index, 'productDescription', val)}
-                    >
-                      <SelectTrigger disabled={savedDescriptions.length === 0}>
-                        <SelectValue placeholder={savedDescriptions.length === 0 ? "No descriptions available" : "Select Description"} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {savedDescriptions.length === 0 ? (
-                          <SelectItem value="none" disabled>No records</SelectItem>
-                        ) : (
-                          savedDescriptions.map((desc) => (
-                            <SelectItem key={desc.id} value={desc.product_description}>
-                              {desc.product_description}
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Input
-                      value={item.productDescription}
-                      onChange={(e) => updateItem(index, 'productDescription', e.target.value)}
-                      placeholder="Enter product description"
-                      required
-                    />
-                  )}
-                  {!isEditMode && savedDescriptions.length === 0 && (
+                  <Select
+                    value={item.productDescription}
+                    onValueChange={(val) => updateItem(index, 'productDescription', val)}
+                  >
+                    <SelectTrigger disabled={savedDescriptions.length === 0}>
+                      <SelectValue placeholder={savedDescriptions.length === 0 ? "No descriptions available" : "Select Description"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {savedDescriptions.length === 0 ? (
+                        <SelectItem value="none" disabled>No records</SelectItem>
+                      ) : (
+                        savedDescriptions.map((desc) => (
+                          <SelectItem key={desc.id} value={desc.product_description}>
+                            {desc.product_description}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {savedDescriptions.length === 0 && (
                     <p className="text-xs text-amber-600 mt-1">
                       Add product descriptions in your profile first
                     </p>
@@ -1143,67 +1122,29 @@ export function SaleInvoiceForm({
                       <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
                     )}
                   </div>
-                  {!isEditMode ? (
-                    <Select
-                      value={item.rate}
-                      onValueChange={(val) => updateItem(index, 'rate', val)}
-                    >
-                      <SelectTrigger disabled={savedTaxRates.length === 0}>
-                        <SelectValue placeholder={savedTaxRates.length === 0 ? "No tax rates available" : "Select Tax Rate"} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {savedTaxRates.length === 0 ? (
-                          <SelectItem value="none" disabled>No records</SelectItem>
-                        ) : (
-                          savedTaxRates.map((rate) => (
-                            <SelectItem key={rate.id} value={rate.tax_rate}>
-                              {rate.tax_rate}% {rate.description ? `- ${rate.description}` : ''}
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <>
-                      {dynamicTaxRates.length > 0 ? (
-                        <Select value={item.rate} onValueChange={(val) => handleTaxRateChange(index, val)}>
-                          <SelectTrigger>
-                            <span className="flex-1 text-left">
-                              {item.rate
-                                ? dynamicTaxRates.find(r => r.rate === item.rate)?.name || `${item.rate}%`
-                                : "Select tax rate"
-                              }
-                            </span>
-                          </SelectTrigger>
-                          <SelectContent>
-                            {dynamicTaxRates.map((rate) => (
-                              <SelectItem key={rate.rate} value={rate.rate}>{rate.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                  <Select
+                    value={item.rate}
+                    onValueChange={(val) => updateItem(index, 'rate', val)}
+                  >
+                    <SelectTrigger disabled={savedTaxRates.length === 0}>
+                      <SelectValue placeholder={savedTaxRates.length === 0 ? "No tax rates available" : "Select Tax Rate"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {savedTaxRates.length === 0 ? (
+                        <SelectItem value="none" disabled>No records</SelectItem>
                       ) : (
-                        <>
-                          <Input
-                            type="text"
-                            value={item.rate}
-                            onChange={(e) => updateItem(index, 'rate', e.target.value)}
-                            placeholder="Enter tax rate (e.g., 18)"
-                            required
-                          />
-                          <p className="text-xs text-amber-600 mt-1">
-                            Enter tax rate manually (dynamic rates unavailable)
-                          </p>
-                        </>
+                        savedTaxRates.map((rate) => (
+                          <SelectItem key={rate.id} value={rate.tax_rate}>
+                            {rate.tax_rate}% {rate.description ? `- ${rate.description}` : ''}
+                          </SelectItem>
+                        ))
                       )}
-                    </>
-                  )}
-                  {!isEditMode && savedTaxRates.length === 0 && (
+                    </SelectContent>
+                  </Select>
+                  {savedTaxRates.length === 0 && (
                     <p className="text-xs text-amber-600 mt-1">
                       Add tax rates in your profile first
                     </p>
-                  )}
-                  {isEditMode && taxRateError && (
-                    <p className="text-xs text-amber-600 mt-1">{taxRateError}</p>
                   )}
                 </div>
 
@@ -1214,61 +1155,33 @@ export function SaleInvoiceForm({
                       <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
                     )}
                   </div>
-                  {!isEditMode ? (
-                    <Select
-                      value={item.uoM}
-                      onValueChange={(val) => updateItem(index, 'uoM', val)}
-                    >
-                      <SelectTrigger disabled={savedUOMs.length === 0}>
-                        <span className="flex-1 text-left">
-                          {item.uoM && savedUOMs.length > 0
-                            ? savedUOMs.find(u => u.uom_code === item.uoM)?.uom_name || item.uoM
-                            : savedUOMs.length === 0
-                              ? "No UOMs available"
-                              : "Select UOM"
-                          }
-                        </span>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {savedUOMs.length === 0 ? (
-                          <SelectItem value="none" disabled>No records</SelectItem>
-                        ) : (
-                          savedUOMs.map((uom) => (
-                            <SelectItem key={uom.id} value={uom.uom_code}>
-                              {uom.uom_name}
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Select value={item.uoM} onValueChange={(val) => updateItem(index, 'uoM', val)}>
-                      <SelectTrigger disabled={masterData.uom.length === 0}>
-                        <span className="flex-1 text-left">
-                          {item.uoM
-                            ? (filteredUoms[index] && filteredUoms[index].length > 0
-                                ? filteredUoms[index].find(u => u.code === item.uoM)?.name
-                                : masterData.uom.find(u => u.code === item.uoM)?.name
-                              ) || item.uoM
-                            : masterData.uom.length === 0
-                              ? "Configure FBR token in profile"
-                              : "Select UOM"
-                          }
-                        </span>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {masterData.uom.length === 0 ? (
-                          <SelectItem value="none" disabled>No options available - Configure FBR token</SelectItem>
-                        ) : (
-                          // Show filtered UOMs if available (from HS code lookup), otherwise show all UOMs
-                          (filteredUoms[index] && filteredUoms[index].length > 0 ? filteredUoms[index] : masterData.uom).map((uom) => (
-                            <SelectItem key={uom.code} value={uom.code}>{uom.name}</SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  )}
-                  {!isEditMode && savedUOMs.length === 0 && (
+                  <Select
+                    value={item.uoM}
+                    onValueChange={(val) => updateItem(index, 'uoM', val)}
+                  >
+                    <SelectTrigger disabled={savedUOMs.length === 0}>
+                      <span className="flex-1 text-left">
+                        {item.uoM && savedUOMs.length > 0
+                          ? savedUOMs.find(u => u.uom_code === item.uoM)?.uom_name || item.uoM
+                          : savedUOMs.length === 0
+                            ? "No UOMs available"
+                            : "Select UOM"
+                        }
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {savedUOMs.length === 0 ? (
+                        <SelectItem value="none" disabled>No records</SelectItem>
+                      ) : (
+                        savedUOMs.map((uom) => (
+                          <SelectItem key={uom.id} value={uom.uom_code}>
+                            {uom.uom_name}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                  {savedUOMs.length === 0 && (
                     <p className="text-xs text-amber-600 mt-1">
                       Add UOMs in your profile first
                     </p>

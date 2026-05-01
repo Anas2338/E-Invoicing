@@ -109,6 +109,9 @@ class AutomationApiClient {
     const csrfToken = getCookie('csrf_token') || (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('csrf_token') : null);
     if (csrfToken) {
       headers['X-CSRF-Token'] = csrfToken;
+    } else {
+      // Log warning if CSRF token is missing (helps debug cross-origin issues)
+      console.warn('CSRF token not found in cookie or sessionStorage. This may cause request failures.');
     }
 
     if (includeContentType) {
@@ -138,6 +141,13 @@ class AutomationApiClient {
   async uploadExcel(file: File): Promise<ExcelUploadResponse> {
     const formData = new FormData();
     formData.append('file', file);
+
+    // Get CSRF token for debugging
+    const csrfToken = getCookie('csrf_token') || (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('csrf_token') : null);
+
+    if (!csrfToken) {
+      throw new Error('CSRF token not found. Please log out and log in again to refresh your session.');
+    }
 
     const response = await fetch(`${this.baseUrl}/automation/excel/upload`, {
       method: 'POST',
