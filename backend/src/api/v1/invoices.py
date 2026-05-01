@@ -446,6 +446,9 @@ def update_invoice_status(
         transferred_at=updated_invoice.transferred_at,
         automation_invoice_id=updated_invoice.automation_invoice_id
     )
+
+
+@router.post("/{invoice_id}/validate")
 async def validate_invoice_with_fbr(
     invoice_id: UUID,
     db = Depends(get_database_session),
