@@ -24,6 +24,7 @@ coverage/
 .pytest_cache/
 .coverage
 htmlcov/
+**/tests/
 
 # Next.js
 .next/
