@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { InvoiceTable } from '@/components/invoices/invoice-table';
 import { ValidationResultDialog } from '@/components/invoices/validation-result-dialog';
 import { api, ApiError } from '@/lib/api';
-import { Plus, Trash2, ArrowLeft, CheckCircle } from 'lucide-react';
+import { Plus, Trash2, ArrowLeft, CheckCircle, RefreshCw } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 interface Invoice {
@@ -32,6 +32,7 @@ export default function InvoiceHistoryPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -40,6 +41,7 @@ export default function InvoiceHistoryPage() {
   const [bulkValidating, setBulkValidating] = useState(false);
   const [validatingInvoiceId, setValidatingInvoiceId] = useState<string | null>(null);
   const [postingInvoiceId, setPostingInvoiceId] = useState<string | null>(null);
+  const [lastRefreshTime, setLastRefreshTime] = useState<Date>(new Date());
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -73,16 +75,19 @@ export default function InvoiceHistoryPage() {
     applyFilters();
   }, [invoices, searchTerm, statusFilter]);
 
-  const fetchInvoices = async () => {
+  const fetchInvoices = async (isBackgroundRefresh = false, showRefreshIndicator = false) => {
     try {
-      setLoading(true);
+      if (!isBackgroundRefresh) {
+        setLoading(true);
+      } else if (showRefreshIndicator) {
+        setRefreshing(true);
+      }
       setError(null);
 
       // Fetch unified invoices from backend (manual + automated)
       const response = await api.invoices.getUnifiedHistory({ page_size: 100 });
 
       // Transform backend data to match our interface
-      // NOTE: Filter removed - now includes both manual and transferred automation invoices
       const transformedInvoices: Invoice[] = response.invoices
         .map((invoice: any) => ({
           id: invoice.id,
@@ -100,7 +105,18 @@ export default function InvoiceHistoryPage() {
           scheduledTime: invoice.scheduled_time,
         }));
 
-      setInvoices(transformedInvoices);
+      // Smart update: Only update state if data actually changed
+      if (isBackgroundRefresh) {
+        const hasChanges = JSON.stringify(transformedInvoices) !== JSON.stringify(invoices);
+        if (hasChanges) {
+          setInvoices(transformedInvoices);
+          setLastRefreshTime(new Date());
+        }
+      } else {
+        // Initial load or manual refresh - always update
+        setInvoices(transformedInvoices);
+        setLastRefreshTime(new Date());
+      }
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
@@ -109,7 +125,11 @@ export default function InvoiceHistoryPage() {
       }
       console.error('Error fetching invoices:', err);
     } finally {
-      setLoading(false);
+      if (!isBackgroundRefresh) {
+        setLoading(false);
+      } else if (showRefreshIndicator) {
+        setRefreshing(false);
+      }
     }
   };
 
@@ -244,27 +264,14 @@ export default function InvoiceHistoryPage() {
       // Call delete API
       await api.invoices.delete(id);
 
-      // Show success message
-      setDialogData({
-        success: true,
-        title: 'Invoice Deleted',
-        message: `Invoice ${invoice.invoiceNumber} has been deleted successfully.`,
-        invoiceNumber: invoice.invoiceNumber,
-        errors: []
-      });
-      setDialogOpen(true);
+      // Show success toast
+      toast.success(`Invoice ${invoice.invoiceNumber} deleted successfully`);
 
       // Refresh the invoice list
       await fetchInvoices();
     } catch (err) {
-      setDialogData({
-        success: false,
-        title: 'Delete Error',
-        message: err instanceof ApiError ? err.message : 'Failed to delete invoice. Please try again.',
-        invoiceNumber: invoices.find(inv => inv.id === id)?.invoiceNumber,
-        errors: []
-      });
-      setDialogOpen(true);
+      // Show error toast
+      toast.error(err instanceof ApiError ? err.message : 'Failed to delete invoice. Please try again.');
       console.error('Error deleting invoice:', err);
     }
   };
@@ -295,26 +302,22 @@ export default function InvoiceHistoryPage() {
         }
       }
 
-      // Show result dialog
-      setDialogData({
-        success: failCount === 0,
-        title: failCount === 0 ? 'Bulk Delete Successful' : 'Bulk Delete Completed with Errors',
-        message: `Successfully deleted ${successCount} invoice${successCount !== 1 ? 's' : ''}.${failCount > 0 ? ` Failed to delete ${failCount} invoice${failCount !== 1 ? 's' : ''}.` : ''}`,
-        errors: errors.length > 0 ? errors.map(err => ({ message: err })) : []
-      });
-      setDialogOpen(true);
+      // Show result toast
+      if (failCount === 0) {
+        toast.success(`Successfully deleted ${successCount} invoice${successCount !== 1 ? 's' : ''}`);
+      } else {
+        toast.warning(`Deleted ${successCount} invoice${successCount !== 1 ? 's' : ''}. Failed to delete ${failCount} invoice${failCount !== 1 ? 's' : ''}.`);
+        // Log errors to console for debugging
+        if (errors.length > 0) {
+          console.error('Bulk delete errors:', errors);
+        }
+      }
 
       // Clear selection and refresh
       setSelectedInvoices(new Set());
       await fetchInvoices();
     } catch (err) {
-      setDialogData({
-        success: false,
-        title: 'Bulk Delete Error',
-        message: 'An unexpected error occurred during bulk delete.',
-        errors: []
-      });
-      setDialogOpen(true);
+      toast.error('An unexpected error occurred during bulk delete.');
       console.error('Error during bulk delete:', err);
     } finally {
       setBulkDeleting(false);
@@ -438,7 +441,7 @@ export default function InvoiceHistoryPage() {
             </div>
           </div>
         </div>
-        <Button onClick={fetchInvoices}>Try Again</Button>
+        <Button onClick={() => fetchInvoices()}>Try Again</Button>
       </div>
     );
   }
@@ -462,9 +465,30 @@ export default function InvoiceHistoryPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-[#202223] dark:text-[#e3e3e3]">Invoice History</h1>
-          <p className="mt-2 text-sm sm:text-base text-[#6d7175] dark:text-[#8c9196]">View and manage your invoices</p>
+          <div className="flex items-center gap-2 mt-2">
+            <p className="text-sm sm:text-base text-[#6d7175] dark:text-[#8c9196]">View and manage your invoices</p>
+            {refreshing && (
+              <span className="flex items-center gap-1 text-xs text-[#008060] dark:text-[#00a876]">
+                <RefreshCw className="h-3 w-3 animate-spin" />
+                Updating...
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
+            Last updated: {lastRefreshTime.toLocaleTimeString()}
+          </p>
         </div>
         <div className="flex flex-col sm:flex-row gap-3">
+          <Button
+            variant="outline"
+            onClick={() => fetchInvoices(true, true)}
+            disabled={refreshing}
+            className="w-full sm:w-auto"
+            title="Refresh invoice list"
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
           {selectedInvoices.size > 0 && (
             <>
               <Button

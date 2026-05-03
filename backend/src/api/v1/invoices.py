@@ -9,10 +9,12 @@ from slowapi.util import get_remote_address
 from src.database.session import get_db
 from src.services.invoice_service import InvoiceService
 from src.services.fbr_service import fbr_service
+from src.services.auto_posting_service import AutoPostingService
 from src.schemas.invoice import (
     InvoiceCreate, InvoiceResponse, InvoiceUpdate, InvoiceListResponse,
     InvoiceFilter, UnifiedInvoiceListResponse
 )
+from src.schemas.auto_posting import ManualPostingRequest, ManualPostingResponse, PostingStatusResponse
 from src.api.middleware.auth_middleware import require_authentication
 from src.api.deps import get_database_session, get_pagination_params
 from src.models.user import User
@@ -736,3 +738,272 @@ async def post_invoice_to_fbr(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to post invoice: {str(e)}"
         )
+
+
+@router.post("/{invoice_id}/post-to-fbr", response_model=ManualPostingResponse)
+async def manual_post_to_fbr(
+    invoice_id: UUID,
+    request_data: ManualPostingRequest,
+    db = Depends(get_database_session),
+    user_id: str = Depends(require_authentication)
+):
+    """
+    Manually post invoice to FBR regardless of auto-posting settings.
+
+    This endpoint allows users to manually post individual invoices at any time,
+    even if auto-posting is disabled or outside the configured time window.
+    The invoice will count toward the daily limit.
+    """
+    user_uuid = UUID(user_id)
+    auto_posting_service = AutoPostingService(db)
+
+    # Get the invoice
+    invoice = db.get(Invoice, invoice_id)
+    if not invoice or invoice.user_id != user_uuid:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invoice not found"
+        )
+
+    # Check if invoice is in TRANSFERRED status
+    if invoice.status != InvoiceStatus.TRANSFERRED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invoice must be in TRANSFERRED status to post. Current status: {invoice.status}"
+        )
+
+    # Get user
+    user = db.get(User, user_uuid)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    # Check daily limit (warn but allow override)
+    from datetime import datetime
+    remaining = auto_posting_service.get_daily_limit_remaining(user, datetime.utcnow())
+    daily_limit_warning = remaining <= 0
+
+    if daily_limit_warning and not request_data.override_daily_limit:
+        return ManualPostingResponse(
+            success=False,
+            message=f"Daily limit reached ({user.auto_posting_daily_limit} invoices). Set override_daily_limit=true to post anyway.",
+            invoice_id=str(invoice_id),
+            daily_limit_warning=True
+        )
+
+    # Check for duplicate posting
+    if invoice.status == InvoiceStatus.FBR_POSTING:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invoice is already being posted"
+        )
+
+    try:
+        # Update status to FBR_POSTING
+        invoice.status = InvoiceStatus.FBR_POSTING
+        db.add(invoice)
+        db.commit()
+
+        # Get FBR token based on user's auto-posting environment
+        fbr_token = (
+            user.fbr_production_token
+            if user.auto_posting_environment == "PRODUCTION"
+            else user.fbr_sandbox_token
+        )
+
+        if not fbr_token:
+            raise ValueError(
+                f"No FBR token configured for {user.auto_posting_environment} environment"
+            )
+
+        # Decrypt token
+        from src.utils.encryption import get_encryption_service
+        encryption_service = get_encryption_service()
+        access_token = encryption_service.decrypt(fbr_token)
+
+        # Post to FBR
+        fbr_response = await fbr_service.post_invoice(invoice, access_token)
+        is_success, fbr_invoice_number, error_message = fbr_service.parse_posting_response(fbr_response)
+
+        if is_success:
+            # Success - update invoice
+            invoice.status = InvoiceStatus.FBR_POSTED
+            invoice.fbr_posted_at = datetime.utcnow()
+            invoice.fbr_reference_number = fbr_invoice_number
+            invoice.fbr_retry_count = 0
+            db.add(invoice)
+            db.commit()
+
+            # Create success log
+            auto_posting_service.create_posting_log(
+                user_id=user_uuid,
+                invoice_id=invoice_id,
+                action='manual',
+                result='success',
+                environment=user.auto_posting_environment
+            )
+
+            # Increment daily counter
+            auto_posting_service.increment_daily_counter(
+                user_uuid,
+                datetime.utcnow(),
+                user.auto_posting_start_time,
+                user.auto_posting_end_time
+            )
+
+            logger.info(f"Manually posted invoice {invoice_id} to FBR")
+
+            return ManualPostingResponse(
+                success=True,
+                message="Invoice posted successfully",
+                invoice_id=str(invoice_id),
+                fbr_reference_number=fbr_invoice_number,
+                daily_limit_warning=daily_limit_warning
+            )
+        else:
+            # FBR returned error
+            invoice.status = InvoiceStatus.FBR_FAILED
+            invoice.fbr_posting_error = error_message
+            invoice.fbr_retry_count += 1
+            db.add(invoice)
+            db.commit()
+
+            # Create failure log
+            auto_posting_service.create_posting_log(
+                user_id=user_uuid,
+                invoice_id=invoice_id,
+                action='manual',
+                result='failure',
+                environment=user.auto_posting_environment,
+                error_details={'error': error_message}
+            )
+
+            logger.error(f"FBR rejected manual post of invoice {invoice_id}: {error_message}")
+
+            return ManualPostingResponse(
+                success=False,
+                message=error_message,
+                invoice_id=str(invoice_id),
+                error_details={'error': error_message},
+                daily_limit_warning=daily_limit_warning
+            )
+
+    except Exception as e:
+        # Network failure or error
+        invoice.status = InvoiceStatus.FBR_FAILED
+        invoice.fbr_posting_error = str(e)
+        db.add(invoice)
+        db.commit()
+
+        # Create failure log
+        auto_posting_service.create_posting_log(
+            user_id=user_uuid,
+            invoice_id=invoice_id,
+            action='manual',
+            result='failure',
+            environment=user.auto_posting_environment,
+            error_details={'error': str(e)}
+        )
+
+        logger.error(f"Error manually posting invoice {invoice_id}: {str(e)}")
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to post invoice: {str(e)}"
+        )
+
+
+@router.get("/posting-status", response_model=PostingStatusResponse)
+async def get_posting_status(
+    db = Depends(get_database_session),
+    user_id: str = Depends(require_authentication)
+):
+    """
+    Get current auto-posting status and statistics for the user.
+    """
+    user_uuid = UUID(user_id)
+    auto_posting_service = AutoPostingService(db)
+
+    # Get user
+    user = db.get(User, user_uuid)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    from datetime import datetime
+    current_datetime = datetime.utcnow()
+    current_time = current_datetime.time()
+
+    # Determine current status
+    if not user.auto_posting_enabled:
+        status_str = "disabled"
+    elif user.auto_posting_paused_until and user.auto_posting_paused_until > current_datetime:
+        status_str = "paused"
+    elif not auto_posting_service.is_within_time_window(
+        current_time,
+        user.auto_posting_start_time,
+        user.auto_posting_end_time
+    ):
+        status_str = "outside_hours"
+    else:
+        remaining = auto_posting_service.get_daily_limit_remaining(user, current_datetime)
+        if remaining <= 0:
+            status_str = "limit_reached"
+        else:
+            status_str = "active"
+
+    # Get today's statistics
+    window_start_date = auto_posting_service.get_window_start_date(
+        current_datetime,
+        user.auto_posting_start_time,
+        user.auto_posting_end_time
+    )
+
+    counter = auto_posting_service.get_or_create_daily_counter(
+        user_uuid,
+        window_start_date,
+        window_start_date
+    )
+
+    # Count failed invoices today
+    from sqlalchemy import and_, func
+    from src.models.posting_log import PostingLog
+    failed_count = db.execute(
+        select(func.count(PostingLog.id)).where(
+            and_(
+                PostingLog.user_id == user_uuid,
+                PostingLog.result == 'failure',
+                PostingLog.created_at >= datetime.combine(window_start_date, datetime.min.time())
+            )
+        )
+    ).scalar() or 0
+
+    remaining = user.auto_posting_daily_limit - counter.posted_count
+
+    # Calculate next check time (next 5-minute cycle)
+    next_check_time = None
+    if status_str == "active":
+        # Next cycle is in 5 minutes
+        from datetime import timedelta
+        next_check_time = (current_datetime + timedelta(minutes=5)).isoformat()
+
+    return PostingStatusResponse(
+        status=status_str,
+        auto_posting_enabled=user.auto_posting_enabled,
+        current_window_active=auto_posting_service.is_within_time_window(
+            current_time,
+            user.auto_posting_start_time,
+            user.auto_posting_end_time
+        ),
+        next_check_time=next_check_time,
+        today_posted_count=counter.posted_count,
+        today_failed_count=failed_count,
+        remaining_limit=max(0, remaining),
+        daily_limit=user.auto_posting_daily_limit,
+        environment=user.auto_posting_environment,
+        paused_until=user.auto_posting_paused_until.isoformat() if user.auto_posting_paused_until else None
+    )

@@ -8,13 +8,20 @@ from typing import Dict, Any, Optional, List
 from pydantic import BaseModel
 from uuid import UUID
 import logging
-from datetime import datetime
+from datetime import datetime, time
 
 from src.api.middleware.auth_middleware import require_authentication
 from src.api.deps import get_database_session
 from src.models.user import User
 from src.models.user_saved_product import UserSavedProduct
 from src.utils.encryption import get_encryption_service
+from src.services.auto_posting_service import AutoPostingService
+from src.services.audit_service import AuditService
+from src.schemas.auto_posting import (
+    AutoPostingConfig,
+    AutoPostingConfigUpdate,
+    EmergencyPauseResponse
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -386,4 +393,222 @@ async def get_next_invoice_number(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate next invoice number: {str(e)}"
+        )
+
+
+@router.get("/profile/auto-posting", response_model=Dict[str, Any])
+async def get_auto_posting_config(
+    db=Depends(get_database_session),
+    user_id: str = Depends(require_authentication)
+):
+    """
+    Get user's auto-posting configuration.
+
+    Returns:
+        Auto-posting configuration including enabled status, time window, environment, and daily limit
+    """
+    try:
+        user = db.query(User).filter(User.id == UUID(user_id)).first()
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        return {
+            "auto_posting_enabled": user.auto_posting_enabled,
+            "auto_posting_start_time": user.auto_posting_start_time.isoformat() if user.auto_posting_start_time else "09:00:00",
+            "auto_posting_end_time": user.auto_posting_end_time.isoformat() if user.auto_posting_end_time else "18:00:00",
+            "auto_posting_environment": user.auto_posting_environment or "SANDBOX",
+            "auto_posting_daily_limit": user.auto_posting_daily_limit or 100,
+            "auto_posting_paused_until": user.auto_posting_paused_until.isoformat() if user.auto_posting_paused_until else None
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching auto-posting config: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch auto-posting configuration"
+        )
+
+
+@router.put("/profile/auto-posting", response_model=Dict[str, Any])
+async def update_auto_posting_config(
+    config_update: AutoPostingConfigUpdate,
+    db=Depends(get_database_session),
+    user_id: str = Depends(require_authentication)
+):
+    """
+    Update user's auto-posting configuration.
+
+    Args:
+        config_update: Updated auto-posting configuration
+
+    Returns:
+        Updated auto-posting configuration
+    """
+    try:
+        user = db.query(User).filter(User.id == UUID(user_id)).first()
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        # Initialize service for validation
+        service = AutoPostingService(db)
+
+        # Validate environment switch (Sandbox → Production requires re-authentication)
+        if config_update.auto_posting_environment is not None:
+            if config_update.auto_posting_environment != user.auto_posting_environment:
+                # Check if switching to Production
+                if config_update.auto_posting_environment == "PRODUCTION":
+                    # Verify user has Production FBR token
+                    if not user.fbr_production_token:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Production FBR token required. Please configure your Production credentials first."
+                        )
+
+        # Validate time window
+        start_time = config_update.auto_posting_start_time or user.auto_posting_start_time
+        end_time = config_update.auto_posting_end_time or user.auto_posting_end_time
+        is_valid, error_msg = service.validate_time_window(start_time, end_time)
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_msg
+            )
+
+        # Validate daily limit
+        if config_update.auto_posting_daily_limit is not None:
+            is_valid, error_msg = service.validate_daily_limit(config_update.auto_posting_daily_limit)
+            if not is_valid:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=error_msg
+                )
+
+        # Validate environment
+        if config_update.auto_posting_environment is not None:
+            is_valid, error_msg = service.validate_environment(config_update.auto_posting_environment)
+            if not is_valid:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=error_msg
+                )
+
+        # Update fields if provided
+        if config_update.auto_posting_enabled is not None:
+            user.auto_posting_enabled = config_update.auto_posting_enabled
+        if config_update.auto_posting_start_time is not None:
+            user.auto_posting_start_time = config_update.auto_posting_start_time
+        if config_update.auto_posting_end_time is not None:
+            user.auto_posting_end_time = config_update.auto_posting_end_time
+        if config_update.auto_posting_environment is not None:
+            user.auto_posting_environment = config_update.auto_posting_environment
+        if config_update.auto_posting_daily_limit is not None:
+            user.auto_posting_daily_limit = config_update.auto_posting_daily_limit
+        if config_update.auto_posting_paused_until is not None:
+            user.auto_posting_paused_until = config_update.auto_posting_paused_until
+
+        user.updated_at = datetime.utcnow()
+
+        db.commit()
+        db.refresh(user)
+
+        # Audit log for configuration changes
+        # Convert time objects to strings for JSON serialization
+        changes_dict = config_update.dict(exclude_unset=True)
+        if 'auto_posting_start_time' in changes_dict and changes_dict['auto_posting_start_time']:
+            changes_dict['auto_posting_start_time'] = changes_dict['auto_posting_start_time'].isoformat()
+        if 'auto_posting_end_time' in changes_dict and changes_dict['auto_posting_end_time']:
+            changes_dict['auto_posting_end_time'] = changes_dict['auto_posting_end_time'].isoformat()
+
+        AuditService.log_fbr_interaction(
+            db=db,
+            user_id=UUID(user_id),
+            action="update_auto_posting_config",
+            resource_type="user_profile",
+            resource_id=str(user_id),
+            environment=user.auto_posting_environment or "SANDBOX",
+            request_payload={
+                "auto_posting_enabled": user.auto_posting_enabled,
+                "auto_posting_environment": user.auto_posting_environment,
+                "auto_posting_daily_limit": user.auto_posting_daily_limit,
+                "changes": changes_dict
+            }
+        )
+
+        logger.info(f"User {user_id} updated auto-posting configuration")
+
+        return {
+            "auto_posting_enabled": user.auto_posting_enabled,
+            "auto_posting_start_time": user.auto_posting_start_time.isoformat() if user.auto_posting_start_time else "09:00:00",
+            "auto_posting_end_time": user.auto_posting_end_time.isoformat() if user.auto_posting_end_time else "18:00:00",
+            "auto_posting_environment": user.auto_posting_environment or "SANDBOX",
+            "auto_posting_daily_limit": user.auto_posting_daily_limit or 100,
+            "auto_posting_paused_until": user.auto_posting_paused_until.isoformat() if user.auto_posting_paused_until else None,
+            "message": "Auto-posting configuration updated successfully"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating auto-posting config: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update auto-posting configuration: {str(e)}"
+        )
+
+
+@router.post("/profile/auto-posting/emergency-pause", response_model=EmergencyPauseResponse)
+async def emergency_pause_auto_posting(
+    db=Depends(get_database_session),
+    user_id: str = Depends(require_authentication)
+):
+    """
+    Emergency pause auto-posting immediately.
+    Disables auto-posting and requires manual re-enable.
+
+    Returns:
+        Confirmation of emergency pause
+    """
+    try:
+        user = db.query(User).filter(User.id == UUID(user_id)).first()
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        # Disable auto-posting
+        user.auto_posting_enabled = False
+        user.updated_at = datetime.utcnow()
+
+        db.commit()
+        db.refresh(user)
+
+        logger.warning(f"User {user_id} triggered emergency pause for auto-posting")
+
+        return EmergencyPauseResponse(
+            success=True,
+            message="Auto-posting disabled. Please re-enable in profile settings when ready.",
+            auto_posting_enabled=False
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error during emergency pause: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to pause auto-posting: {str(e)}"
         )

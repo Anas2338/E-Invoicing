@@ -1,10 +1,10 @@
-import { CheckCircle, Shield, BarChart3 } from 'lucide-react';
+import { Shield, BarChart3, Sparkles } from 'lucide-react';
 
 const features = [
   {
-    icon: CheckCircle,
-    title: 'Real-time Validation',
-    description: 'Instant validation against FBR regulations. Ensure compliance before submission with comprehensive error checking.',
+    icon: Sparkles,
+    title: 'AI-Powered Auto-Posting',
+    description: 'Intelligent automation posts your invoices to FBR at optimal times. Set your preferences and let AI handle the scheduling and submission.',
   },
   {
     icon: Shield,

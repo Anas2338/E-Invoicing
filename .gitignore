@@ -96,5 +96,8 @@ desktop.ini
 *.backup
 *.old
 
-# Uploads
-uploads/
+# Uploads (file storage directories only, not Next.js routes)
+backend/uploads/
+frontend/public/uploads/
+# Allow Next.js route directories
+!frontend/src/app/**/uploads/

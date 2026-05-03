@@ -375,6 +375,7 @@ class InvoiceService:
     def delete_invoice(self, db: Session, invoice_id: UUID, user_id: UUID) -> bool:
         """
         Permanently delete an invoice from the database (hard delete).
+        Also deletes related posting logs.
 
         Args:
             db: Database session
@@ -384,6 +385,8 @@ class InvoiceService:
         Returns:
             True if successful, False otherwise
         """
+        from src.models.posting_log import PostingLog
+
         # Get the invoice (without is_deleted filter for deletion)
         invoice = db.exec(
             select(Invoice)
@@ -393,6 +396,16 @@ class InvoiceService:
 
         if not invoice:
             return False
+
+        # Delete related posting logs first (cascade delete)
+        posting_logs = db.exec(
+            select(PostingLog).where(PostingLog.invoice_id == invoice_id)
+        ).all()
+
+        for log in posting_logs:
+            db.delete(log)
+
+        logger.info(f"Deleted {len(posting_logs)} posting logs for invoice {invoice_id}")
 
         # Hard delete - permanently remove from database
         db.delete(invoice)

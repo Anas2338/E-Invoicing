@@ -4,12 +4,19 @@ Scheduler Service for automated background jobs.
 import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from pytz import timezone
+from datetime import datetime, time as dt_time
+from uuid import UUID
 
 from src.config.settings import settings
 from src.database.session import get_db_session, get_automation_db_session
 from src.services.transfer_service import TransferService
 from src.services.cleanup_service import CleanupService
+from src.services.auto_posting_service import AutoPostingService
+from src.models.user import User
+from src.models.invoice import Invoice, InvoiceStatus
+from sqlalchemy import select, and_
 
 logger = logging.getLogger(__name__)
 PAKISTAN_TZ = timezone('Asia/Karachi')
@@ -82,6 +89,133 @@ async def cleanup_automation_logs_job():
     except Exception as e:
         logger.error(f"Log cleanup job error: {e}", exc_info=True)
 
+
+async def auto_posting_job():
+    """Job to automatically post eligible invoices to FBR (runs every 5 minutes)."""
+    logger.info("Starting auto-posting job...")
+    try:
+        with get_db_session() as db:
+            auto_service = AutoPostingService(db)
+            current_datetime = datetime.now(PAKISTAN_TZ)
+            current_time = current_datetime.time()
+
+            # Get all users with auto-posting enabled
+            # Use query() instead of exec() to ensure we get User model instances
+            users = db.query(User).filter(
+                User.auto_posting_enabled == True,
+                (User.auto_posting_paused_until == None) |
+                (User.auto_posting_paused_until < current_datetime)
+            ).all()
+
+            if not users:
+                logger.info("No users with auto-posting enabled")
+                return
+
+            eligible_users = []
+            for user in users:
+                # Check if within time window
+                if not auto_service.is_within_time_window(
+                    current_time,
+                    user.auto_posting_start_time,
+                    user.auto_posting_end_time
+                ):
+                    continue
+
+                # Check daily limit
+                remaining = auto_service.get_daily_limit_remaining(user, current_datetime)
+                if remaining <= 0:
+                    continue
+
+                eligible_users.append(user)
+
+            logger.info(f"Found {len(eligible_users)} users eligible for auto-posting")
+
+            total_posted = 0
+            total_failed = 0
+
+            # Import PostingService for actual posting
+            from src.services.posting_service import PostingService
+            posting_service = PostingService()
+
+            # Process each eligible user
+            for user in eligible_users:
+                # Get eligible invoices (VALIDATED or TRANSFERRED status)
+                # Use query() instead of exec() to ensure we get Invoice model instances
+                invoices = db.query(Invoice).filter(
+                    Invoice.user_id == user.id,
+                    Invoice.status.in_([InvoiceStatus.VALIDATED, InvoiceStatus.TRANSFERRED]),
+                    Invoice.is_deleted == False
+                ).order_by(Invoice.created_at).limit(10).all()
+
+                if not invoices:
+                    continue
+
+                logger.info(f"Processing {len(invoices)} invoices for user {user.id}")
+
+                # Check remaining limit for this user
+                remaining = auto_service.get_daily_limit_remaining(user, current_datetime)
+
+                for invoice in invoices[:remaining]:
+                    try:
+                        # Post invoice to FBR using PostingService
+                        is_posted, reference_number, response_data = await posting_service.post_single_invoice(
+                            db=db,
+                            invoice=invoice,
+                            user_id=str(user.id)
+                        )
+
+                        if is_posted:
+                            total_posted += 1
+                            # Increment daily counter
+                            auto_service.increment_daily_counter(
+                                user.id,
+                                current_datetime,
+                                user.auto_posting_start_time,
+                                user.auto_posting_end_time
+                            )
+                            # Create posting log
+                            auto_service.create_posting_log(
+                                user_id=user.id,
+                                invoice_id=invoice.id,
+                                action='auto',
+                                result='success',
+                                environment=user.auto_posting_environment
+                            )
+                            logger.info(f"Posted invoice {invoice.id} to FBR: {reference_number}")
+                        else:
+                            total_failed += 1
+                            # Create posting log
+                            auto_service.create_posting_log(
+                                user_id=user.id,
+                                invoice_id=invoice.id,
+                                action='auto',
+                                result='failure',
+                                environment=user.auto_posting_environment,
+                                error_details=response_data
+                            )
+                            logger.warning(f"Failed to post invoice {invoice.id}: {response_data.get('error')}")
+
+                    except Exception as e:
+                        total_failed += 1
+                        # Create posting log
+                        auto_service.create_posting_log(
+                            user_id=user.id,
+                            invoice_id=invoice.id,
+                            action='auto',
+                            result='failure',
+                            environment=user.auto_posting_environment,
+                            error_details={"error": str(e)}
+                        )
+                        logger.error(f"Error posting invoice {invoice.id}: {e}")
+
+            # Close posting service
+            await posting_service.close()
+
+            logger.info(f"Auto-posting completed: {total_posted} posted, {total_failed} failed")
+
+    except Exception as e:
+        logger.error(f"Auto-posting job error: {e}", exc_info=True)
+
 def start_scheduler():
     """Start the scheduler with all background jobs."""
     global scheduler
@@ -93,7 +227,17 @@ def start_scheduler():
     # NOTE: Daily transfer job REMOVED - AI Agent now transfers invoices every 5 minutes
     # when their scheduled time arrives (real-time transfer based on invoice schedule)
 
-    # Job 1: Cleanup old automation data (daily at 2 AM PKT)
+    # Job 1: Auto-posting to FBR (every 5 minutes)
+    scheduler.add_job(
+        auto_posting_job,
+        trigger=IntervalTrigger(minutes=5),
+        id='auto_posting',
+        name='Auto Post to FBR',
+        replace_existing=True,
+        max_instances=1
+    )
+
+    # Job 2: Cleanup old automation data (daily at 2 AM PKT)
     scheduler.add_job(
         cleanup_automation_data_job,
         trigger=CronTrigger(
@@ -107,7 +251,7 @@ def start_scheduler():
         max_instances=1
     )
 
-    # Job 2: Cleanup old logs (daily at 2:30 AM PKT)
+    # Job 3: Cleanup old logs (daily at 2:30 AM PKT)
     scheduler.add_job(
         cleanup_automation_logs_job,
         trigger=CronTrigger(
@@ -123,10 +267,11 @@ def start_scheduler():
 
     scheduler.start()
     logger.info(
-        f"Scheduler started with 2 jobs:\n"
+        f"Scheduler started with 3 jobs:\n"
+        f"  - Auto-posting: Every 5 minutes\n"
         f"  - Cleanup Data: Daily at {settings.cleanup_schedule_hour}:{settings.cleanup_schedule_minute:02d} PKT\n"
         f"  - Cleanup Logs: Daily at {settings.cleanup_schedule_hour}:{settings.cleanup_schedule_minute + 30:02d} PKT\n"
-        f"  Note: Invoice transfer now handled by AI Agent every 5 minutes (real-time based on schedule)"
+        f"  Note: Invoice transfer handled by AI Agent every 5 minutes (real-time based on schedule)"
     )
 
 def stop_scheduler():

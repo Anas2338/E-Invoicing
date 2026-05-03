@@ -3,7 +3,7 @@ from typing import Optional, TYPE_CHECKING, List
 from datetime import datetime
 import uuid
 from enum import Enum
-from sqlalchemy import Column, DateTime, String, JSON
+from sqlalchemy import Column, DateTime, String, JSON, Integer
 from sqlalchemy.types import Uuid
 from sqlalchemy import NUMERIC
 from .base import Base
@@ -36,8 +36,13 @@ class InvoiceStatus(str, Enum):
     """
     DRAFT = "DRAFT"
     VALIDATED = "VALIDATED"
+    TRANSFERRED = "TRANSFERRED"  # Validated and ready for FBR posting
     POSTED = "POSTED"
     FAILED = "FAILED"
+    # Auto-posting statuses
+    FBR_POSTING = "FBR_POSTING"  # Currently being posted to FBR
+    FBR_POSTED = "FBR_POSTED"    # Successfully posted to FBR
+    FBR_FAILED = "FBR_FAILED"    # Failed to post to FBR
 
 
 class InvoiceItem(SQLModel):
@@ -116,6 +121,23 @@ class InvoiceBase(SQLModel):
 
     # Soft delete field
     is_deleted: bool = Field(default=False, nullable=False)
+
+    # Auto-posting FBR tracking fields
+    fbr_posted_at: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime, nullable=True),
+        description="Timestamp when successfully posted to FBR"
+    )
+    fbr_posting_error: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(2000), nullable=True),
+        description="Error message if posting failed"
+    )
+    fbr_retry_count: int = Field(
+        default=0,
+        sa_column=Column(Integer, nullable=False),
+        description="Number of retry attempts for FBR posting"
+    )
 
 
 class Invoice(InvoiceBase, Base, table=True):

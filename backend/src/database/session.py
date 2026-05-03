@@ -17,6 +17,8 @@ from src.models.automation_log import AutomationLog
 from src.models.excel_upload_session import ExcelUploadSession
 from src.models.ai_agent_health_check import AIAgentHealthCheck
 from src.models.user_saved_product import UserSavedProduct
+from src.models.daily_posting_counter import DailyPostingCounter
+from src.models.posting_log import PostingLog
 
 # Import FBR models (these use a separate declarative base)
 from src.models.fbr_master_data import (

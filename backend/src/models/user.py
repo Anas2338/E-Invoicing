@@ -1,8 +1,8 @@
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, TYPE_CHECKING
-from datetime import datetime
+from datetime import datetime, time
 import uuid
-from sqlalchemy import Column, DateTime, String, JSON, Enum as SQLEnum
+from sqlalchemy import Column, DateTime, String, JSON, Enum as SQLEnum, Time, Integer, Boolean
 from sqlalchemy.types import Uuid
 from enum import Enum
 from .base import Base
@@ -64,6 +64,38 @@ class UserBase(SQLModel):
     invoice_start_number: Optional[int] = Field(default=1, sa_column=Column(String, nullable=True))
     invoice_padding: Optional[int] = Field(default=4, sa_column=Column(String, nullable=True))
     invoice_include_year: Optional[bool] = Field(default=False, sa_column=Column(String, nullable=True))
+
+    # Auto-posting configuration fields
+    auto_posting_enabled: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, nullable=False),
+        description="Master toggle for auto-posting feature"
+    )
+    auto_posting_start_time: time = Field(
+        default=time(9, 0),
+        sa_column=Column(Time, nullable=False),
+        description="Start time of posting window (24-hour format)"
+    )
+    auto_posting_end_time: time = Field(
+        default=time(18, 0),
+        sa_column=Column(Time, nullable=False),
+        description="End time of posting window (24-hour format)"
+    )
+    auto_posting_environment: str = Field(
+        default="SANDBOX",
+        sa_column=Column(String(20), nullable=False),
+        description="Target FBR environment (SANDBOX/PRODUCTION)"
+    )
+    auto_posting_daily_limit: int = Field(
+        default=100,
+        sa_column=Column(Integer, nullable=False),
+        description="Maximum invoices to post per day (1-1000)"
+    )
+    auto_posting_paused_until: Optional[datetime] = Field(
+        default=None,
+        sa_column=Column(DateTime, nullable=True),
+        description="Temporary pause until this timestamp"
+    )
 
 
 class User(UserBase, Base, table=True):

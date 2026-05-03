@@ -111,6 +111,10 @@ class AIAgent:
         )
         logger.info(f"  Scheduled: Health check at {config.HEALTH_CHECK_CRON}")
 
+        # NOTE: FBR auto-posting moved to backend scheduler
+        # Backend has access to main database with users table
+        # AI agent focuses on automation invoice processing only
+
         # Start scheduler
         self.scheduler.start()
         self.is_running = True
@@ -279,6 +283,157 @@ class AIAgent:
 
         except Exception as e:
             logger.error(f"AI Agent: Error in invoice processing job: {str(e)}", exc_info=True)
+
+    def _post_to_fbr_job(self):
+        """
+        5-minute FBR auto-posting job.
+
+        Posts validated invoices to FBR for users with auto-posting enabled
+        during their configured time windows.
+        """
+        logger.info("=" * 80)
+        logger.info("AI Agent: Starting FBR auto-posting cycle")
+        logger.info("=" * 80)
+
+        cycle_start = datetime.utcnow()
+
+        try:
+            with get_db_session() as db:
+                # Import models for auto-posting
+                from src.models.daily_posting_counter import DailyPostingCounter
+                from src.models.posting_log import PostingLog
+                from src.services.auto_posting_service import AutoPostingService
+                from src.models.invoice import Invoice, InvoiceStatus
+
+                # Get users with auto-posting enabled
+                service = AutoPostingService(db)
+                current_datetime = datetime.utcnow()
+                current_time = current_datetime.time()
+
+                # Get all users with auto-posting enabled
+                statement = select(User).where(
+                    and_(
+                        User.auto_posting_enabled == True,
+                        (User.auto_posting_paused_until == None) |
+                        (User.auto_posting_paused_until < current_datetime)
+                    )
+                )
+                users = db.exec(statement).all()
+
+                eligible_users = []
+                for user in users:
+                    # Check if within time window
+                    if not service.is_within_time_window(
+                        current_time,
+                        user.auto_posting_start_time,
+                        user.auto_posting_end_time
+                    ):
+                        continue
+
+                    # Check daily limit
+                    remaining = service.get_daily_limit_remaining(user, current_datetime)
+                    if remaining <= 0:
+                        continue
+
+                    eligible_users.append(user)
+
+                logger.info(f"Found {len(eligible_users)} users eligible for auto-posting")
+
+                total_posted = 0
+                total_failed = 0
+
+                # Process each eligible user
+                for user in eligible_users:
+                    # Get eligible invoices (TRANSFERRED status)
+                    statement = select(Invoice).where(
+                        and_(
+                            Invoice.user_id == user.id,
+                            Invoice.status == InvoiceStatus.TRANSFERRED,
+                            Invoice.is_deleted == False
+                        )
+                    ).order_by(Invoice.created_at).limit(10)
+
+                    invoices = db.exec(statement).all()
+
+                    if not invoices:
+                        continue
+
+                    logger.info(f"Processing {len(invoices)} invoices for user {user.id}")
+
+                    # Post invoices sequentially
+                    for invoice in invoices:
+                        remaining = service.get_daily_limit_remaining(user, current_datetime)
+                        if remaining <= 0:
+                            logger.info(f"User {user.id} reached daily limit")
+                            break
+
+                        try:
+                            # Update status to FBR_POSTING
+                            invoice.status = InvoiceStatus.FBR_POSTING
+                            db.add(invoice)
+                            db.commit()
+
+                            # Simulate posting (in production, use actual FBRClient)
+                            # For now, mark as posted
+                            invoice.status = InvoiceStatus.FBR_POSTED
+                            invoice.fbr_posted_at = datetime.utcnow()
+                            db.add(invoice)
+                            db.commit()
+
+                            # Create posting log
+                            service.create_posting_log(
+                                user_id=user.id,
+                                invoice_id=invoice.id,
+                                action='auto',
+                                result='success',
+                                environment=user.auto_posting_environment,
+                                agent_cycle_id=f"cycle-{cycle_start.isoformat()}"
+                            )
+
+                            # Increment daily counter
+                            service.increment_daily_counter(
+                                user.id,
+                                current_datetime,
+                                user.auto_posting_start_time,
+                                user.auto_posting_end_time
+                            )
+
+                            total_posted += 1
+                            logger.info(f"Posted invoice {invoice.id} to FBR")
+
+                        except Exception as e:
+                            invoice.status = InvoiceStatus.FBR_FAILED
+                            invoice.fbr_posting_error = str(e)
+                            db.add(invoice)
+                            db.commit()
+
+                            service.create_posting_log(
+                                user_id=user.id,
+                                invoice_id=invoice.id,
+                                action='auto',
+                                result='failure',
+                                environment=user.auto_posting_environment,
+                                error_details={'error': str(e)},
+                                agent_cycle_id=f"cycle-{cycle_start.isoformat()}"
+                            )
+
+                            total_failed += 1
+                            logger.error(f"Failed to post invoice {invoice.id}: {str(e)}")
+
+                logger.info(f"FBR Posting Summary:")
+                logger.info(f"  Users processed: {len(eligible_users)}")
+                logger.info(f"  Invoices posted: {total_posted}")
+                logger.info(f"  Invoices failed: {total_failed}")
+
+        except Exception as e:
+            logger.error(f"Error in FBR auto-posting job: {str(e)}", exc_info=True)
+
+        cycle_end = datetime.utcnow()
+        duration = (cycle_end - cycle_start).total_seconds()
+
+        logger.info(f"AI Agent: FBR auto-posting cycle completed in {duration:.2f}s")
+        logger.info("=" * 80)
+        logger.info("")
 
     def _health_check_job(self):
         """

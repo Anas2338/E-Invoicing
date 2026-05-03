@@ -17,6 +17,7 @@ import SavedProductDescriptionsSection from '@/components/profile/SavedProductDe
 import SavedUOMsSection from '@/components/profile/SavedUOMsSection';
 import SavedTaxRatesSection from '@/components/profile/SavedTaxRatesSection';
 import InvoiceSettingsSection from '@/components/profile/InvoiceSettingsSection';
+import AutoPostingSettings from '@/components/profile/AutoPostingSettings';
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -335,6 +336,9 @@ export default function ProfilePage() {
 
       {/* Invoice Numbering Settings */}
       <InvoiceSettingsSection />
+
+      {/* Auto-Posting Settings */}
+      <AutoPostingSettings />
 
       {/* FBR Credentials Card */}
       <Card>
