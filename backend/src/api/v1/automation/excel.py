@@ -2,7 +2,7 @@
 Excel upload API endpoints.
 """
 import os
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Request
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Request, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 from uuid import UUID
@@ -17,6 +17,7 @@ from src.schemas.excel import ExcelUploadResponse, ExcelUploadStatusResponse
 from src.services.excel_service import ExcelService
 from src.services.automation_service import AutomationService
 from src.services.validation_service import ValidationService
+from src.services.background_validation_service import BackgroundValidationService
 from src.models.automation_invoice import AutomationInvoiceStatus
 from src.utils.excel_validator import ExcelValidator
 from src.utils.secure_file_validator import SecureFileValidator
@@ -58,6 +59,7 @@ async def download_template(
 @limiter.limit("5/hour")
 async def upload_excel(
     request: Request,
+    background_tasks: BackgroundTasks,
     file: Annotated[UploadFile, File(...)],
     db: Annotated[Session, Depends(get_automation_db)],
     main_db: Annotated[Session, Depends(get_db)],
@@ -68,10 +70,13 @@ async def upload_excel(
 
     Rate limit: 5 uploads per hour per IP address.
     File is parsed in memory and data stored directly in database.
+    FBR validation happens in background - use /excel/status/{session_id} to track progress.
 
     Args:
+        background_tasks: FastAPI background tasks
         file: Excel file upload
         db: Database session
+        main_db: Main database session
         user_id: Authenticated user ID
 
     Returns:
@@ -86,8 +91,6 @@ async def upload_excel(
     # Initialize services
     excel_service = ExcelService(db)
     automation_service = AutomationService(db)
-
-    # Note: Concurrent upload check removed to allow multiple uploads per user
 
     try:
         # Read file content into memory
@@ -145,24 +148,15 @@ async def upload_excel(
             file_path=None  # Not saving files to disk
         )
 
-        # Store invoices in database
+        # Store invoices in database with PENDING status (validation happens in background)
         stored_invoices = automation_service.store_invoices_from_excel(
             user_id=user_uuid,
             session_id=upload_session.id,
             invoices=invoices
         )
 
-        # Check current time for expiration check
-        from datetime import datetime
-        from src.services.fbr_client import FBRClient
-        from src.schemas.fbr import FBREnvironment
-        from src.models.user import User
-
-        now = datetime.utcnow()
-        current_date = now.date()
-        current_time = now.time()
-
         # Get user's FBR credentials from main database
+        from src.models.user import User
         user = main_db.get(User, user_uuid)
         if not user:
             raise HTTPException(
@@ -178,142 +172,21 @@ async def upload_excel(
                 detail=f"FBR credentials not configured. Please configure your FBR {user.fbr_environment} credentials in settings."
             )
 
-        # Process each invoice: check expiration first, then validate locally, then validate with FBR
-        validation_service = ValidationService()
-        fbr_client = FBRClient()
+        # Schedule background validation task
+        background_tasks.add_task(
+            BackgroundValidationService.validate_invoices_background,
+            session_id=upload_session.id,
+            user_id=user_uuid,
+            fbr_token=user_fbr_token,
+            fbr_environment=user.fbr_environment
+        )
 
-        validated_count = 0
-        failed_count = 0
-        expired_count = 0
-
-        try:
-            for invoice in stored_invoices:
-                # Check if invoice is already expired
-                is_expired = False
-                if invoice.scheduled_date < current_date:
-                    is_expired = True
-                elif invoice.scheduled_date == current_date and invoice.scheduled_time < current_time:
-                    is_expired = True
-
-                if is_expired:
-                    # Mark as expired, skip validation
-                    invoice.status = AutomationInvoiceStatus.EXPIRED
-                    invoice.validation_errors = "Scheduled time is in the past"
-                    expired_count += 1
-                else:
-                    # Step 1: Local validation
-                    is_valid_locally, validation_errors = validation_service.validate_invoice_locally(invoice.invoice_data)
-
-                    if not is_valid_locally:
-                        # Mark as PENDING with validation errors (user can retry)
-                        invoice.status = AutomationInvoiceStatus.PENDING
-                        invoice.validation_errors = f"Validation failed: {str(validation_errors)}"
-                        failed_count += 1
-                    else:
-                        # Step 2: FBR validation (only if local validation passed)
-                        try:
-                            # Use user's FBR environment preference
-                            environment = FBREnvironment.SANDBOX if user.fbr_environment == "SANDBOX" else FBREnvironment.PRODUCTION
-
-                            # DRY RUN MODE - Simulate FBR validation without actual API call
-                            if settings.dry_run:
-                                import random
-                                import time
-
-                                logger.info(f"[DRY RUN] Simulating FBR validation for invoice {invoice.invoice_number}")
-
-                                # Simulate 98% validation success rate (2% random failures for testing)
-                                is_valid_fbr = random.random() < 0.98
-
-                                if is_valid_fbr:
-                                    fbr_response = {
-                                        "dated": time.strftime("%Y-%m-%d %H:%M:%S"),
-                                        "validationResponse": {
-                                            "statusCode": "00",
-                                            "status": "Valid",
-                                            "error": "",
-                                            "invoiceStatuses": [{
-                                                "itemSNo": "1",
-                                                "statusCode": "00",
-                                                "status": "Valid",
-                                                "invoiceNo": "",
-                                                "errorCode": "",
-                                                "error": ""
-                                            }]
-                                        }
-                                    }
-                                    reference_number = None
-                                    logger.info(f"[DRY RUN] Simulated validation SUCCESS for invoice {invoice.invoice_number}")
-                                else:
-                                    # Simulate random validation error
-                                    error_scenarios = [
-                                        {"code": "0052", "msg": "HS Code does not match with provided sale type"},
-                                        {"code": "0078", "msg": "Valid Item Sr. No. is mandatory where SRO/Schedule No. is provided"}
-                                    ]
-                                    error = random.choice(error_scenarios)
-                                    fbr_response = {
-                                        "dated": time.strftime("%Y-%m-%d %H:%M:%S"),
-                                        "validationResponse": {
-                                            "statusCode": "01",
-                                            "status": "Invalid",
-                                            "error": f"[{error['code']}] {error['msg']}",
-                                            "invoiceStatuses": []
-                                        }
-                                    }
-                                    reference_number = None
-                                    logger.warning(f"[DRY RUN] Simulated validation FAILURE for invoice {invoice.invoice_number}: {error['msg']}")
-                            else:
-                                # REAL MODE - Actual FBR API call
-                                is_valid_fbr, fbr_response, reference_number = await fbr_client.validate_invoice_with_user_credentials(
-                                    invoice_data=invoice.invoice_data,
-                                    environment=environment,
-                                    fbr_token=user_fbr_token
-                                )
-
-                            if is_valid_fbr:
-                                # Mark as validated and ready for posting
-                                invoice.status = AutomationInvoiceStatus.VALIDATED
-                                invoice.fbr_response = fbr_response
-                                validated_count += 1
-                            else:
-                                # Mark as PENDING with FBR validation errors (user can retry)
-                                invoice.status = AutomationInvoiceStatus.PENDING
-                                invoice.validation_errors = f"FBR validation failed: {str(fbr_response)}"
-                                invoice.fbr_response = fbr_response
-                                failed_count += 1
-
-                        except Exception as e:
-                            # FBR API call failed (network error, timeout, etc.) - mark as PENDING
-                            invoice.status = AutomationInvoiceStatus.PENDING
-                            invoice.validation_errors = f"FBR validation error: {str(e)}"
-                            failed_count += 1
-
-                db.add(invoice)
-
-            db.commit()
-        finally:
-            # Always close the FBR client
-            await fbr_client.client.aclose()
-
-        # Update session status to completed
-        upload_session.processing_status = "completed"
-        upload_session.processed_rows = len(invoices)
-        db.add(upload_session)
-        db.commit()
-
-        # Build detailed response message
-        message_parts = [f"Excel file uploaded and validated with FBR."]
-        if validated_count > 0:
-            message_parts.append(f"{validated_count} invoice(s) validated and ready for posting.")
-        if failed_count > 0:
-            message_parts.append(f"{failed_count} invoice(s) failed validation.")
-        if expired_count > 0:
-            message_parts.append(f"{expired_count} invoice(s) expired (scheduled time in the past).")
+        logger.info(f"Excel upload successful for session {upload_session.id}. Background validation scheduled.")
 
         return ExcelUploadResponse(
             session_id=upload_session.id,
             total_rows=len(invoices),
-            message=" ".join(message_parts)
+            message=f"Excel file uploaded successfully with {len(invoices)} invoice(s). FBR validation is running in the background. Use the status endpoint to track progress."
         )
 
     except HTTPException as e:
@@ -374,7 +247,7 @@ async def get_upload_status(
     user_id: str = Depends(require_automation_access)
 ):
     """
-    Check upload processing status.
+    Check upload processing status with detailed validation statistics.
 
     Args:
         session_id: Upload session UUID
@@ -382,7 +255,7 @@ async def get_upload_status(
         user_id: Authenticated user ID
 
     Returns:
-        Upload status response
+        Upload status response with validation statistics
 
     Raises:
         HTTPException: If session not found or access denied
@@ -406,10 +279,53 @@ async def get_upload_status(
             detail="Access denied"
         )
 
+    # Get validation statistics by querying invoices
+    from sqlmodel import select, func
+    from src.models.automation_invoice import AutomationInvoice, AutomationInvoiceStatus
+
+    # Count invoices by status
+    validated_count = db.exec(
+        select(func.count(AutomationInvoice.id)).where(
+            AutomationInvoice.session_id == session_id,
+            AutomationInvoice.status == AutomationInvoiceStatus.VALIDATED
+        )
+    ).one()
+
+    failed_count = db.exec(
+        select(func.count(AutomationInvoice.id)).where(
+            AutomationInvoice.session_id == session_id,
+            AutomationInvoice.status == AutomationInvoiceStatus.FAILED
+        )
+    ).one()
+
+    expired_count = db.exec(
+        select(func.count(AutomationInvoice.id)).where(
+            AutomationInvoice.session_id == session_id,
+            AutomationInvoice.status == AutomationInvoiceStatus.EXPIRED
+        )
+    ).one()
+
+    pending_count = db.exec(
+        select(func.count(AutomationInvoice.id)).where(
+            AutomationInvoice.session_id == session_id,
+            AutomationInvoice.status == AutomationInvoiceStatus.PENDING
+        )
+    ).one()
+
+    # Calculate progress percentage
+    progress_percentage = 0.0
+    if upload_session.total_rows > 0:
+        progress_percentage = (upload_session.processed_rows / upload_session.total_rows) * 100
+
     return ExcelUploadStatusResponse(
         session_id=upload_session.id,
         status=upload_session.processing_status,
         processed_rows=upload_session.processed_rows,
         total_rows=upload_session.total_rows,
-        error_message=upload_session.error_message
+        error_message=upload_session.error_message,
+        validated_count=validated_count,
+        failed_count=failed_count,
+        expired_count=expired_count,
+        pending_count=pending_count,
+        progress_percentage=round(progress_percentage, 2)
     )

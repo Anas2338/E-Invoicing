@@ -30,6 +30,11 @@ export interface ExcelUploadStatusResponse {
   processed_rows: number;
   total_rows: number;
   error_message?: string;
+  validated_count?: number;
+  failed_count?: number;
+  expired_count?: number;
+  pending_count?: number;
+  progress_percentage?: number;
 }
 
 export interface DashboardStats {

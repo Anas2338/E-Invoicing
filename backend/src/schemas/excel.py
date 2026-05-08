@@ -56,12 +56,18 @@ class ExcelUploadResponse(BaseModel):
 
 
 class ExcelUploadStatusResponse(BaseModel):
-    """Schema for Excel upload status response."""
+    """Schema for Excel upload status response with detailed validation statistics."""
     session_id: UUID
     status: ExcelUploadProcessingStatus
     processed_rows: int
     total_rows: int
     error_message: Optional[str] = None
+    # Validation statistics
+    validated_count: Optional[int] = 0
+    failed_count: Optional[int] = 0
+    expired_count: Optional[int] = 0
+    pending_count: Optional[int] = 0
+    progress_percentage: Optional[float] = 0.0
 
 
 class ExcelValidationError(BaseModel):
