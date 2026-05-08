@@ -149,9 +149,11 @@ class InvoiceValidator:
 
         today = date.today()
 
-        # Invoice date cannot be in the future
-        if invoice_date > today:
-            return False, f"Invoice date cannot be in the future. Today is {today}"
+        # Allow future dates for scheduled invoices (automation system)
+        # Add reasonable upper limit: not more than 1 year in the future
+        one_year_future = date(today.year + 1, today.month, today.day)
+        if invoice_date > one_year_future:
+            return False, f"Invoice date cannot be more than 1 year in the future. Maximum date: {one_year_future}"
 
         # Invoice date cannot be more than 1 year old (business rule)
         one_year_ago = date(today.year - 1, today.month, today.day)
