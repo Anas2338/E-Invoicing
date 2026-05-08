@@ -17,6 +17,9 @@ interface UploadProgress {
   errorMessage?: string;
 }
 
+// LocalStorage key for persisting upload session
+const UPLOAD_SESSION_KEY = 'excel_upload_session';
+
 export default function ExcelUploadForm() {
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
@@ -25,6 +28,41 @@ export default function ExcelUploadForm() {
   const [success, setSuccess] = useState<string | null>(null);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
   const [polling, setPolling] = useState(false);
+
+  // Check for existing upload session on mount
+  useEffect(() => {
+    const savedSession = localStorage.getItem(UPLOAD_SESSION_KEY);
+    if (savedSession) {
+      try {
+        const sessionData = JSON.parse(savedSession);
+        // Check if session is still active (not completed or failed)
+        if (sessionData.status === 'processing' || sessionData.status === 'uploading') {
+          setProgress(sessionData);
+          setPolling(true);
+        } else {
+          // Clear completed/failed sessions
+          localStorage.removeItem(UPLOAD_SESSION_KEY);
+        }
+      } catch (err) {
+        console.error('Error loading saved session:', err);
+        localStorage.removeItem(UPLOAD_SESSION_KEY);
+      }
+    }
+  }, []);
+
+  // Save progress to localStorage whenever it changes
+  useEffect(() => {
+    if (progress) {
+      localStorage.setItem(UPLOAD_SESSION_KEY, JSON.stringify(progress));
+
+      // Clear localStorage when completed or failed
+      if (progress.status === 'completed' || progress.status === 'failed') {
+        setTimeout(() => {
+          localStorage.removeItem(UPLOAD_SESSION_KEY);
+        }, 5000); // Keep for 5 seconds to show final status
+      }
+    }
+  }, [progress]);
 
   // Poll for upload status
   useEffect(() => {
@@ -132,9 +170,9 @@ export default function ExcelUploadForm() {
       }
 
       // Start tracking progress
-      setProgress({
+      const initialProgress = {
         sessionId: data.session_id,
-        status: 'processing',
+        status: 'processing' as const,
         processedRows: 0,
         totalRows: data.total_rows,
         validatedCount: 0,
@@ -142,7 +180,9 @@ export default function ExcelUploadForm() {
         expiredCount: 0,
         pendingCount: data.total_rows,
         progressPercentage: 0
-      });
+      };
+
+      setProgress(initialProgress);
       setPolling(true);
 
     } catch (err) {
@@ -326,3 +366,4 @@ export default function ExcelUploadForm() {
     </div>
   );
 }
+
