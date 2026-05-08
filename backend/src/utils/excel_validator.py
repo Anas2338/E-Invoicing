@@ -49,7 +49,7 @@ class ExcelValidator:
     MAX_FILE_SIZE = 10 * 1024 * 1024
 
     # Maximum number of rows
-    MAX_ROWS = 1000
+    MAX_ROWS = 20000
 
     @staticmethod
     def validate_file_extension(filename: str) -> bool:
