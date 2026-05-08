@@ -27,7 +27,6 @@ class InvoiceService:
     def create_invoice(self, db: Session, invoice_create: InvoiceCreate, user_id: UUID) -> Invoice:
         """
         Create a new invoice in draft status.
-        Validates that all items use only the user's pre-saved products.
 
         Args:
             db: Database session
@@ -36,12 +35,10 @@ class InvoiceService:
 
         Returns:
             Created Invoice object
-
-        Raises:
-            HTTPException: If any item uses HS code/product not in user's saved products
         """
-        # Validate that all items are from user's saved products
-        self._validate_invoice_items(db, invoice_create.items, user_id)
+        # Note: Removed validation that required all items to be from saved products
+        # Users can now create invoices with any valid data
+        # Saved products are for convenience, not a requirement
 
         # Generate external ID if not provided
         external_id = invoice_create.external_id or f"INV-{int(datetime.utcnow().timestamp())}-{hash(str(invoice_create.invoice_type)) % 10000}"
@@ -575,6 +572,7 @@ class InvoiceService:
                 "created_at": invoice.created_at,
                 "transferred_at": invoice.transferred_at,  # Shows when automation invoice was transferred
                 "environment": invoice.environment if invoice.environment else None,
+                "income_tax": invoice.income_tax if invoice.income_tax else "236G",  # For local filtering only, not sent to FBR
                 "scheduled_date": None,
                 "scheduled_time": None
             })

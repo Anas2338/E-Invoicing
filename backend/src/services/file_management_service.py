@@ -404,3 +404,91 @@ class FileManagementService:
                 raise
 
         return blocked_count
+
+    def bulk_delete_invoices(self, invoice_ids: List[str], user_id: str) -> int:
+        """
+        Delete multiple invoices at once.
+
+        Args:
+            invoice_ids: List of invoice IDs
+            user_id: User ID for authorization
+
+        Returns:
+            Number of invoices deleted
+        """
+        deleted_count = 0
+
+        for invoice_id in invoice_ids:
+            try:
+                self.delete_invoice(invoice_id, user_id)
+                deleted_count += 1
+            except HTTPException as e:
+                # Skip invoices that can't be deleted but continue with others
+                if e.status_code in [status.HTTP_400_BAD_REQUEST, status.HTTP_404_NOT_FOUND]:
+                    continue
+                raise
+
+        return deleted_count
+
+    def bulk_retry_invoices(self, invoice_ids: List[str], user_id: str) -> int:
+        """
+        Retry multiple invoices at once.
+
+        Args:
+            invoice_ids: List of invoice IDs
+            user_id: User ID for authorization
+
+        Returns:
+            Number of invoices queued for retry
+        """
+        retried_count = 0
+
+        for invoice_id in invoice_ids:
+            try:
+                invoice_result = self.db.execute(
+                    select(AutomationInvoice)
+                    .where(
+                        and_(
+                            AutomationInvoice.id == UUID(invoice_id),
+                            AutomationInvoice.user_id == user_id
+                        )
+                    )
+                )
+                invoice = invoice_result.scalars().first()
+
+                if not invoice:
+                    continue
+
+                # Check if invoice is in a retryable state
+                if invoice.status not in ["failed", "transfer_failed", "pending"]:
+                    continue
+
+                # Reset invoice to validated status for retry
+                invoice.status = "validated"
+                invoice.retry_count = (invoice.retry_count or 0) + 1
+                invoice.last_retry_at = datetime.utcnow()
+                invoice.validation_errors = None
+                invoice.transfer_error = None
+
+                # Log the action
+                log_entry = AutomationLog(
+                    automation_invoice_id=invoice.id,
+                    action=AutomationLogAction.RETRY,
+                    status=AutomationLogStatus.SUCCESS,
+                    details={
+                        "invoice_id": invoice_id,
+                        "retry_count": invoice.retry_count,
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                )
+                self.db.add(log_entry)
+                self.db.add(invoice)
+
+                retried_count += 1
+
+            except Exception:
+                # Skip invoices that can't be retried but continue with others
+                continue
+
+        self.db.commit()
+        return retried_count

@@ -65,14 +65,28 @@ export default function UploadHistory() {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('en-US', {
+    // Ensure the date string is treated as UTC
+    // If it doesn't end with 'Z', append it to indicate UTC
+    let utcDateStr = dateString;
+    if (!dateString.endsWith('Z') && !dateString.includes('+')) {
+      utcDateStr = dateString + 'Z';
+    }
+
+    const date = new Date(utcDateStr);
+
+    // Use Intl.DateTimeFormat for proper timezone conversion to Pakistan time
+    const formatter = new Intl.DateTimeFormat('en-US', {
       year: 'numeric',
-      month: 'short',
-      day: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
-      timeZone: 'Asia/Karachi', // Pakistan Standard Time (UTC+5)
+      second: '2-digit',
+      hour12: true,
+      timeZone: 'Asia/Karachi'
     });
+
+    return formatter.format(date);
   };
 
   if (loading) {

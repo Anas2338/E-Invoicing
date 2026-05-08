@@ -335,67 +335,6 @@ export class UserService extends ApiClient {
     return this.request('/profile/seller-info');
   }
 
-  // Saved Products Management
-  async getSavedProducts(activeOnly: boolean = true): Promise<any[]> {
-    const params = new URLSearchParams();
-    if (activeOnly) {
-      params.append('active_only', 'true');
-    }
-    return this.request(`/profile/saved-products?${params.toString()}`);
-  }
-
-  async getSavedProduct(id: number): Promise<any> {
-    return this.request(`/profile/saved-products/${id}`);
-  }
-
-  async createSavedProduct(data: {
-    hs_code: string;
-    product_description: string;
-    default_uom?: string;
-    default_rate?: string;
-    default_sale_type?: string;
-    default_unit_price?: number;
-    display_order?: number;
-  }): Promise<any> {
-    return this.request('/profile/saved-products', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async updateSavedProduct(id: number, data: {
-    hs_code?: string;
-    product_description?: string;
-    default_uom?: string;
-    default_rate?: string;
-    default_sale_type?: string;
-    default_unit_price?: number;
-    display_order?: number;
-    is_active?: number;
-  }): Promise<any> {
-    return this.request(`/profile/saved-products/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async deleteSavedProduct(id: number, hardDelete: boolean = false): Promise<{ message: string }> {
-    const params = new URLSearchParams();
-    if (hardDelete) {
-      params.append('hard_delete', 'true');
-    }
-    return this.request(`/profile/saved-products/${id}?${params.toString()}`, {
-      method: 'DELETE',
-    });
-  }
-
-  async reorderSavedProducts(productIds: number[]): Promise<{ message: string }> {
-    return this.request('/profile/saved-products/reorder', {
-      method: 'POST',
-      body: JSON.stringify(productIds),
-    });
-  }
-
   // Saved HS Codes Management
   async getSavedHSCodes(activeOnly: boolean = true): Promise<any[]> {
     const params = new URLSearchParams();
@@ -511,6 +450,59 @@ export class UserService extends ApiClient {
       method: 'DELETE',
     });
   }
+
+  // Saved Products Management (Unified Items)
+  async getSavedProducts(activeOnly: boolean = true): Promise<any[]> {
+    const params = new URLSearchParams();
+    if (activeOnly) {
+      params.append('active_only', 'true');
+    }
+    return this.request(`/profile/saved-products?${params.toString()}`);
+  }
+
+  async createSavedProduct(data: {
+    item_code: string;
+    item_name: string;
+    hs_code: string;
+    product_description: string;
+    default_uom?: string;
+    default_rate?: string;
+    default_sale_type?: string;
+    transaction_type?: string;
+    default_unit_price?: number;
+    sro_schedule_no?: string;
+    sro_item_serial_no?: string;
+  }): Promise<any> {
+    return this.request('/profile/saved-products', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSavedProduct(id: number, data: {
+    item_code?: string;
+    item_name?: string;
+    hs_code?: string;
+    product_description?: string;
+    default_uom?: string;
+    default_rate?: string;
+    default_sale_type?: string;
+    transaction_type?: string;
+    default_unit_price?: number;
+    sro_schedule_no?: string;
+    sro_item_serial_no?: string;
+  }): Promise<any> {
+    return this.request(`/profile/saved-products/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSavedProduct(id: number): Promise<{ message: string }> {
+    return this.request(`/profile/saved-products/${id}`, {
+      method: 'DELETE',
+    });
+  }
 }
 
 // Master Data types
@@ -598,6 +590,14 @@ export class MasterDataService extends ApiClient {
 
   async getAllMasterData(): Promise<AllMasterData> {
     return this.request('/masterdata/all');
+  }
+
+  async getHSCodes(): Promise<HsCode[]> {
+    return this.request('/masterdata/hs-codes');
+  }
+
+  async validateHSCode(hsCode: string): Promise<{ valid: boolean; code: string; description: string | null }> {
+    return this.request(`/masterdata/hs-codes/validate/${encodeURIComponent(hsCode)}`);
   }
 
   // Parameterized APIs - REMOVED: Data is synced to local DB at 6am daily

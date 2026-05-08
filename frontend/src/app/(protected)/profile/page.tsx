@@ -12,10 +12,7 @@ import { authService } from '@/lib/api/api-client';
 import { adminApi } from '@/services/adminApi';
 import { Key, Building, Hash, User, Mail, Eye, EyeOff, Trash2, MapPin, Home, ArrowLeft, RefreshCw, CheckCircle, XCircle } from 'lucide-react';
 import { toast } from 'react-toastify';
-import SavedHSCodesSection from '@/components/profile/SavedHSCodesSection';
-import SavedProductDescriptionsSection from '@/components/profile/SavedProductDescriptionsSection';
-import SavedUOMsSection from '@/components/profile/SavedUOMsSection';
-import SavedTaxRatesSection from '@/components/profile/SavedTaxRatesSection';
+import SavedItemsSection from '@/components/profile/SavedItemsSection';
 import InvoiceSettingsSection from '@/components/profile/InvoiceSettingsSection';
 import AutoPostingSettings from '@/components/profile/AutoPostingSettings';
 
@@ -89,35 +86,19 @@ export default function ProfilePage() {
   const handleSaveFbrCredentials = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!fbrAccessToken) {
-      toast.error('Please enter your FBR access token');
-      return;
-    }
-
     try {
       setSaving(true);
 
       const credentials: any = {
-        fbr_environment: fbrEnvironment,
         fbr_seller_ntn: fbrSellerNtn,
         fbr_business_name: fbrBusinessName,
         fbr_seller_province: fbrSellerProvince,
         fbr_seller_address: fbrSellerAddress,
-        fbr_access_token: fbrAccessToken,
       };
 
-      const response = await api.auth.updateFbrCredentials(credentials);
+      await api.auth.updateFbrCredentials(credentials);
 
-      toast.success(`FBR credentials updated successfully for ${fbrEnvironment}!`);
-      setHasSandboxToken(response.has_sandbox_token);
-      setHasProductionToken(response.has_production_token);
-
-      // Admin only: Update system sync token status
-      if (userProfile?.role === 'admin' && response.has_system_sync_token !== undefined) {
-        setHasSystemSyncToken(response.has_system_sync_token);
-      }
-
-      setFbrAccessToken(''); // Clear the token input for security
+      toast.success('Business information updated successfully!');
 
       // Refresh credentials
       await fetchProfileData();
@@ -125,9 +106,9 @@ export default function ProfilePage() {
       if (err instanceof ApiError) {
         toast.error(err.message);
       } else {
-        toast.error('Failed to update FBR credentials');
+        toast.error('Failed to update business information');
       }
-      console.error('Error updating FBR credentials:', err);
+      console.error('Error updating business information:', err);
     } finally {
       setSaving(false);
     }
@@ -348,199 +329,42 @@ export default function ProfilePage() {
             FBR Integration Credentials
           </CardTitle>
           <CardDescription className="text-sm">
-            Configure your Federal Board of Revenue (FBR) API credentials for invoice validation and posting.
+            View your FBR tokens (managed by admin) and configure your business information.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSaveFbrCredentials} className="space-y-6">
-            {/* Existing Tokens Display */}
-            <div className="space-y-4">
-              {/* Sandbox Token */}
-              {hasSandboxToken && sandboxToken && (
-                <div className="p-4 bg-[#dbeafe] dark:bg-[#1e3a8a]/30 border border-[#bfdbfe] dark:border-[#1e3a8a] rounded-xl">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <Label className="flex items-center gap-2 text-[#1e40af] dark:text-[#60a5fa] font-semibold mb-2">
-                        <Key className="h-4 w-4" />
-                        Sandbox FBR Access Token
-                      </Label>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type={showSandboxToken ? "text" : "password"}
-                          value={sandboxToken}
-                          readOnly
-                          className="font-mono text-sm bg-white dark:bg-[#1a1a1a]"
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          onClick={() => setShowSandboxToken(!showSandboxToken)}
-                          className="flex-shrink-0"
-                        >
-                          {showSandboxToken ? (
-                            <EyeOff className="h-4 w-4" />
-                          ) : (
-                            <Eye className="h-4 w-4" />
-                          )}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          size="icon"
-                          onClick={() => handleDeleteFbrToken('SANDBOX')}
-                          disabled={deleting}
-                          className="flex-shrink-0"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <p className="text-xs text-[#1e40af] dark:text-[#60a5fa] mt-2">
-                        Your Sandbox token for testing. Click the eye icon to view or the trash icon to delete.
-                      </p>
-                    </div>
-                  </div>
+          {/* Token Status Display (Read-Only) */}
+          <div className="space-y-4 mb-6">
+            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-3">
+                FBR Token Status (Admin Managed)
+              </h3>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-700 dark:text-gray-300">Sandbox Token:</span>
+                  <span className={`text-sm font-semibold ${hasSandboxToken ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                    {hasSandboxToken ? '✓ Configured' : '✗ Not Configured'}
+                  </span>
                 </div>
-              )}
-
-              {/* Production Token */}
-              {hasProductionToken && productionToken && (
-                <div className="p-4 bg-[#d1fae5] dark:bg-[#064e3b]/30 border border-[#a7f3d0] dark:border-[#065f46] rounded-xl">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <Label className="flex items-center gap-2 text-[#065f46] dark:text-[#34d399] font-semibold mb-2">
-                        <Key className="h-4 w-4" />
-                        Production FBR Access Token
-                      </Label>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type={showProductionToken ? "text" : "password"}
-                          value={productionToken}
-                          readOnly
-                          className="font-mono text-sm bg-white dark:bg-[#1a1a1a]"
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          onClick={() => setShowProductionToken(!showProductionToken)}
-                          className="flex-shrink-0"
-                        >
-                          {showProductionToken ? (
-                            <EyeOff className="h-4 w-4" />
-                          ) : (
-                            <Eye className="h-4 w-4" />
-                          )}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          size="icon"
-                          onClick={() => handleDeleteFbrToken('PRODUCTION')}
-                          disabled={deleting}
-                          className="flex-shrink-0"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <p className="text-xs text-[#065f46] dark:text-[#34d399] mt-2">
-                        Your Production token for live invoices. Click the eye icon to view or the trash icon to delete.
-                      </p>
-                    </div>
-                  </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-700 dark:text-gray-300">Production Token:</span>
+                  <span className={`text-sm font-semibold ${hasProductionToken ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                    {hasProductionToken ? '✓ Configured' : '✗ Not Configured'}
+                  </span>
                 </div>
-              )}
-
-              {/* System Sync Token (Admin Only) */}
-              {userProfile?.role === 'admin' && hasSystemSyncToken && systemSyncToken && (
-                <div className="p-4 bg-[#fef3c7] dark:bg-[#78350f]/30 border border-[#fde68a] dark:border-[#92400e] rounded-xl">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <Label className="flex items-center gap-2 text-[#92400e] dark:text-[#fbbf24] font-semibold mb-2">
-                        <Key className="h-4 w-4" />
-                        System Sync Token (Admin)
-                      </Label>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type={showSystemSyncToken ? "text" : "password"}
-                          value={systemSyncToken}
-                          readOnly
-                          className="font-mono text-sm bg-white dark:bg-[#1a1a1a]"
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          onClick={() => setShowSystemSyncToken(!showSystemSyncToken)}
-                          className="flex-shrink-0"
-                        >
-                          {showSystemSyncToken ? (
-                            <EyeOff className="h-4 w-4" />
-                          ) : (
-                            <Eye className="h-4 w-4" />
-                          )}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          size="icon"
-                          onClick={() => handleDeleteFbrToken('SYSTEM')}
-                          disabled={deleting}
-                          className="flex-shrink-0"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      <p className="text-xs text-[#92400e] dark:text-[#fbbf24] mt-2">
-                        System token for daily FBR master data sync at 6:00 AM PKT. This token is used by the system to fetch provinces, UOM, HS codes, and other master data.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
+              </div>
+              <p className="text-xs text-blue-700 dark:text-blue-400 mt-3">
+                FBR tokens are managed by administrators. Contact your admin to add or update tokens.
+              </p>
             </div>
+          </div>
 
-            {/* Add/Update Token Form */}
+          {/* User Business Information Form */}
+          <form onSubmit={handleSaveFbrCredentials} className="space-y-6">
             <div className="pt-4 border-t border-[#e1e3e5] dark:border-[#2e2e2e]">
               <h3 className="text-lg font-semibold text-[#202223] dark:text-[#e3e3e3] mb-4">
-                {hasSandboxToken || hasProductionToken ? 'Add or Update Token' : 'Add FBR Token'}
+                Business Information
               </h3>
-
-              {/* Environment Selection */}
-              <div>
-                <Label htmlFor="fbrEnvironment">Environment *</Label>
-                <Select value={fbrEnvironment} onValueChange={setFbrEnvironment}>
-                  <SelectTrigger className="mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="SANDBOX">Sandbox (Testing)</SelectItem>
-                    <SelectItem value="PRODUCTION">Production (Live)</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
-                  Select which environment this token is for
-                </p>
-              </div>
-            </div>
-
-            {/* FBR Access Token Input */}
-            <div>
-              <Label htmlFor="fbrAccessToken" className="flex items-center gap-2">
-                <Key className="h-4 w-4" />
-                FBR Access Token for {fbrEnvironment} *
-              </Label>
-              <Input
-                id="fbrAccessToken"
-                type="password"
-                value={fbrAccessToken}
-                onChange={(e) => setFbrAccessToken(e.target.value)}
-                placeholder={`Enter your ${fbrEnvironment} FBR API access token`}
-                className="mt-1"
-              />
-              <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
-                Your FBR API access token from the FBR Digital Invoicing Portal
-              </p>
             </div>
 
             {/* Seller NTN */}
@@ -643,7 +467,7 @@ export default function ProfilePage() {
                 disabled={saving}
                 className="bg-[#008060] hover:bg-[#006e52] dark:bg-[#00a876] dark:hover:bg-[#008f64]"
               >
-                {saving ? 'Saving...' : 'Save FBR Credentials'}
+                {saving ? 'Saving...' : 'Save Business Information'}
               </Button>
             </div>
           </form>
@@ -678,13 +502,23 @@ export default function ProfilePage() {
                     <Key className="h-4 w-4" />
                     System FBR Access Token *
                   </Label>
-                  <Input
-                    id="system_token"
-                    name="system_token"
-                    type="password"
-                    placeholder="Enter the system FBR API access token"
-                    className="mt-1"
-                  />
+                  <div className="relative mt-1">
+                    <Input
+                      id="system_token"
+                      name="system_token"
+                      type={showSystemSyncToken ? "text" : "password"}
+                      value={systemSyncToken}
+                      onChange={(e) => setSystemSyncToken(e.target.value)}
+                      placeholder="Enter the system FBR API access token"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSystemSyncToken(!showSystemSyncToken)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6d7175] dark:text-[#8c9196] hover:text-[#202223] dark:hover:text-[#e3e3e3]"
+                    >
+                      {showSystemSyncToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                   <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
                     This token will be used for automated system operations. Make sure it has the necessary permissions.
                   </p>
@@ -765,17 +599,8 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
-      {/* Saved HS Codes Section */}
-      <SavedHSCodesSection />
-
-      {/* Saved Product Descriptions Section */}
-      <SavedProductDescriptionsSection />
-
-      {/* Saved UOMs Section */}
-      <SavedUOMsSection />
-
-      {/* Saved Tax Rates Section */}
-      <SavedTaxRatesSection />
+      {/* Saved Items Section */}
+      <SavedItemsSection />
     </div>
   );
 }

@@ -456,6 +456,50 @@ class AutomationApiClient {
   }
 
   /**
+   * Delete multiple invoices at once.
+   */
+  async bulkDeleteInvoices(invoiceIds: string[]): Promise<{ deleted_count: number }> {
+    const response = await fetch(
+      `${this.baseUrl}/automation/invoices/bulk-delete`,
+      {
+        method: 'POST',
+        headers: this.getHeaders(true),
+        credentials: 'include',
+        body: JSON.stringify({ invoice_ids: invoiceIds }),
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to delete invoices');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Retry multiple invoices at once.
+   */
+  async bulkRetryInvoices(invoiceIds: string[]): Promise<{ retried_count: number }> {
+    const response = await fetch(
+      `${this.baseUrl}/automation/invoices/bulk-retry`,
+      {
+        method: 'POST',
+        headers: this.getHeaders(true),
+        credentials: 'include',
+        body: JSON.stringify({ invoice_ids: invoiceIds }),
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to retry invoices');
+    }
+
+    return response.json();
+  }
+
+  /**
    * Generate and download PDF for a single invoice.
    */
   async printInvoice(invoiceId: string): Promise<Blob> {

@@ -15,18 +15,12 @@ class ExcelValidationError(Exception):
 class ExcelValidator:
     """Validator for Excel file structure and content."""
 
-    # Required columns for invoice automation Excel template (FBR-compliant)
+    # Required columns for invoice automation Excel template (simplified with saved_item_code)
     REQUIRED_COLUMNS = [
         # Invoice identification
         "invoice_number",
         "invoice_type",
         "invoice_date",
-
-        # Seller information
-        "seller_ntn_cnic",
-        "seller_business_name",
-        "seller_province",
-        "seller_address",
 
         # Buyer information
         "buyer_ntn_cnic",
@@ -35,35 +29,16 @@ class ExcelValidator:
         "buyer_address",
         "buyer_registration_type",
 
-        # Item details - matching manual sale form exactly
-        "hs_code",
-        "product_description",
-        "tax_rate",
-        "uom",
+        # Item details - simplified with saved_item_code
+        "saved_item_code",
         "quantity",
-        "total_values",
         "value_sales_excluding_st",
         "fixed_notified_value_or_retail_price",
-        "sales_tax_applicable",
-        "sales_tax_withheld_at_source",
-        "extra_tax",
         "further_tax",
-        "sro_schedule_no",
-        "fed_payable",
-        "discount",
-        "sale_type",
-        "sro_item_serial_no",
-
-        # Optional fields
-        "invoice_ref_no",
-        "scenario_id",
 
         # Scheduling
         "scheduled_date",
         "scheduled_time",
-
-        # Environment
-        "environment",
 
         # Status fields
         "status",

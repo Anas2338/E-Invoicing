@@ -66,12 +66,7 @@ class PDFService:
                     f"Cannot generate PDF for invoice with status '{invoice.status}'. "
                     "Only transferred invoices can be printed."
                 )
-        else:
-            if invoice.status != InvoiceStatus.POSTED:
-                raise ValueError(
-                    f"Cannot generate PDF for invoice with status '{invoice.status}'. "
-                    "Only posted invoices can be printed."
-                )
+        # Manual invoices: Allow all statuses (POSTED invoices will include FBR data, others won't)
 
         # Extract invoice data based on type
         if is_automation:
@@ -121,18 +116,18 @@ class PDFService:
 
             items = invoice.items
 
-            # Extract USIN from fbr_reference_number
-            usin = invoice.fbr_reference_number
-            if not usin:
-                raise ValueError("FBR reference number is missing")
-
+            # Extract USIN from fbr_reference_number (optional for non-posted invoices)
+            usin = invoice.fbr_reference_number  # Will be None for non-posted invoices
             invoice_number = invoice.external_id
 
         # Validate items array
         if not isinstance(items, list) or len(items) == 0:
             raise ValueError("Invoice must have at least one line item")
 
-        logger.info(f"Generating PDF for {'automation' if is_automation else 'manual'} invoice {invoice_number} (USIN: {usin})")
+        logger.info(
+            f"Generating PDF for {'automation' if is_automation else 'manual'} invoice {invoice_number}"
+            f"{f' (USIN: {usin})' if usin else ' (no FBR data)'}"
+        )
 
         try:
             # Create PDF buffer
@@ -182,12 +177,12 @@ class PDFService:
             logger.error(f"Failed to generate PDF for invoice {invoice_number}: {e}")
             raise
 
-    def generate_batch_pdf(self, invoices: list[AutomationInvoice]) -> bytes:
+    def generate_batch_pdf(self, invoices: list[Union[AutomationInvoice, Invoice]]) -> bytes:
         """
         Generate PDF for multiple invoices with page breaks.
 
         Args:
-            invoices: List of AutomationInvoice objects in selection order
+            invoices: List of AutomationInvoice or Invoice objects in selection order
 
         Returns:
             PDF bytes containing all invoices
@@ -222,55 +217,85 @@ class PDFService:
 
             # Generate each invoice on a separate page
             for idx, invoice in enumerate(invoices):
+                is_automation = isinstance(invoice, AutomationInvoice)
+
                 # Validate invoice status
-                if invoice.status != AutomationInvoiceStatus.TRANSFERRED:
-                    logger.warning(
-                        f"Skipping invoice {invoice.invoice_number} with status '{invoice.status}'"
-                    )
-                    raise ValueError(
-                        f"Cannot generate PDF for invoice {invoice.invoice_number} "
-                        f"with status '{invoice.status}'. Only transferred invoices can be printed."
-                    )
+                if is_automation:
+                    if invoice.status != AutomationInvoiceStatus.TRANSFERRED:
+                        logger.warning(
+                            f"Skipping invoice {invoice.invoice_number} with status '{invoice.status}'"
+                        )
+                        raise ValueError(
+                            f"Cannot generate PDF for invoice {invoice.invoice_number} "
+                            f"with status '{invoice.status}'. Only transferred invoices can be printed."
+                        )
+                # Manual invoices: Allow all statuses
 
-                # Validate invoice data
-                if not invoice.invoice_data:
-                    raise ValueError(f"Invoice {invoice.invoice_number} is missing invoice data")
+                # Extract invoice data based on type
+                if is_automation:
+                    # Automation invoice: data is in invoice_data dict
+                    if not invoice.invoice_data:
+                        raise ValueError(f"Invoice {invoice.invoice_number} is missing invoice data")
 
-                # Extract USIN from FBR response
-                if not invoice.fbr_response:
-                    raise ValueError(
-                        f"Invoice {invoice.invoice_number} is missing FBR response"
-                    )
+                    invoice_data = invoice.invoice_data
+                    items = invoice_data.get('items', [])
 
-                usin = invoice.fbr_response.get('USIN') or invoice.fbr_response.get('usin')
-                if not usin:
-                    raise ValueError(
-                        f"Invoice {invoice.invoice_number} is missing USIN in FBR response"
-                    )
+                    # Extract USIN from FBR response
+                    if not invoice.fbr_response:
+                        raise ValueError(f"Invoice {invoice.invoice_number} is missing FBR response")
+
+                    usin = invoice.fbr_response.get('USIN') or invoice.fbr_response.get('usin')
+                    if not usin:
+                        raise ValueError(f"Invoice {invoice.invoice_number} is missing USIN in FBR response")
+
+                    invoice_number = invoice.invoice_number
+                else:
+                    # Manual invoice: data is in individual fields
+                    invoice_data = {
+                        'invoiceRefNo': invoice.external_id,
+                        'invoiceDate': invoice.invoice_date,
+                        'sellerBusinessName': invoice.seller_business_name,
+                        'sellerNTNCNIC': invoice.seller_ntn_cnic,
+                        'sellerProvince': invoice.seller_province,
+                        'sellerAddress': invoice.seller_address,
+                        'buyerBusinessName': invoice.buyer_business_name,
+                        'buyerNTNCNIC': invoice.buyer_ntn_cnic,
+                        'buyerProvince': invoice.buyer_province,
+                        'buyerAddress': invoice.buyer_address,
+                        'buyerRegistrationType': invoice.buyer_registration_type,
+                        'items': invoice.items
+                    }
+
+                    items = invoice.items
+
+                    # Extract USIN from fbr_reference_number (optional for non-posted invoices)
+                    usin = invoice.fbr_reference_number  # Will be None for non-posted invoices
+                    invoice_number = invoice.external_id
+
+                if not items:
+                    raise ValueError(f"Invoice {invoice_number} has no line items")
 
                 logger.debug(
                     f"Rendering invoice {idx + 1}/{len(invoices)}: "
-                    f"{invoice.invoice_number} (USIN: {usin})"
+                    f"{invoice_number}{f' (USIN: {usin})' if usin else ' (no FBR data)'}"
                 )
 
                 # Reset Y coordinate for new page
                 y = page_height - margin
 
                 # Add FBR compliance elements (logo at top right, QR code at bottom right)
-                self._add_fbr_compliance_elements(c, usin, x, y)
+                # Only add if USIN is available
+                if usin:
+                    self._add_fbr_compliance_elements(c, usin, x, y)
 
                 # Render invoice header
-                y = self._render_invoice_header(c, invoice.invoice_data, x, y)
+                y = self._render_invoice_header(c, invoice_data, x, y)
 
                 # Render line items table
-                items = invoice.invoice_data.get('items', [])
-                if not items:
-                    raise ValueError(f"Invoice {invoice.invoice_number} has no line items")
-
                 y = self._render_line_items_table(c, items, x, y, content_width)
 
                 # Render totals
-                y = self._render_totals(c, invoice.invoice_data, x, y)
+                y = self._render_totals(c, invoice_data, x, y)
 
                 # Add page break (except for last invoice)
                 if idx < len(invoices) - 1:

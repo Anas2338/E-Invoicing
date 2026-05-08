@@ -121,6 +121,26 @@ export default function DashboardPage() {
     }
   };
 
+  const handleBulkDelete = async (invoiceIds: string[]) => {
+    try {
+      const response = await automationApi.bulkDeleteInvoices(invoiceIds);
+      toast.success(`Successfully deleted ${response.deleted_count} invoice(s)`);
+      loadInvoices();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete invoices');
+    }
+  };
+
+  const handleBulkRetry = async (invoiceIds: string[]) => {
+    try {
+      const response = await automationApi.bulkRetryInvoices(invoiceIds);
+      toast.success(`Successfully queued ${response.retried_count} invoice(s) for retry`);
+      loadInvoices();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to retry invoices');
+    }
+  };
+
   return (
     <div className="container mx-auto px-4 py-8 max-w-7xl">
       <div className="flex items-center gap-4 mb-6">
@@ -172,6 +192,8 @@ export default function DashboardPage() {
             onDownload={handleDownload}
             onRetry={handleRetry}
             retryingInvoiceId={retryingInvoiceId}
+            onBulkDelete={handleBulkDelete}
+            onBulkRetry={handleBulkRetry}
           />
         </div>
       )}

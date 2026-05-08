@@ -24,6 +24,7 @@ from src.api.v1.saved_hs_codes import router as saved_hs_codes_router
 from src.api.v1.saved_product_descriptions import router as saved_product_descriptions_router
 from src.api.v1.saved_uoms import router as saved_uoms_router
 from src.api.v1.saved_tax_rates import router as saved_tax_rates_router
+from src.api.v1.saved_buyers import router as saved_buyers_router
 from src.api.v1.user_profile import router as user_profile_router
 from src.api.v1.dashboard import router as dashboard_router
 
@@ -136,6 +137,7 @@ app.include_router(saved_hs_codes_router, prefix="/api/v1/profile", tags=["saved
 app.include_router(saved_product_descriptions_router, prefix="/api/v1/profile", tags=["saved-product-descriptions"])
 app.include_router(saved_uoms_router, prefix="/api/v1/profile", tags=["saved-uoms"])
 app.include_router(saved_tax_rates_router, prefix="/api/v1/profile", tags=["saved-tax-rates"])
+app.include_router(saved_buyers_router, prefix="/api/v1/profile", tags=["saved-buyers"])
 app.include_router(user_profile_router, prefix="/api/v1", tags=["user-profile"])
 app.include_router(dashboard_router, prefix="/api/v1/dashboard", tags=["dashboard"])
 

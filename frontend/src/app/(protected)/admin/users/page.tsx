@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { adminApi, PendingUser } from '@/services/adminApi';
-import { CheckCircle, XCircle, Trash2, RefreshCw, Search, Filter, X } from 'lucide-react';
+import { CheckCircle, XCircle, Trash2, RefreshCw, Search, Filter, X, Key, Eye, EyeOff } from 'lucide-react';
 
 export default function AdminUsersPage() {
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
@@ -14,6 +14,19 @@ export default function AdminUsersPage() {
   const [rejectionReason, setRejectionReason] = useState<{ [key: string]: string }>({});
   const [showRejectModal, setShowRejectModal] = useState<string | null>(null);
   const [togglingAutomation, setTogglingAutomation] = useState<string | null>(null);
+
+  // FBR Token Management states
+  const [showTokenModal, setShowTokenModal] = useState<string | null>(null);
+  const [tokenModalUser, setTokenModalUser] = useState<any>(null);
+  const [sandboxToken, setSandboxToken] = useState('');
+  const [productionToken, setProductionToken] = useState('');
+  const [tokenLoading, setTokenLoading] = useState(false);
+  const [hasSandboxToken, setHasSandboxToken] = useState(false);
+  const [hasProductionToken, setHasProductionToken] = useState(false);
+  const [currentSandboxToken, setCurrentSandboxToken] = useState('');
+  const [currentProductionToken, setCurrentProductionToken] = useState('');
+  const [showCurrentSandboxToken, setShowCurrentSandboxToken] = useState(false);
+  const [showCurrentProductionToken, setShowCurrentProductionToken] = useState(false);
 
   // Filter states
   const [searchQuery, setSearchQuery] = useState('');
@@ -160,6 +173,85 @@ export default function AdminUsersPage() {
       alert(err instanceof Error ? err.message : `Failed to ${action} automation access`);
     } finally {
       setTogglingAutomation(null);
+    }
+  };
+
+  const handleOpenTokenModal = async (user: PendingUser) => {
+    try {
+      setShowTokenModal(user.id);
+      setTokenModalUser(user);
+      setTokenLoading(true);
+
+      // Fetch current token status
+      const tokenData = await adminApi.getUserFbrTokens(user.id);
+      setHasSandboxToken(tokenData.has_sandbox_token);
+      setHasProductionToken(tokenData.has_production_token);
+      setCurrentSandboxToken(tokenData.fbr_sandbox_token || '');
+      setCurrentProductionToken(tokenData.fbr_production_token || '');
+      setSandboxToken('');
+      setProductionToken('');
+      setShowCurrentSandboxToken(false);
+      setShowCurrentProductionToken(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to load token information');
+      setShowTokenModal(null);
+    } finally {
+      setTokenLoading(false);
+    }
+  };
+
+  const handleSaveTokens = async () => {
+    if (!showTokenModal) return;
+
+    if (!sandboxToken && !productionToken) {
+      alert('Please enter at least one token');
+      return;
+    }
+
+    try {
+      setTokenLoading(true);
+
+      const data: any = {};
+      if (sandboxToken) data.fbr_sandbox_token = sandboxToken;
+      if (productionToken) data.fbr_production_token = productionToken;
+
+      await adminApi.updateUserFbrTokens(showTokenModal, data);
+
+      alert('FBR tokens updated successfully!');
+      setShowTokenModal(null);
+      setSandboxToken('');
+      setProductionToken('');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to update tokens');
+    } finally {
+      setTokenLoading(false);
+    }
+  };
+
+  const handleDeleteToken = async (environment: 'sandbox' | 'production') => {
+    if (!showTokenModal) return;
+
+    const envName = environment === 'sandbox' ? 'Sandbox' : 'Production';
+    if (!confirm(`Are you sure you want to delete the ${envName} token for this user?`)) {
+      return;
+    }
+
+    try {
+      setTokenLoading(true);
+      await adminApi.deleteUserFbrToken(showTokenModal, environment);
+
+      // Update local state
+      if (environment === 'sandbox') {
+        setHasSandboxToken(false);
+      } else {
+        setHasProductionToken(false);
+      }
+
+      alert(`${envName} token deleted successfully!`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete token');
+    } finally {
+      setTokenLoading(false);
     }
   };
 
@@ -465,6 +557,15 @@ export default function AdminUsersPage() {
                       Delete
                     </button>
                   )}
+                  {activeTab === 'all' && user.account_status === 'approved' && (
+                    <button
+                      onClick={() => handleOpenTokenModal(user)}
+                      className="w-full flex items-center justify-center gap-1 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                      <Key className="w-4 h-4" />
+                      Manage Tokens
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -562,14 +663,25 @@ export default function AdminUsersPage() {
                           </>
                         )}
                         {activeTab === 'all' && (
-                          <button
-                            onClick={() => handleDelete(user.id)}
-                            disabled={actionLoading === user.id}
-                            className="flex items-center gap-1 px-2 lg:px-3 py-1 text-xs lg:text-sm bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                            <span className="hidden lg:inline">Delete</span>
-                          </button>
+                          <>
+                            <button
+                              onClick={() => handleDelete(user.id)}
+                              disabled={actionLoading === user.id}
+                              className="flex items-center gap-1 px-2 lg:px-3 py-1 text-xs lg:text-sm bg-gray-600 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              <span className="hidden lg:inline">Delete</span>
+                            </button>
+                            {user.account_status === 'approved' && (
+                              <button
+                                onClick={() => handleOpenTokenModal(user)}
+                                className="flex items-center gap-1 px-2 lg:px-3 py-1 text-xs lg:text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                              >
+                                <Key className="w-4 h-4" />
+                                <span className="hidden lg:inline">Tokens</span>
+                              </button>
+                            )}
+                          </>
                         )}
                       </div>
                     </td>
@@ -614,6 +726,168 @@ export default function AdminUsersPage() {
                 Cancel
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* FBR Token Management Modal */}
+      {showTokenModal && tokenModalUser && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-[#1a1a1a] rounded-xl p-4 sm:p-6 max-w-lg w-full border border-[#e1e3e5] dark:border-[#2e2e2e] max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base sm:text-lg font-bold text-[#202223] dark:text-[#e3e3e3] flex items-center gap-2">
+                <Key className="w-5 h-5" />
+                Manage FBR Tokens
+              </h3>
+              <button
+                onClick={() => setShowTokenModal(null)}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* User Info */}
+            <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+              <p className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3]">{tokenModalUser.name}</p>
+              <p className="text-xs text-[#6d7175] dark:text-[#8c9196]">{tokenModalUser.email}</p>
+            </div>
+
+            {tokenLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="text-sm text-[#6d7175] dark:text-[#8c9196]">Loading...</div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Current Token Status */}
+                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <h4 className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-2">Current Tokens</h4>
+                  <div className="space-y-3">
+                    {/* Sandbox Token Display */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Sandbox Token:</span>
+                        <span className={`text-xs font-semibold ${hasSandboxToken ? 'text-green-600 dark:text-green-400' : 'text-gray-500'}`}>
+                          {hasSandboxToken ? '✓ Configured' : '✗ Not Set'}
+                        </span>
+                      </div>
+                      {hasSandboxToken && (
+                        <div className="relative">
+                          <input
+                            type={showCurrentSandboxToken ? "text" : "password"}
+                            value={currentSandboxToken}
+                            readOnly
+                            className="w-full px-3 py-2 pr-10 text-xs border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-mono"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowCurrentSandboxToken(!showCurrentSandboxToken)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                          >
+                            {showCurrentSandboxToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Production Token Display */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Production Token:</span>
+                        <span className={`text-xs font-semibold ${hasProductionToken ? 'text-green-600 dark:text-green-400' : 'text-gray-500'}`}>
+                          {hasProductionToken ? '✓ Configured' : '✗ Not Set'}
+                        </span>
+                      </div>
+                      {hasProductionToken && (
+                        <div className="relative">
+                          <input
+                            type={showCurrentProductionToken ? "text" : "password"}
+                            value={currentProductionToken}
+                            readOnly
+                            className="w-full px-3 py-2 pr-10 text-xs border border-gray-300 dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-mono"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowCurrentProductionToken(!showCurrentProductionToken)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                          >
+                            {showCurrentProductionToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sandbox Token Input */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-[#202223] dark:text-[#e3e3e3]">
+                      Sandbox Token
+                    </label>
+                    {hasSandboxToken && (
+                      <button
+                        onClick={() => handleDeleteToken('sandbox')}
+                        disabled={tokenLoading}
+                        className="text-xs text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="password"
+                    value={sandboxToken}
+                    onChange={(e) => setSandboxToken(e.target.value)}
+                    placeholder={hasSandboxToken ? "Enter new token to update" : "Enter sandbox token"}
+                    className="w-full px-3 py-2 text-sm border border-[#c9cccf] dark:border-[#2e2e2e] rounded-lg bg-white dark:bg-[#1a1a1a] text-[#202223] dark:text-[#e3e3e3] focus:outline-none focus:ring-2 focus:ring-[#008060] dark:focus:ring-[#00a876]"
+                  />
+                </div>
+
+                {/* Production Token Input */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-[#202223] dark:text-[#e3e3e3]">
+                      Production Token
+                    </label>
+                    {hasProductionToken && (
+                      <button
+                        onClick={() => handleDeleteToken('production')}
+                        disabled={tokenLoading}
+                        className="text-xs text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="password"
+                    value={productionToken}
+                    onChange={(e) => setProductionToken(e.target.value)}
+                    placeholder={hasProductionToken ? "Enter new token to update" : "Enter production token"}
+                    className="w-full px-3 py-2 text-sm border border-[#c9cccf] dark:border-[#2e2e2e] rounded-lg bg-white dark:bg-[#1a1a1a] text-[#202223] dark:text-[#e3e3e3] focus:outline-none focus:ring-2 focus:ring-[#008060] dark:focus:ring-[#00a876]"
+                  />
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex flex-col sm:flex-row gap-2 pt-4">
+                  <button
+                    onClick={handleSaveTokens}
+                    disabled={tokenLoading || (!sandboxToken && !productionToken)}
+                    className="flex-1 px-4 py-2 text-sm sm:text-base bg-[#008060] hover:bg-[#006e52] dark:bg-[#00a876] dark:hover:bg-[#008f64] text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {tokenLoading ? 'Saving...' : 'Save Tokens'}
+                  </button>
+                  <button
+                    onClick={() => setShowTokenModal(null)}
+                    disabled={tokenLoading}
+                    className="flex-1 px-4 py-2 text-sm sm:text-base bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

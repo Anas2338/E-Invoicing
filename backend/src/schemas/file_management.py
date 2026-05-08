@@ -51,6 +51,18 @@ class BulkBlockRequest(BaseModel):
     reason: Optional[str] = Field(None, description="Optional reason for blocking")
 
 
+class BulkDeleteRequest(BaseModel):
+    """Request schema for bulk deleting invoices"""
+
+    invoice_ids: List[str] = Field(..., description="List of invoice IDs to delete", min_length=1)
+
+
+class BulkRetryRequest(BaseModel):
+    """Request schema for bulk retrying invoices"""
+
+    invoice_ids: List[str] = Field(..., description="List of invoice IDs to retry", min_length=1)
+
+
 class DeleteInvoiceResponse(BaseModel):
     """Response schema for invoice deletion"""
 

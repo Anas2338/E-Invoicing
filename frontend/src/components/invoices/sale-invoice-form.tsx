@@ -81,6 +81,15 @@ export function SaleInvoiceForm({
   const [buyerAddress, setBuyerAddress] = useState('');
   const [buyerRegistrationType, setBuyerRegistrationType] = useState<'Registered' | 'Unregistered'>('Registered');
 
+  // Saved buyers state for autocomplete
+  const [savedBuyers, setSavedBuyers] = useState<Array<any>>([]);
+  const [buyerSearchResults, setBuyerSearchResults] = useState<Array<any>>([]);
+  const [showBuyerSuggestions, setShowBuyerSuggestions] = useState(false);
+  const [loadingSavedBuyers, setLoadingSavedBuyers] = useState(false);
+
+  // Income Tax state
+  const [incomeTax, setIncomeTax] = useState<'236G' | '236H'>('236G');
+
   // Invoice items state
   const [items, setItems] = useState<InvoiceItem[]>([{
     hsCode: '',
@@ -108,11 +117,9 @@ export function SaleInvoiceForm({
   const [taxRateError, setTaxRateError] = useState<string | null>(null);
   const [hasSelectedTransactionType, setHasSelectedTransactionType] = useState(false);
 
-  // Saved HS codes and descriptions state
-  const [savedHSCodes, setSavedHSCodes] = useState<Array<any>>([]);
-  const [savedDescriptions, setSavedDescriptions] = useState<Array<any>>([]);
-  const [savedUOMs, setSavedUOMs] = useState<Array<any>>([]);
-  const [savedTaxRates, setSavedTaxRates] = useState<Array<any>>([]);
+  // Saved items state
+  const [savedItems, setSavedItems] = useState<Array<any>>([]);
+  const [selectedSavedItems, setSelectedSavedItems] = useState<{ [key: number]: string }>({});
   const [loadingSavedData, setLoadingSavedData] = useState(false);
 
   // Fetch master data on component mount
@@ -140,30 +147,17 @@ export function SaleInvoiceForm({
     fetchMasterData();
   }, []);
 
-  // Fetch saved HS codes, descriptions, UOMs, and tax rates on component mount
+  // Fetch saved items on component mount
   useEffect(() => {
     const fetchSavedData = async () => {
       try {
         setLoadingSavedData(true);
 
-        // Fetch validated HS codes
-        const hsCodesResponse = await api.auth.getSavedHSCodes(true);
-        const validatedHSCodes = (hsCodesResponse || []).filter((h: any) => h.fbr_validated === true);
-        setSavedHSCodes(validatedHSCodes);
-
-        // Fetch product descriptions
-        const descriptionsResponse = await api.auth.getSavedProductDescriptions(true);
-        setSavedDescriptions(descriptionsResponse || []);
-
-        // Fetch UOMs
-        const uomsResponse = await api.auth.getSavedUOMs(true);
-        setSavedUOMs(uomsResponse || []);
-
-        // Fetch tax rates
-        const taxRatesResponse = await api.auth.getSavedTaxRates(true);
-        setSavedTaxRates(taxRatesResponse || []);
+        // Fetch saved items (unified products)
+        const itemsResponse = await api.auth.getSavedProducts(true);
+        setSavedItems(itemsResponse || []);
       } catch (error) {
-        console.error('Failed to fetch saved data:', error);
+        console.error('Failed to fetch saved items:', error);
         // Don't show error to user, just log it
       } finally {
         setLoadingSavedData(false);
@@ -171,6 +165,24 @@ export function SaleInvoiceForm({
     };
 
     fetchSavedData();
+  }, []);
+
+  // Fetch buyers from invoice history in background (non-blocking)
+  useEffect(() => {
+    const fetchBuyers = async () => {
+      try {
+        setLoadingSavedBuyers(true);
+        const buyersResponse = await api.invoices.getBuyersFromHistory();
+        setSavedBuyers(buyersResponse || []);
+      } catch (error) {
+        console.error('Failed to fetch buyers from history:', error);
+        // Don't show error to user, just log it
+      } finally {
+        setLoadingSavedBuyers(false);
+      }
+    };
+
+    fetchBuyers();
   }, []);
 
   // Auto-fill seller information from user profile
@@ -193,13 +205,32 @@ export function SaleInvoiceForm({
           setSellerProvince(profile.fbr_seller_province);
 
           // Also set the province code by looking it up in masterData
-          const province = masterData.provinces.find(p => p.name === profile.fbr_seller_province);
+          const province = masterData?.provinces.find(p => p.name === profile.fbr_seller_province);
           if (province) {
             setSellerProvinceCode(province.code);
           }
         }
         if (profile.fbr_seller_address) {
           setSellerAddress(profile.fbr_seller_address);
+        }
+
+        // Auto-set environment based on configured FBR tokens
+        // Fetch FBR credentials to check which tokens are configured
+        try {
+          const fbrCredentials = await api.auth.getFbrCredentials();
+          const hasSandbox = !!fbrCredentials.fbr_sandbox_token;
+          const hasProduction = !!fbrCredentials.fbr_production_token;
+
+          // Logic: If both or only production → PRODUCTION, if only sandbox → SANDBOX
+          if (hasProduction) {
+            setEnvironment('PRODUCTION');
+          } else if (hasSandbox) {
+            setEnvironment('SANDBOX');
+          }
+          // If neither token exists, keep default SANDBOX
+        } catch (error) {
+          console.error('Failed to fetch FBR credentials:', error);
+          // Keep default SANDBOX if fetch fails
         }
       } catch (error) {
         console.error('Failed to fetch user profile:', error);
@@ -240,6 +271,7 @@ export function SaleInvoiceForm({
       setInvoiceRefNo(initialData.invoice_ref_no || '');
       setScenarioId(initialData.scenario_id || '');
       setEnvironment(initialData.environment || 'SANDBOX');
+      setIncomeTax(initialData.income_tax || '236G');
 
       // Handle transaction_type_id: if empty but items have sale_type, reverse map it
       let resolvedTransactionTypeId = initialData.transaction_type_id || '';
@@ -248,14 +280,23 @@ export function SaleInvoiceForm({
         // For transferred invoices: derive transaction_type_id from sale_type
         const firstItemSaleType = initialData.items[0].saleType || initialData.items[0].sale_type;
 
-        if (firstItemSaleType && masterData.transaction_types) {
-          // Find transaction type whose name matches the sale_type
-          const matchingTransactionType = masterData.transaction_types.find(
-            (t: any) => t.name?.trim() === firstItemSaleType.trim()
+        if (firstItemSaleType && masterData?.transaction_types) {
+          // Check if sale_type is a code (numeric string) - use it directly
+          const matchingByCode = masterData.transaction_types.find(
+            (t: any) => t.code === firstItemSaleType
           );
 
-          if (matchingTransactionType) {
-            resolvedTransactionTypeId = matchingTransactionType.code;
+          if (matchingByCode) {
+            resolvedTransactionTypeId = matchingByCode.code;
+          } else {
+            // Fallback: try matching by name (for legacy data)
+            const matchingByName = masterData.transaction_types.find(
+              (t: any) => t.name?.trim() === firstItemSaleType.trim()
+            );
+
+            if (matchingByName) {
+              resolvedTransactionTypeId = matchingByName.code;
+            }
           }
         }
       }
@@ -275,7 +316,7 @@ export function SaleInvoiceForm({
 
       // Resolve seller province code from masterData
       if (initialData.seller_province && masterData) {
-        const province = masterData.provinces.find(p => p.name === initialData.seller_province);
+        const province = masterData?.provinces.find(p => p.name === initialData.seller_province);
         if (province) {
           setSellerProvinceCode(province.code);
         }
@@ -290,7 +331,7 @@ export function SaleInvoiceForm({
 
       // Resolve buyer province code from masterData
       if (initialData.buyer_province && masterData) {
-        const province = masterData.provinces.find(p => p.name === initialData.buyer_province);
+        const province = masterData?.provinces.find(p => p.name === initialData.buyer_province);
         if (province) {
           setBuyerProvinceCode(province.code);
         }
@@ -317,9 +358,36 @@ export function SaleInvoiceForm({
           saleType: item.saleType || item.sale_type || '01',
           sroItemSerialNo: item.sroItemSerialNo || item.sro_item_serial_no || ''
         })));
+
+        // Match items against saved items to restore dropdown selection
+        if (savedItems.length > 0) {
+          const matchedItems: { [key: number]: string } = {};
+
+          initialData.items.forEach((item: any, index: number) => {
+            const itemHsCode = (item.hsCode || item.hs_code || '').trim().toLowerCase();
+            const itemDescription = (item.productDescription || item.product_description || '').trim().toLowerCase();
+            const itemRate = (item.rate || '').toString().trim();
+
+            // Try to find a matching saved item
+            const matchedSavedItem = savedItems.find((savedItem: any) => {
+              const savedHsCode = (savedItem.hs_code || '').trim().toLowerCase();
+              const savedDescription = (savedItem.product_description || '').trim().toLowerCase();
+              const savedRate = (savedItem.default_rate || '').toString().trim();
+
+              // Match by HS code and description (primary match)
+              return savedHsCode === itemHsCode && savedDescription === itemDescription;
+            });
+
+            if (matchedSavedItem) {
+              matchedItems[index] = matchedSavedItem.id.toString();
+            }
+          });
+
+          setSelectedSavedItems(matchedItems);
+        }
       }
     }
-  }, [isEditMode, initialData, masterData]);
+  }, [isEditMode, initialData, masterData, savedItems]);
 
   // Verify buyer registration with FBR
   const verifyBuyerRegistration = useCallback(async (ntnCnic: string) => {
@@ -508,28 +576,130 @@ export function SaleInvoiceForm({
     }
   };
 
+  const handleItemSelect = (index: number, itemId: string) => {
+    const selectedItem = savedItems.find(item => item.id.toString() === itemId);
+    if (!selectedItem) return;
+
+    // If this is the first item (index 0), set the Transaction Type from the item
+    if (index === 0 && selectedItem.transaction_type) {
+      setTransactionTypeId(selectedItem.transaction_type);
+      setHasSelectedTransactionType(true);
+
+      // Find the transaction type name
+      const transactionType = masterData?.transaction_types.find(t => t.code === selectedItem.transaction_type);
+      const transactionTypeName = transactionType?.name?.trim() || '';
+
+      // Auto-set Sale Type for all items to match Transaction Type NAME
+      setItems(prevItems =>
+        prevItems.map(item => ({ ...item, saleType: transactionTypeName }))
+      );
+    }
+
+    // If this is NOT the first item, validate transaction type matches
+    if (index > 0 && selectedItem.transaction_type && transactionTypeId) {
+      if (selectedItem.transaction_type !== transactionTypeId) {
+        toast.error(`Cannot select this item. Transaction type mismatch. Please select an item with transaction type matching the first item.`);
+        return; // Prevent selection
+      }
+    }
+
+    // Store the selected item ID
+    setSelectedSavedItems(prev => ({ ...prev, [index]: itemId }));
+
+    // Auto-fill all fields from the saved item
+    updateItem(index, 'hsCode', selectedItem.hs_code);
+    updateItem(index, 'productDescription', selectedItem.product_description);
+    updateItem(index, 'rate', selectedItem.default_rate || '');
+
+    // Convert UOM code to name
+    const uomCode = selectedItem.default_uom || 'NOS';
+    const uomObj = masterData?.uom.find(u => u.code === uomCode);
+    updateItem(index, 'uoM', uomObj?.name || uomCode);
+
+    // Set sale type from transaction type if available
+    if (selectedItem.transaction_type) {
+      const transactionType = masterData?.transaction_types.find(t => t.code === selectedItem.transaction_type);
+      if (transactionType) {
+        updateItem(index, 'saleType', transactionType.name || '01');
+      }
+    }
+
+    // Set SRO fields if available
+    if (selectedItem.sro_schedule_no) {
+      updateItem(index, 'sroScheduleNo', selectedItem.sro_schedule_no);
+    }
+    if (selectedItem.sro_item_serial_no) {
+      updateItem(index, 'sroItemSerialNo', selectedItem.sro_item_serial_no);
+    }
+
+    toast.success(`Item "${selectedItem.item_name}" loaded successfully`);
+  };
+
+  // Handle buyer business name input with autocomplete
+  const handleBuyerBusinessNameChange = (value: string) => {
+    setBuyerBusinessName(value);
+
+    // Filter saved buyers based on input
+    if (value.trim().length > 0) {
+      const filtered = savedBuyers.filter(buyer =>
+        buyer.buyer_business_name.toLowerCase().includes(value.toLowerCase())
+      );
+      setBuyerSearchResults(filtered);
+      setShowBuyerSuggestions(filtered.length > 0);
+    } else {
+      // Show all saved buyers when input is empty
+      setBuyerSearchResults(savedBuyers);
+      setShowBuyerSuggestions(savedBuyers.length > 0);
+    }
+  };
+
+  // Handle selecting a saved buyer from suggestions
+  const handleSelectSavedBuyer = (buyer: any) => {
+    setBuyerBusinessName(buyer.buyer_business_name);
+    setBuyerNTNCNIC(buyer.buyer_ntn_cnic);
+    setBuyerAddress(buyer.buyer_address || '');
+    setBuyerProvince(buyer.buyer_province || '');
+    setBuyerRegistrationType(buyer.buyer_registration_type || 'Registered');
+
+    // Find province code if province name is set
+    if (buyer.buyer_province && masterData) {
+      const province = masterData?.provinces.find(p => p.name === buyer.buyer_province);
+      if (province) {
+        setBuyerProvinceCode(province.code);
+      }
+    }
+
+    setShowBuyerSuggestions(false);
+    toast.success(`Buyer "${buyer.buyer_business_name}" loaded successfully`);
+  };
+
   const updateItem = useCallback((index: number, field: keyof InvoiceItem, value: any) => {
     setItems(prevItems => {
       const updatedItems = [...prevItems];
       updatedItems[index] = { ...updatedItems[index], [field]: value };
 
-      // Auto-calculate when Value Excl. Sales Tax is updated
-      if (field === 'valueSalesExcludingST' && value) {
-        const valueExclTax = parseFloat(value) || 0;
+      // Auto-calculate when Value Excl. Sales Tax or Fixed/Retail Price is updated
+      if (field === 'valueSalesExcludingST' || field === 'fixedNotifiedValueOrRetailPrice') {
+        const valueExclTax = Number(updatedItems[index].valueSalesExcludingST) || 0;
+        const fixedPrice = Number(updatedItems[index].fixedNotifiedValueOrRetailPrice) || 0;
         const taxRate = parseFloat(updatedItems[index].rate) || 0;
 
-        if (valueExclTax > 0 && taxRate >= 0) {
-          // Calculate Sales Tax Applicable = Value Excl. Tax × (Tax Rate / 100)
-          const salesTax = valueExclTax * (taxRate / 100);
+        // Use the greater value between Value Excl. Tax and Fixed/Retail Price
+        // If both are equal, use Value Excl. Tax (which is the same anyway)
+        const baseValue = Math.max(valueExclTax, fixedPrice);
+
+        if (baseValue > 0 && taxRate >= 0) {
+          // Calculate Sales Tax Applicable = Base Value × (Tax Rate / 100)
+          const salesTax = baseValue * (taxRate / 100);
 
           // Calculate Further Tax (4%) for Unregistered buyers
           let furtherTax = 0;
           if (buyerRegistrationType === 'Unregistered') {
-            furtherTax = valueExclTax * 0.04;
+            furtherTax = baseValue * 0.04;
           }
 
-          // Calculate Total Value (Inc. Tax) = Value Excl. Tax + Sales Tax + Further Tax
-          const totalValue = valueExclTax + salesTax + furtherTax;
+          // Calculate Total Value (Inc. Tax) = Base Value + Sales Tax + Further Tax
+          const totalValue = baseValue + salesTax + furtherTax;
 
           updatedItems[index].salesTaxApplicable = parseFloat(salesTax.toFixed(2));
           updatedItems[index].furtherTax = parseFloat(furtherTax.toFixed(2));
@@ -619,7 +789,7 @@ export function SaleInvoiceForm({
     }
   }, [updateItem, fetchSroSchedules, invoiceDate]);
 
-  const handleFormSubmit = (e: React.FormEvent) => {
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // Validate Further Tax for Unregistered buyers
@@ -668,6 +838,7 @@ export function SaleInvoiceForm({
       buyer_registration_type: buyerRegistrationType,
       invoice_ref_no: invoiceRefNo || undefined,
       scenario_id: scenarioId || undefined,
+      income_tax: incomeTax,
       items: formattedItems,
       environment: environment
     };
@@ -678,17 +849,6 @@ export function SaleInvoiceForm({
   return (
     <form onSubmit={handleFormSubmit} className="space-y-6">
       {/* Loading state */}
-      {masterDataLoading && (
-        <Card>
-          <CardContent className="py-8">
-            <div className="flex items-center justify-center space-x-2">
-              <Loader2 className="h-6 w-6 animate-spin" />
-              <span>Loading form options...</span>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Error state */}
       {masterDataError && (
         <Card className="border-red-200 bg-red-50">
@@ -698,13 +858,18 @@ export function SaleInvoiceForm({
         </Card>
       )}
 
-      {/* Form content - only show when master data is loaded */}
-      {!masterDataLoading && masterData && (
-        <>
+      {/* Form content - show immediately, disable fields until master data loads */}
+      <>
           {/* Invoice Header */}
           <Card>
             <CardHeader>
               <CardTitle>Invoice Information</CardTitle>
+              {masterDataLoading && (
+                <div className="flex items-center space-x-2 text-sm text-gray-500">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>Loading form options...</span>
+                </div>
+              )}
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -723,14 +888,14 @@ export function SaleInvoiceForm({
                 <div>
                   <Label htmlFor="invoiceType">Invoice Type *</Label>
                   <Select value={invoiceType} onValueChange={(val) => setInvoiceType(val as 'Sale Invoice' | 'Debit Note')}>
-                    <SelectTrigger disabled={masterData.invoice_types.length === 0}>
-                      <SelectValue placeholder={masterData.invoice_types.length === 0 ? "Configure FBR token in profile" : "Select invoice type"} />
+                    <SelectTrigger disabled={(masterData?.invoice_types.length ?? 0) === 0}>
+                      <SelectValue placeholder={(masterData?.invoice_types.length ?? 0) === 0 ? "Configure FBR token in profile" : "Select invoice type"} />
                     </SelectTrigger>
                     <SelectContent>
-                      {masterData.invoice_types.length === 0 ? (
+                      {(masterData?.invoice_types.length ?? 0) === 0 ? (
                         <SelectItem value="none" disabled>No options available - Configure FBR token</SelectItem>
                       ) : (
-                        masterData.invoice_types.map((type) => (
+                        masterData?.invoice_types.map((type) => (
                           <SelectItem key={type.code} value={type.name}>{type.name}</SelectItem>
                         ))
                       )}
@@ -745,7 +910,7 @@ export function SaleInvoiceForm({
                     setHasSelectedTransactionType(true);
 
                     // Find the transaction type name from the code
-                    const selectedTransactionType = masterData.transaction_types.find(t => t.code === val);
+                    const selectedTransactionType = masterData?.transaction_types.find(t => t.code === val);
                     const transactionTypeName = selectedTransactionType?.name?.trim() || '';
 
                     // Auto-set Sale Type for all items to match Transaction Type NAME (not code)
@@ -753,26 +918,27 @@ export function SaleInvoiceForm({
                       prevItems.map(item => ({ ...item, saleType: transactionTypeName }))
                     );
                   }}>
-                    <SelectTrigger disabled={masterData.transaction_types.length === 0}>
+                    <SelectTrigger disabled={true} className="bg-gray-50 dark:bg-gray-800">
                       <span className="flex-1 text-left">
                         {transactionTypeId
-                          ? masterData.transaction_types.find(t => t.code === transactionTypeId)?.name || transactionTypeId
-                          : masterData.transaction_types.length === 0
-                            ? "Configure FBR token in profile"
-                            : "Select transaction type"
+                          ? masterData?.transaction_types.find(t => t.code === transactionTypeId)?.name || transactionTypeId
+                          : "Will be set by first item selection"
                         }
                       </span>
                     </SelectTrigger>
                     <SelectContent>
-                      {masterData.transaction_types.length === 0 ? (
+                      {(masterData?.transaction_types.length ?? 0) === 0 ? (
                         <SelectItem value="none" disabled>No options available - Configure FBR token</SelectItem>
                       ) : (
-                        masterData.transaction_types.map((type) => (
+                        masterData?.transaction_types.map((type) => (
                           <SelectItem key={type.code} value={type.code}>{type.name}</SelectItem>
                         ))
                       )}
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
+                    Transaction type is automatically set when you select the first item
+                  </p>
                 </div>
 
             <div>
@@ -788,15 +954,16 @@ export function SaleInvoiceForm({
 
             <div>
               <Label htmlFor="environment">Environment *</Label>
-              <Select value={environment} onValueChange={(val) => setEnvironment(val as 'SANDBOX' | 'PRODUCTION')}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="SANDBOX">Sandbox</SelectItem>
-                  <SelectItem value="PRODUCTION">Production</SelectItem>
-                </SelectContent>
-              </Select>
+              <Input
+                id="environment"
+                value={environment}
+                readOnly
+                disabled
+                className="bg-gray-50 dark:bg-gray-800 cursor-not-allowed"
+              />
+              <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
+                Environment is automatically set based on your configured FBR tokens
+              </p>
             </div>
           </div>
 
@@ -866,19 +1033,19 @@ export function SaleInvoiceForm({
               <Select value={sellerProvince} onValueChange={(val) => {
                 setSellerProvince(val);
                 // Find and store province code
-                const province = masterData.provinces.find(p => p.name === val);
+                const province = masterData?.provinces.find(p => p.name === val);
                 if (province) {
                   setSellerProvinceCode(province.code);
                 }
               }}>
-                <SelectTrigger disabled={masterData.provinces.length === 0}>
-                  <SelectValue placeholder={masterData.provinces.length === 0 ? "Configure FBR token in profile" : "Select province"} />
+                <SelectTrigger disabled={(masterData?.provinces.length ?? 0) === 0}>
+                  <SelectValue placeholder={(masterData?.provinces.length ?? 0) === 0 ? "Configure FBR token in profile" : "Select province"} />
                 </SelectTrigger>
                 <SelectContent>
-                  {masterData.provinces.length === 0 ? (
+                  {(masterData?.provinces.length ?? 0) === 0 ? (
                     <SelectItem value="none" disabled>No options available - Configure FBR token</SelectItem>
                   ) : (
-                    masterData.provinces.map((province) => (
+                    masterData?.provinces.map((province) => (
                       <SelectItem key={province.code} value={province.name}>{province.name}</SelectItem>
                     ))
                   )}
@@ -914,7 +1081,7 @@ export function SaleInvoiceForm({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {masterData.registration_types.map((type) => (
+                  {masterData?.registration_types.map((type) => (
                     <SelectItem key={type.code} value={type.name}>{type.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -947,15 +1114,53 @@ export function SaleInvoiceForm({
               )}
             </div>
 
-            <div>
+            <div className="relative">
               <Label htmlFor="buyerBusinessName">Business Name *</Label>
               <Input
                 id="buyerBusinessName"
                 value={buyerBusinessName}
-                onChange={(e) => setBuyerBusinessName(e.target.value)}
+                onChange={(e) => handleBuyerBusinessNameChange(e.target.value)}
+                onFocus={() => {
+                  // Show all saved buyers when field is focused
+                  if (savedBuyers.length > 0) {
+                    if (buyerBusinessName.trim().length > 0) {
+                      // Filter based on current input
+                      const filtered = savedBuyers.filter(buyer =>
+                        buyer.buyer_business_name.toLowerCase().includes(buyerBusinessName.toLowerCase())
+                      );
+                      setBuyerSearchResults(filtered);
+                      setShowBuyerSuggestions(filtered.length > 0);
+                    } else {
+                      // Show all saved buyers when input is empty
+                      setBuyerSearchResults(savedBuyers);
+                      setShowBuyerSuggestions(true);
+                    }
+                  }
+                }}
+                onBlur={() => {
+                  // Delay hiding to allow click on suggestion
+                  setTimeout(() => setShowBuyerSuggestions(false), 200);
+                }}
                 placeholder="Enter business name"
                 required
               />
+              {showBuyerSuggestions && buyerSearchResults.length > 0 && (
+                <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                  {buyerSearchResults.map((buyer, index) => (
+                    <div
+                      key={`${buyer.buyer_ntn_cnic}-${buyer.buyer_business_name}-${index}`}
+                      className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
+                      onClick={() => handleSelectSavedBuyer(buyer)}
+                    >
+                      <div className="font-medium text-sm">{buyer.buyer_business_name}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                        NTN/CNIC: {buyer.buyer_ntn_cnic}
+                        {buyer.buyer_province && ` • ${buyer.buyer_province}`}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div>
@@ -963,19 +1168,19 @@ export function SaleInvoiceForm({
               <Select value={buyerProvince} onValueChange={(val) => {
                 setBuyerProvince(val);
                 // Find and store province code
-                const province = masterData.provinces.find(p => p.name === val);
+                const province = masterData?.provinces.find(p => p.name === val);
                 if (province) {
                   setBuyerProvinceCode(province.code);
                 }
               }}>
-                <SelectTrigger disabled={masterData.provinces.length === 0}>
-                  <SelectValue placeholder={masterData.provinces.length === 0 ? "Configure FBR token in profile" : "Select province"} />
+                <SelectTrigger disabled={(masterData?.provinces.length ?? 0) === 0}>
+                  <SelectValue placeholder={(masterData?.provinces.length ?? 0) === 0 ? "Configure FBR token in profile" : "Select province"} />
                 </SelectTrigger>
                 <SelectContent>
-                  {masterData.provinces.length === 0 ? (
+                  {(masterData?.provinces.length ?? 0) === 0 ? (
                     <SelectItem value="none" disabled>No options available - Configure FBR token</SelectItem>
                   ) : (
-                    masterData.provinces.map((province) => (
+                    masterData?.provinces.map((province) => (
                       <SelectItem key={province.code} value={province.name}>{province.name}</SelectItem>
                     ))
                   )}
@@ -1000,36 +1205,20 @@ export function SaleInvoiceForm({
       {/* Invoice Items */}
       <Card>
         <CardHeader>
-          <CardTitle>Invoice Items</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>Invoice Items</CardTitle>
+            <Button
+              type="button"
+              onClick={addItem}
+              size="sm"
+              className="bg-[#008060] hover:bg-[#006e52] dark:bg-[#00a876] dark:hover:bg-[#008f64]"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Item
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Warning if no validated HS codes */}
-          {savedHSCodes.length === 0 && (
-            <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="font-semibold text-amber-900 dark:text-amber-100 mb-1">
-                    No Validated HS Codes Available
-                  </h4>
-                  <p className="text-sm text-amber-800 dark:text-amber-200 mb-2">
-                    You need to add and validate HS codes in your profile before creating invoices.
-                    Only FBR-validated HS codes can be used in invoices.
-                  </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => window.location.href = '/profile'}
-                    className="mt-2"
-                  >
-                    Go to Profile to Add HS Codes
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-
           {items.map((item, index) => (
             <div key={index} className="border rounded-lg p-4 space-y-4">
               <div className="flex justify-between items-center mb-2">
@@ -1046,146 +1235,100 @@ export function SaleInvoiceForm({
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="relative">
-                  <Label>HS Code *</Label>
-                  <Select
-                    value={item.hsCode}
-                    onValueChange={(val) => updateItem(index, 'hsCode', val)}
-                  >
-                    <SelectTrigger disabled={savedHSCodes.length === 0}>
-                      <SelectValue placeholder={savedHSCodes.length === 0 ? "No HS codes available" : "Select HS Code"} />
+              {/* Saved Items Dropdown */}
+              {savedItems.length > 0 && (
+                <div className={`mb-4 p-3 border rounded-lg ${
+                  index > 0 && transactionTypeId && selectedSavedItems[index] && (() => {
+                    const selectedItem = savedItems.find(item => item.id.toString() === selectedSavedItems[index]);
+                    return selectedItem && selectedItem.transaction_type && selectedItem.transaction_type !== transactionTypeId;
+                  })()
+                    ? 'bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-800'
+                    : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+                }`}>
+                  <Label className="text-sm font-medium mb-2 block">Quick Select from Saved Items</Label>
+                  <Select value={selectedSavedItems[index]} onValueChange={(val) => handleItemSelect(index, val)}>
+                    <SelectTrigger>
+                      {selectedSavedItems[index] ? (
+                        <span>{savedItems.find(item => item.id.toString() === selectedSavedItems[index])?.item_name || 'Select a saved item to auto-fill...'}</span>
+                      ) : (
+                        <span className="text-muted-foreground">Select a saved item to auto-fill...</span>
+                      )}
                     </SelectTrigger>
                     <SelectContent>
-                      {savedHSCodes.length === 0 ? (
-                        <SelectItem value="none" disabled>No records</SelectItem>
-                      ) : (
-                        savedHSCodes.map((hsCode) => (
-                          <SelectItem key={hsCode.id} value={hsCode.hs_code}>
-                            <div className="flex flex-col">
-                              <span className="font-medium">{hsCode.hs_code}</span>
-                              {hsCode.fbr_description && (
-                                <span className="text-xs text-gray-500 truncate max-w-[400px]">
-                                  {hsCode.fbr_description}
-                                </span>
-                              )}
-                            </div>
-                          </SelectItem>
-                        ))
-                      )}
+                      {savedItems.map((savedItem) => (
+                        <SelectItem key={savedItem.id} value={savedItem.id.toString()}>
+                          <div className="flex flex-col">
+                            <span className="font-medium">{savedItem.item_name}</span>
+                            <span className="text-xs text-gray-500">
+                              {savedItem.hs_code} - {savedItem.product_description}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
-                  {savedHSCodes.length === 0 && (
-                    <p className="text-xs text-amber-600 mt-1">
-                      Add HS codes in your profile first
+                  {index > 0 && transactionTypeId && (
+                    <p className="text-xs text-red-600 dark:text-red-400 mt-2 flex items-center gap-1 font-medium">
+                      <AlertCircle className="h-3 w-3" />
+                      Only items with matching transaction type can be selected
                     </p>
                   )}
+                  {index === 0 && !transactionTypeId && (
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                      Select an item to automatically set the transaction type and fill all fields
+                    </p>
+                  )}
+                  {index === 0 && transactionTypeId && (
+                    <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                      Transaction type set. All items must match this transaction type.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label>HS Code *</Label>
+                  <Input
+                    type="text"
+                    value={item.hsCode}
+                    onChange={(e) => updateItem(index, 'hsCode', e.target.value)}
+                    placeholder="Enter HS Code"
+                    required
+                  />
                 </div>
 
                 <div className="md:col-span-2">
-                  <div className="flex items-center gap-2">
-                    <Label>Product Description *</Label>
-                    {fetchingHSCode[index] && (
-                      <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
-                    )}
-                  </div>
-                  <Select
+                  <Label>Product Description *</Label>
+                  <Input
+                    type="text"
                     value={item.productDescription}
-                    onValueChange={(val) => updateItem(index, 'productDescription', val)}
-                  >
-                    <SelectTrigger disabled={savedDescriptions.length === 0}>
-                      <SelectValue placeholder={savedDescriptions.length === 0 ? "No descriptions available" : "Select Description"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {savedDescriptions.length === 0 ? (
-                        <SelectItem value="none" disabled>No records</SelectItem>
-                      ) : (
-                        savedDescriptions.map((desc) => (
-                          <SelectItem key={desc.id} value={desc.product_description}>
-                            {desc.product_description}
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
-                  {savedDescriptions.length === 0 && (
-                    <p className="text-xs text-amber-600 mt-1">
-                      Add product descriptions in your profile first
-                    </p>
-                  )}
+                    onChange={(e) => updateItem(index, 'productDescription', e.target.value)}
+                    placeholder="Enter product description"
+                    required
+                  />
                 </div>
 
                 <div>
-                  <div className="flex items-center gap-2">
-                    <Label>Tax Rate *</Label>
-                    {fetchingTaxRates && (
-                      <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
-                    )}
-                  </div>
-                  <Select
+                  <Label>Tax Rate *</Label>
+                  <Input
+                    type="text"
                     value={item.rate}
-                    onValueChange={(val) => updateItem(index, 'rate', val)}
-                  >
-                    <SelectTrigger disabled={savedTaxRates.length === 0}>
-                      <SelectValue placeholder={savedTaxRates.length === 0 ? "No tax rates available" : "Select Tax Rate"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {savedTaxRates.length === 0 ? (
-                        <SelectItem value="none" disabled>No records</SelectItem>
-                      ) : (
-                        savedTaxRates.map((rate) => (
-                          <SelectItem key={rate.id} value={rate.tax_rate}>
-                            {rate.tax_rate}% {rate.description ? `- ${rate.description}` : ''}
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
-                  {savedTaxRates.length === 0 && (
-                    <p className="text-xs text-amber-600 mt-1">
-                      Add tax rates in your profile first
-                    </p>
-                  )}
+                    onChange={(e) => updateItem(index, 'rate', e.target.value)}
+                    placeholder="e.g., 18"
+                    required
+                  />
                 </div>
 
                 <div>
-                  <div className="flex items-center gap-2">
-                    <Label>Unit of Measurement *</Label>
-                    {fetchingDynamicData[index] && (
-                      <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
-                    )}
-                  </div>
-                  <Select
+                  <Label>Unit of Measurement *</Label>
+                  <Input
+                    type="text"
                     value={item.uoM}
-                    onValueChange={(val) => updateItem(index, 'uoM', val)}
-                  >
-                    <SelectTrigger disabled={savedUOMs.length === 0}>
-                      <span className="flex-1 text-left">
-                        {item.uoM && savedUOMs.length > 0
-                          ? savedUOMs.find(u => u.uom_code === item.uoM)?.uom_name || item.uoM
-                          : savedUOMs.length === 0
-                            ? "No UOMs available"
-                            : "Select UOM"
-                        }
-                      </span>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {savedUOMs.length === 0 ? (
-                        <SelectItem value="none" disabled>No records</SelectItem>
-                      ) : (
-                        savedUOMs.map((uom) => (
-                          <SelectItem key={uom.id} value={uom.uom_code}>
-                            {uom.uom_name}
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
-                  {savedUOMs.length === 0 && (
-                    <p className="text-xs text-amber-600 mt-1">
-                      Add UOMs in your profile first
-                    </p>
-                  )}
+                    onChange={(e) => updateItem(index, 'uoM', e.target.value)}
+                    placeholder="e.g., NOS, KG, MT"
+                    required
+                  />
                 </div>
 
                 <div>
@@ -1374,9 +1517,46 @@ export function SaleInvoiceForm({
                     placeholder="Optional"
                   />
                 </div>
+
+                <div>
+                  <Label>Item Transaction Type (Info Only)</Label>
+                  <Input
+                    value={(() => {
+                      if (!selectedSavedItems[index]) return '';
+                      const selectedItem = savedItems.find(si => si.id.toString() === selectedSavedItems[index]);
+                      if (!selectedItem || !selectedItem.transaction_type) return '';
+                      const transType = masterData?.transaction_types.find(t => t.code === selectedItem.transaction_type);
+                      return transType ? transType.name : selectedItem.transaction_type;
+                    })()}
+                    disabled
+                    placeholder="No item selected"
+                    className="bg-gray-100 dark:bg-gray-800 cursor-not-allowed"
+                  />
+                </div>
               </div>
             </div>
           ))}
+        </CardContent>
+      </Card>
+
+      {/* Income Tax */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Income Tax</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="max-w-md">
+            <Label htmlFor="incomeTax">Income Tax Type *</Label>
+            <Select value={incomeTax} onValueChange={(val) => setIncomeTax(val as '236G' | '236H')}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select income tax type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="236G">236G</SelectItem>
+                <SelectItem value="236H">236H</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </CardContent>
       </Card>
 
@@ -1392,8 +1572,7 @@ export function SaleInvoiceForm({
           }
         </Button>
       </div>
-        </>
-      )}
+      </>
     </form>
   );
 }

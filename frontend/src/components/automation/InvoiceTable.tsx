@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ChevronLeft, ChevronRight, Download, Eye, RefreshCw, Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Eye, RefreshCw, Loader2, XCircle } from 'lucide-react';
 import { automationApi } from '@/services/automationApi';
 import { toast } from 'sonner';
 
@@ -44,6 +44,8 @@ interface InvoiceTableProps {
   onDownload: (sessionId: string) => void;
   onRetry?: (invoiceId: string) => void;
   retryingInvoiceId?: string | null;
+  onBulkDelete?: (invoiceIds: string[]) => void;
+  onBulkRetry?: (invoiceIds: string[]) => void;
 }
 
 export function InvoiceTable({
@@ -56,9 +58,57 @@ export function InvoiceTable({
   onInvoiceClick,
   onDownload,
   onRetry,
-  retryingInvoiceId
+  retryingInvoiceId,
+  onBulkDelete,
+  onBulkRetry
 }: InvoiceTableProps) {
   const [localFilters, setLocalFilters] = useState(filters);
+  const [selectedInvoices, setSelectedInvoices] = useState<string[]>([]);
+  const [bulkActionLoading, setBulkActionLoading] = useState(false);
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedInvoices(invoices.map(inv => inv.id));
+    } else {
+      setSelectedInvoices([]);
+    }
+  };
+
+  const handleSelectInvoice = (invoiceId: string, checked: boolean) => {
+    if (checked) {
+      setSelectedInvoices([...selectedInvoices, invoiceId]);
+    } else {
+      setSelectedInvoices(selectedInvoices.filter(id => id !== invoiceId));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedInvoices.length === 0 || !onBulkDelete) return;
+
+    if (!confirm(`Are you sure you want to delete ${selectedInvoices.length} invoice(s)?`)) {
+      return;
+    }
+
+    setBulkActionLoading(true);
+    try {
+      await onBulkDelete(selectedInvoices);
+      setSelectedInvoices([]);
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
+
+  const handleBulkRetry = async () => {
+    if (selectedInvoices.length === 0 || !onBulkRetry) return;
+
+    setBulkActionLoading(true);
+    try {
+      await onBulkRetry(selectedInvoices);
+      setSelectedInvoices([]);
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
 
   const handleApplyFilters = () => {
     onFilterChange(localFilters);
@@ -130,6 +180,49 @@ export function InvoiceTable({
   return (
     <Card className="p-6">
       <div className="space-y-4">
+        {/* Bulk Actions Toolbar */}
+        {selectedInvoices.length > 0 && (
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <span className="text-sm font-semibold text-blue-900 dark:text-blue-100">
+                {selectedInvoices.length} invoice(s) selected
+              </span>
+              <button
+                onClick={() => setSelectedInvoices([])}
+                className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 underline"
+              >
+                Clear selection
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              {onBulkRetry && (
+                <Button
+                  onClick={handleBulkRetry}
+                  disabled={bulkActionLoading}
+                  size="sm"
+                  variant="outline"
+                  className="text-blue-600 border-blue-600 hover:bg-blue-50"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Retry Selected
+                </Button>
+              )}
+              {onBulkDelete && (
+                <Button
+                  onClick={handleBulkDelete}
+                  disabled={bulkActionLoading}
+                  size="sm"
+                  variant="outline"
+                  className="text-red-600 border-red-600 hover:bg-red-50"
+                >
+                  <XCircle className="h-4 w-4 mr-2" />
+                  Delete Selected
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Filters */}
         <div className="flex flex-wrap gap-4 items-end">
           <div className="flex-1 min-w-[200px]">
@@ -226,6 +319,14 @@ export function InvoiceTable({
             <table className="min-w-full divide-y divide-[#e1e3e5] dark:divide-[#2e2e2e]">
               <thead className="bg-[#f6f6f7] dark:bg-[#2e2e2e]">
                 <tr>
+                  <th className="px-6 py-3 text-left">
+                    <input
+                      type="checkbox"
+                      checked={selectedInvoices.length === invoices.length && invoices.length > 0}
+                      onChange={(e) => handleSelectAll(e.target.checked)}
+                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    />
+                  </th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
                     Invoice Number
                   </th>
@@ -248,8 +349,17 @@ export function InvoiceTable({
               </thead>
               <tbody className="bg-white dark:bg-[#1a1a1a] divide-y divide-[#e1e3e5] dark:divide-[#2e2e2e]">
                 {invoices.map((invoice) => {
+                  const isSelected = selectedInvoices.includes(invoice.id);
                   return (
                     <tr key={invoice.id} className="hover:bg-[#f6f6f7] dark:hover:bg-[#2e2e2e] transition-colors duration-150">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => handleSelectInvoice(invoice.id, e.target.checked)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        />
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-[#202223] dark:text-[#e3e3e3]">
                         {invoice.invoice_number}
                       </td>

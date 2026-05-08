@@ -6,6 +6,8 @@ from sqlmodel import Session, select
 from typing import Optional
 from datetime import datetime
 import uuid
+import logging
+from pydantic import BaseModel
 
 from src.database.session import get_db
 from src.models.user import User
@@ -13,7 +15,18 @@ from src.middleware.rbac import require_admin
 from src.utils.email_utils import send_approval_email, send_rejection_email
 
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+# Pydantic schemas for FBR credentials management
+class FBRCredentialsUpdate(BaseModel):
+    fbr_sandbox_token: Optional[str] = None
+    fbr_production_token: Optional[str] = None
+    fbr_seller_ntn: Optional[str] = None
+    fbr_business_name: Optional[str] = None
+    fbr_seller_province: Optional[str] = None
+    fbr_seller_address: Optional[str] = None
 
 
 @router.get("/users/pending")
@@ -309,4 +322,155 @@ def toggle_automation_access(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to toggle automation access: {str(e)}"
+        )
+
+
+@router.get("/users/{user_id}/fbr-tokens")
+def get_user_fbr_tokens(
+    user_id: str,
+    admin_user_id: str = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Get FBR tokens for a specific user (admin only).
+    Returns full tokens for admin access.
+    """
+    try:
+        user = db.get(User, uuid.UUID(user_id))
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        return {
+            "user_id": str(user.id),
+            "email": user.email,
+            "name": user.name,
+            "has_sandbox_token": bool(user.fbr_sandbox_token),
+            "has_production_token": bool(user.fbr_production_token),
+            "fbr_sandbox_token": user.fbr_sandbox_token or "",
+            "fbr_production_token": user.fbr_production_token or ""
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get FBR tokens: {str(e)}"
+        )
+
+
+@router.put("/users/{user_id}/fbr-tokens")
+def update_user_fbr_tokens(
+    user_id: str,
+    credentials: FBRCredentialsUpdate,
+    admin_user_id: str = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Update FBR tokens for a specific user (admin only).
+    Can update sandbox token, production token, or both.
+    """
+    try:
+        user = db.get(User, uuid.UUID(user_id))
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        # Update tokens if provided - MUST encrypt before storing
+        from src.utils.encryption import get_encryption_service
+        encryption_service = get_encryption_service()
+
+        if credentials.fbr_sandbox_token is not None:
+            if credentials.fbr_sandbox_token and credentials.fbr_sandbox_token.strip():
+                # Encrypt the token before storing
+                user.fbr_sandbox_token = encryption_service.encrypt(credentials.fbr_sandbox_token.strip())
+                logger.info(f"Admin updated encrypted sandbox token for user {user.email}")
+            else:
+                # Empty string means delete the token
+                user.fbr_sandbox_token = None
+                logger.info(f"Admin cleared sandbox token for user {user.email}")
+
+        if credentials.fbr_production_token is not None:
+            if credentials.fbr_production_token and credentials.fbr_production_token.strip():
+                # Encrypt the token before storing
+                user.fbr_production_token = encryption_service.encrypt(credentials.fbr_production_token.strip())
+                logger.info(f"Admin updated encrypted production token for user {user.email}")
+            else:
+                # Empty string means delete the token
+                user.fbr_production_token = None
+                logger.info(f"Admin cleared production token for user {user.email}")
+
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        return {
+            "success": True,
+            "message": f"FBR tokens updated for user {user.email}",
+            "has_sandbox_token": bool(user.fbr_sandbox_token),
+            "has_production_token": bool(user.fbr_production_token)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update FBR tokens: {str(e)}"
+        )
+
+
+@router.delete("/users/{user_id}/fbr-tokens")
+def delete_user_fbr_token(
+    user_id: str,
+    environment: str,  # "sandbox" or "production"
+    admin_user_id: str = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a specific FBR token for a user (admin only).
+    Environment parameter specifies which token to delete: "sandbox" or "production".
+    """
+    try:
+        user = db.get(User, uuid.UUID(user_id))
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        if environment.lower() == "sandbox":
+            user.fbr_sandbox_token = None
+            token_type = "Sandbox"
+        elif environment.lower() == "production":
+            user.fbr_production_token = None
+            token_type = "Production"
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid environment. Must be 'sandbox' or 'production'"
+            )
+
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        return {
+            "success": True,
+            "message": f"{token_type} FBR token deleted for user {user.email}",
+            "has_sandbox_token": bool(user.fbr_sandbox_token),
+            "has_production_token": bool(user.fbr_production_token)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete FBR token: {str(e)}"
         )

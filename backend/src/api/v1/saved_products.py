@@ -4,17 +4,20 @@ Allows users to save commonly used HS codes and product descriptions
 for quick invoice creation.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi.responses import StreamingResponse
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from uuid import UUID
 import logging
 from datetime import datetime
+import pandas as pd
+import io
 
 from src.api.middleware.auth_middleware import require_authentication
 from src.api.deps import get_database_session
 from src.models.user_saved_product import UserSavedProduct
-from src.models.fbr_master_data import FBRHSCode
+from src.models.fbr_master_data import FBRHSCode, FBRTransactionType, FBRUOM, FBRUOM
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -22,23 +25,33 @@ logger = logging.getLogger(__name__)
 
 class SavedProductCreate(BaseModel):
     """Request model for creating a saved product"""
+    item_code: str
+    item_name: str
     hs_code: str
     product_description: str
     default_uom: Optional[str] = None
     default_rate: Optional[str] = None
     default_sale_type: Optional[str] = "01"
+    transaction_type: Optional[str] = None
     default_unit_price: Optional[float] = None
+    sro_schedule_no: Optional[str] = None
+    sro_item_serial_no: Optional[str] = None
     display_order: Optional[int] = 0
 
 
 class SavedProductUpdate(BaseModel):
     """Request model for updating a saved product"""
+    item_code: Optional[str] = None
+    item_name: Optional[str] = None
     hs_code: Optional[str] = None
     product_description: Optional[str] = None
     default_uom: Optional[str] = None
     default_rate: Optional[str] = None
     default_sale_type: Optional[str] = None
+    transaction_type: Optional[str] = None
     default_unit_price: Optional[float] = None
+    sro_schedule_no: Optional[str] = None
+    sro_item_serial_no: Optional[str] = None
     display_order: Optional[int] = None
     is_active: Optional[int] = None
 
@@ -46,12 +59,17 @@ class SavedProductUpdate(BaseModel):
 class SavedProductResponse(BaseModel):
     """Response model for saved product"""
     id: int
+    item_code: str
+    item_name: str
     hs_code: str
     product_description: str
     default_uom: Optional[str]
     default_rate: Optional[str]
     default_sale_type: Optional[str]
+    transaction_type: Optional[str]
     default_unit_price: Optional[float]
+    sro_schedule_no: Optional[str]
+    sro_item_serial_no: Optional[str]
     display_order: int
     is_active: int
     fbr_validated: bool
@@ -93,12 +111,17 @@ async def get_saved_products(
         for product in products:
             result.append({
                 "id": product.id,
+                "item_code": product.item_code,
+                "item_name": product.item_name,
                 "hs_code": product.hs_code,
                 "product_description": product.product_description,
                 "default_uom": product.default_uom,
                 "default_rate": product.default_rate,
                 "default_sale_type": product.default_sale_type,
+                "transaction_type": product.transaction_type,
                 "default_unit_price": float(product.default_unit_price) if product.default_unit_price else None,
+                "sro_schedule_no": product.sro_schedule_no,
+                "sro_item_serial_no": product.sro_item_serial_no,
                 "display_order": product.display_order,
                 "is_active": product.is_active,
                 "fbr_validated": product.fbr_validated,
@@ -147,12 +170,17 @@ async def get_saved_product(
 
         return {
             "id": product.id,
+            "item_code": product.item_code,
+            "item_name": product.item_name,
             "hs_code": product.hs_code,
             "product_description": product.product_description,
             "default_uom": product.default_uom,
             "default_rate": product.default_rate,
             "default_sale_type": product.default_sale_type,
+            "transaction_type": product.transaction_type,
             "default_unit_price": float(product.default_unit_price) if product.default_unit_price else None,
+            "sro_schedule_no": product.sro_schedule_no,
+            "sro_item_serial_no": product.sro_item_serial_no,
             "display_order": product.display_order,
             "is_active": product.is_active,
             "fbr_validated": product.fbr_validated,
@@ -189,6 +217,32 @@ async def create_saved_product(
         Created saved product with validation status
     """
     try:
+        # Validate item_code is not empty
+        if not product.item_code or not product.item_code.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Item code is required and cannot be empty"
+            )
+
+        # Validate item_name is not empty
+        if not product.item_name or not product.item_name.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Item name is required and cannot be empty"
+            )
+
+        # Validate transaction_type against FBR master data if provided
+        if product.transaction_type:
+            fbr_transaction_type = db.query(FBRTransactionType).filter(
+                FBRTransactionType.code == product.transaction_type
+            ).first()
+
+            if not fbr_transaction_type:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Transaction type '{product.transaction_type}' not found in FBR master data"
+                )
+
         # Validate HS code against FBR master data
         fbr_hs_code = db.query(FBRHSCode).filter(
             FBRHSCode.code == product.hs_code
@@ -208,12 +262,17 @@ async def create_saved_product(
 
         new_product = UserSavedProduct(
             user_id=UUID(user_id),
+            item_code=product.item_code.strip(),
+            item_name=product.item_name.strip(),
             hs_code=product.hs_code,
             product_description=product.product_description,
             default_uom=product.default_uom,
             default_rate=product.default_rate,
             default_sale_type=product.default_sale_type,
+            transaction_type=product.transaction_type,
             default_unit_price=product.default_unit_price,
+            sro_schedule_no=product.sro_schedule_no,
+            sro_item_serial_no=product.sro_item_serial_no,
             display_order=product.display_order,
             is_active=1,
             fbr_validated=fbr_validated,
@@ -229,12 +288,16 @@ async def create_saved_product(
 
         return {
             "id": new_product.id,
+            "item_name": new_product.item_name,
             "hs_code": new_product.hs_code,
             "product_description": new_product.product_description,
             "default_uom": new_product.default_uom,
             "default_rate": new_product.default_rate,
             "default_sale_type": new_product.default_sale_type,
+            "transaction_type": new_product.transaction_type,
             "default_unit_price": float(new_product.default_unit_price) if new_product.default_unit_price else None,
+            "sro_schedule_no": new_product.sro_schedule_no,
+            "sro_item_serial_no": new_product.sro_item_serial_no,
             "display_order": new_product.display_order,
             "is_active": new_product.is_active,
             "fbr_validated": new_product.fbr_validated,
@@ -283,6 +346,20 @@ async def update_saved_product(
             )
 
         # Update fields if provided
+        if product_update.item_code is not None:
+            if not product_update.item_code.strip():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Item code cannot be empty"
+                )
+            product.item_code = product_update.item_code.strip()
+        if product_update.item_name is not None:
+            if not product_update.item_name.strip():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Item name cannot be empty"
+                )
+            product.item_name = product_update.item_name.strip()
         if product_update.hs_code is not None:
             product.hs_code = product_update.hs_code
         if product_update.product_description is not None:
@@ -293,8 +370,24 @@ async def update_saved_product(
             product.default_rate = product_update.default_rate
         if product_update.default_sale_type is not None:
             product.default_sale_type = product_update.default_sale_type
+        if product_update.transaction_type is not None:
+            # Validate transaction_type against FBR master data
+            fbr_transaction_type = db.query(FBRTransactionType).filter(
+                FBRTransactionType.code == product_update.transaction_type
+            ).first()
+
+            if not fbr_transaction_type:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Transaction type '{product_update.transaction_type}' not found in FBR master data"
+                )
+            product.transaction_type = product_update.transaction_type
         if product_update.default_unit_price is not None:
             product.default_unit_price = product_update.default_unit_price
+        if product_update.sro_schedule_no is not None:
+            product.sro_schedule_no = product_update.sro_schedule_no
+        if product_update.sro_item_serial_no is not None:
+            product.sro_item_serial_no = product_update.sro_item_serial_no
         if product_update.display_order is not None:
             product.display_order = product_update.display_order
         if product_update.is_active is not None:
@@ -324,12 +417,17 @@ async def update_saved_product(
 
         return {
             "id": product.id,
+            "item_code": product.item_code,
+            "item_name": product.item_name,
             "hs_code": product.hs_code,
             "product_description": product.product_description,
             "default_uom": product.default_uom,
             "default_rate": product.default_rate,
             "default_sale_type": product.default_sale_type,
+            "transaction_type": product.transaction_type,
             "default_unit_price": float(product.default_unit_price) if product.default_unit_price else None,
+            "sro_schedule_no": product.sro_schedule_no,
+            "sro_item_serial_no": product.sro_item_serial_no,
             "display_order": product.display_order,
             "is_active": product.is_active,
             "fbr_validated": product.fbr_validated,
@@ -405,6 +503,72 @@ async def delete_saved_product(
         )
 
 
+@router.post("/saved-products/bulk-delete")
+async def bulk_delete_saved_products(
+    product_ids: List[int],
+    hard_delete: bool = False,
+    db=Depends(get_database_session),
+    user_id: str = Depends(require_authentication)
+):
+    """
+    Delete multiple saved products in bulk (soft delete by default).
+
+    Args:
+        product_ids: List of product IDs to delete
+        hard_delete: If True, permanently delete the products (default: False)
+
+    Returns:
+        Success message with count
+    """
+    try:
+        if not product_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No product IDs provided"
+            )
+
+        # Get all products that belong to the user
+        products = db.query(UserSavedProduct).filter(
+            UserSavedProduct.id.in_(product_ids),
+            UserSavedProduct.user_id == UUID(user_id)
+        ).all()
+
+        if not products:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No products found"
+            )
+
+        deleted_count = len(products)
+
+        if hard_delete:
+            # Permanently delete all
+            for product in products:
+                db.delete(product)
+            message = f"Permanently deleted {deleted_count} product(s)"
+        else:
+            # Soft delete all
+            for product in products:
+                product.is_active = 0
+            message = f"Deactivated {deleted_count} product(s)"
+
+        db.commit()
+
+        logger.info(f"User {user_id} bulk deleted {deleted_count} saved products (hard_delete={hard_delete})")
+
+        return {"message": message, "deleted_count": deleted_count}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error bulk deleting saved products: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to bulk delete saved products: {str(e)}"
+        )
+
+
 @router.post("/saved-products/reorder")
 async def reorder_saved_products(
     product_ids: List[int],
@@ -443,4 +607,361 @@ async def reorder_saved_products(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to reorder saved products: {str(e)}"
+        )
+
+
+@router.get("/saved-products/debug-hscode/{hs_code}")
+async def debug_hscode(
+    hs_code: str,
+    db=Depends(get_database_session),
+    user_id: str = Depends(require_authentication)
+):
+    """
+    Debug endpoint to check HS code in FBR database.
+    Shows what variations exist and helps troubleshoot validation issues.
+    """
+    try:
+        # Clean the input
+        cleaned = hs_code.replace('.', '').replace(' ', '')
+
+        # Try different variations
+        variations = [
+            cleaned,
+            cleaned + '0' if len(cleaned) == 7 else cleaned,
+            cleaned + '00' if len(cleaned) == 6 else cleaned,
+            cleaned[:8] if len(cleaned) > 8 else cleaned,
+        ]
+
+        results = {}
+        for var in set(variations):
+            found = db.query(FBRHSCode).filter(FBRHSCode.code == var).first()
+            results[var] = {
+                "exists": found is not None,
+                "description": found.description if found else None
+            }
+
+        # Also search for similar codes
+        similar = db.query(FBRHSCode).filter(
+            FBRHSCode.code.like(f"{cleaned[:4]}%")
+        ).limit(10).all()
+
+        return {
+            "input": hs_code,
+            "cleaned": cleaned,
+            "variations_checked": results,
+            "similar_codes": [{"code": s.code, "description": s.description} for s in similar]
+        }
+
+    except Exception as e:
+        logger.error(f"Error debugging HS code: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to debug HS code: {str(e)}"
+        )
+
+
+@router.get("/saved-products/template/download")
+async def download_template(
+    db=Depends(get_database_session),
+    user_id: str = Depends(require_authentication)
+):
+    """
+    Download Excel template for bulk upload of saved items.
+
+    Returns:
+        Excel file with template columns and reference data
+    """
+    try:
+        # Get first transaction type from database for sample data
+        sample_transaction_type = db.query(FBRTransactionType).first()
+        transaction_type_name = sample_transaction_type.name if sample_transaction_type else 'Goods'
+
+        # Create template DataFrame with column headers
+        template_data = {
+            'item_code': ['ITEM-001', 'ITEM-002'],
+            'item_name': ['Sample Item 1', 'Sample Item 2'],
+            'hs_code': ['8471.3000', '8517.6200'],
+            'product_description': ['Sample product description 1', 'Sample product description 2'],
+            'default_uom': ['PCS', 'PCS'],
+            'default_rate': ['18', '18'],
+            'transaction_type': [transaction_type_name, transaction_type_name],
+            'sro_schedule_no': ['', ''],
+            'sro_item_serial_no': ['', '']
+        }
+
+        df = pd.DataFrame(template_data)
+
+        # Get all transaction types for reference sheet
+        all_transaction_types = db.query(FBRTransactionType).order_by(FBRTransactionType.code).all()
+        transaction_types_data = {
+            'Code': [tt.code for tt in all_transaction_types],
+            'Name': [tt.name.strip() for tt in all_transaction_types]  # Trim spaces for clean display
+        }
+        df_transaction_types = pd.DataFrame(transaction_types_data)
+
+        # Get all UOMs for reference sheet
+        all_uoms = db.query(FBRUOM).order_by(FBRUOM.code).all()
+        uoms_data = {
+            'Code': [uom.code for uom in all_uoms],
+            'Name': [uom.name.strip() for uom in all_uoms]
+        }
+        df_uoms = pd.DataFrame(uoms_data)
+
+        # Create Excel file in memory with multiple sheets
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            # Write main template
+            df.to_excel(writer, index=False, sheet_name='Saved Items')
+
+            # Write transaction types reference
+            df_transaction_types.to_excel(writer, index=False, sheet_name='Transaction Types')
+
+            # Write UOMs reference
+            df_uoms.to_excel(writer, index=False, sheet_name='UOMs')
+
+            # Format main sheet
+            worksheet = writer.sheets['Saved Items']
+            worksheet.column_dimensions['A'].width = 15
+            worksheet.column_dimensions['B'].width = 25
+            worksheet.column_dimensions['C'].width = 15
+            worksheet.column_dimensions['D'].width = 40
+            worksheet.column_dimensions['E'].width = 15
+            worksheet.column_dimensions['F'].width = 15
+            worksheet.column_dimensions['G'].width = 30
+            worksheet.column_dimensions['H'].width = 20
+            worksheet.column_dimensions['I'].width = 20
+
+            # Format transaction types sheet
+            worksheet_tt = writer.sheets['Transaction Types']
+            worksheet_tt.column_dimensions['A'].width = 10
+            worksheet_tt.column_dimensions['B'].width = 50
+
+            # Format UOMs sheet
+            worksheet_uom = writer.sheets['UOMs']
+            worksheet_uom.column_dimensions['A'].width = 10
+            worksheet_uom.column_dimensions['B'].width = 50
+
+        output.seek(0)
+
+        logger.info(f"User {user_id} downloaded saved items template")
+
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": "attachment; filename=saved_items_template.xlsx"
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Error generating template: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate template: {str(e)}"
+        )
+
+
+@router.post("/saved-products/upload")
+async def upload_saved_products(
+    file: UploadFile = File(...),
+    db=Depends(get_database_session),
+    user_id: str = Depends(require_authentication)
+):
+    """
+    Upload Excel file with saved items data.
+    Parses the file and creates saved items in bulk.
+
+    Args:
+        file: Excel file with saved items data
+
+    Returns:
+        Summary of upload results (success count, errors)
+    """
+    try:
+        # Validate file type
+        if not file.filename.endswith(('.xlsx', '.xls')):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid file format. Please upload an Excel file (.xlsx or .xls)"
+            )
+
+        # Read Excel file
+        contents = await file.read()
+        df = pd.read_excel(io.BytesIO(contents))
+
+        # Validate required columns
+        required_columns = [
+            'item_code', 'item_name', 'hs_code', 'product_description',
+            'default_uom', 'default_rate', 'transaction_type'
+        ]
+
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Missing required columns: {', '.join(missing_columns)}"
+            )
+
+        # Pre-load all master data for faster lookups (optimization)
+        all_uoms = {uom.code: uom for uom in db.query(FBRUOM).all()}
+        all_uoms_by_name = {uom.name.strip().lower(): uom for uom in all_uoms.values()}
+
+        all_transaction_types = {tt.code: tt for tt in db.query(FBRTransactionType).all()}
+        all_transaction_types_by_name = {tt.name.strip().lower(): tt for tt in all_transaction_types.values()}
+
+        all_hs_codes = {hs.code: hs for hs in db.query(FBRHSCode).all()}
+
+        # Process each row
+        success_count = 0
+        error_count = 0
+        errors = []
+
+        for index, row in df.iterrows():
+            try:
+                # Skip empty rows
+                if pd.isna(row['item_code']) or str(row['item_code']).strip() == '':
+                    continue
+
+                # Validate required fields
+                item_code = str(row['item_code']).strip()
+                item_name = str(row['item_name']).strip()
+                hs_code_input = str(row['hs_code']).strip()
+                product_description = str(row['product_description']).strip()
+                default_uom_input = str(row['default_uom']).strip()
+                default_rate = str(row['default_rate']).strip()
+                transaction_type_input = str(row['transaction_type']).strip()
+
+                if not all([item_code, item_name, hs_code_input, product_description, default_uom_input, default_rate, transaction_type_input]):
+                    errors.append(f"Row {index + 2}: Missing required fields")
+                    error_count += 1
+                    continue
+
+                # Format HS code: normalize to 8 digits without dots (to match manual system)
+                hs_code_cleaned = hs_code_input.replace('.', '').replace(' ', '')
+
+                # Pad to 8 digits if needed
+                if len(hs_code_cleaned) == 7:
+                    hs_code_cleaned = hs_code_cleaned + '0'
+                elif len(hs_code_cleaned) == 6:
+                    hs_code_cleaned = hs_code_cleaned + '00'
+                elif len(hs_code_cleaned) < 6:
+                    errors.append(f"Row {index + 2}: Invalid HS code '{hs_code_input}' - must be at least 6 digits")
+                    error_count += 1
+                    continue
+                elif len(hs_code_cleaned) > 8:
+                    # Truncate to 8 digits if longer
+                    hs_code_cleaned = hs_code_cleaned[:8]
+
+                # Format with dot in middle: 1234.1234 (matches manual system and FBR database)
+                hs_code_formatted = f"{hs_code_cleaned[:4]}.{hs_code_cleaned[4:]}"
+
+                # Store WITH dots (to match manual system)
+                hs_code_to_store = hs_code_formatted
+
+                # For FBR validation, use the same format
+                hs_code_for_validation = hs_code_formatted
+
+                logger.debug(f"Row {index + 2}: HS Code input='{hs_code_input}' -> formatted='{hs_code_formatted}'")
+
+                # Validate and convert UOM (accept both code and name) - use cached data
+                fbr_uom = all_uoms.get(default_uom_input)
+
+                # If not found by code, try name match
+                if not fbr_uom:
+                    fbr_uom = all_uoms_by_name.get(default_uom_input.strip().lower())
+
+                if not fbr_uom:
+                    errors.append(f"Row {index + 2}: Invalid UOM '{default_uom_input}'")
+                    error_count += 1
+                    continue
+
+                default_uom_code = fbr_uom.code
+
+                # Validate transaction_type - use cached data
+                fbr_transaction_type = all_transaction_types.get(transaction_type_input)
+
+                # If not found by code, try name match
+                if not fbr_transaction_type:
+                    fbr_transaction_type = all_transaction_types_by_name.get(transaction_type_input.strip().lower())
+
+                if not fbr_transaction_type:
+                    available_names = [f"'{t.name.strip()}'" for t in list(all_transaction_types.values())[:5]]
+                    errors.append(f"Row {index + 2}: Invalid transaction type '{transaction_type_input}'. Available types: {', '.join(available_names)}...")
+                    error_count += 1
+                    continue
+
+                transaction_type_code = fbr_transaction_type.code
+
+                # Validate HS code - use cached data
+                fbr_hs_code = all_hs_codes.get(hs_code_for_validation)
+
+                fbr_validated = False
+                fbr_validation_error = None
+
+                if not fbr_hs_code:
+                    fbr_validation_error = f"HS Code '{hs_code_input}' (validated as '{hs_code_for_validation}') not found in FBR master data"
+                    logger.warning(f"Row {index + 2}: HS Code validation failed - input='{hs_code_input}', searched='{hs_code_for_validation}'")
+                else:
+                    fbr_validated = True
+                    logger.debug(f"Row {index + 2}: HS Code validated successfully - '{hs_code_for_validation}'")
+
+                # Get optional fields
+                sro_schedule_no = None
+                sro_item_serial_no = None
+
+                if 'sro_schedule_no' in df.columns and not pd.isna(row['sro_schedule_no']):
+                    sro_schedule_no = str(row['sro_schedule_no']).strip()
+
+                if 'sro_item_serial_no' in df.columns and not pd.isna(row['sro_item_serial_no']):
+                    sro_item_serial_no = str(row['sro_item_serial_no']).strip()
+
+                # Create saved product
+                new_product = UserSavedProduct(
+                    user_id=UUID(user_id),
+                    item_code=item_code,
+                    item_name=item_name,
+                    hs_code=hs_code_to_store,  # Store without dots (matches manual system)
+                    product_description=product_description,
+                    default_uom=default_uom_code,
+                    default_rate=default_rate,
+                    default_sale_type="01",
+                    transaction_type=transaction_type_code,
+                    sro_schedule_no=sro_schedule_no,
+                    sro_item_serial_no=sro_item_serial_no,
+                    display_order=0,
+                    is_active=1,
+                    fbr_validated=fbr_validated,
+                    fbr_validation_date=datetime.utcnow() if fbr_validated else None,
+                    fbr_validation_error=fbr_validation_error
+                )
+
+                db.add(new_product)
+                success_count += 1
+
+            except Exception as row_error:
+                logger.error(f"Error processing row {index + 2}: {str(row_error)}")
+                errors.append(f"Row {index + 2}: {str(row_error)}")
+                error_count += 1
+
+        # Commit all successful items
+        if success_count > 0:
+            db.commit()
+
+        logger.info(f"User {user_id} uploaded {success_count} saved items with {error_count} errors")
+
+        return {
+            "success_count": success_count,
+            "error_count": error_count,
+            "errors": errors[:10],  # Return first 10 errors
+            "total_errors": len(errors)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading saved products: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload saved products: {str(e)}"
         )

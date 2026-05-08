@@ -22,6 +22,7 @@ from src.utils.excel_validator import ExcelValidator
 from src.utils.secure_file_validator import SecureFileValidator
 from src.api.middleware.auth_middleware import require_authentication
 from src.middleware.rbac import require_automation_access
+from src.config.settings import settings
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -123,7 +124,7 @@ async def upload_excel(
 
         # Parse Excel file (in-memory)
         try:
-            invoices = excel_service.parse_excel_file(file_bytes)
+            invoices = excel_service.parse_excel_file(file_bytes, user_uuid, main_db)
         except ValueError as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

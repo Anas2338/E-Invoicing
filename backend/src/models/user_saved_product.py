@@ -20,6 +20,8 @@ class UserSavedProduct(Base, table=True):
     user_id: uuid.UUID = Field(foreign_key="users.id", index=True, ondelete="CASCADE")
 
     # Product identification
+    item_code: str = Field(max_length=50)  # User-defined code for the item (required)
+    item_name: str = Field(max_length=255)  # User-friendly name for the item
     hs_code: str = Field(max_length=20)
     product_description: str
 
@@ -27,9 +29,14 @@ class UserSavedProduct(Base, table=True):
     default_uom: Optional[str] = Field(default=None, max_length=10)
     default_rate: Optional[str] = Field(default=None, max_length=10)
     default_sale_type: Optional[str] = Field(default=None, max_length=10)
+    transaction_type: Optional[str] = Field(default=None, max_length=10)  # Transaction type code
 
     # Optional: Default pricing
     default_unit_price: Optional[float] = Field(default=None)
+
+    # SRO fields (optional)
+    sro_schedule_no: Optional[str] = Field(default=None, max_length=50)
+    sro_item_serial_no: Optional[str] = Field(default=None, max_length=50)
 
     # FBR Validation
     fbr_validated: bool = Field(default=False)

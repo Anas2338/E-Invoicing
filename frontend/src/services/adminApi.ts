@@ -168,6 +168,63 @@ class AdminApiClient {
   }
 
   /**
+   * Get FBR tokens for a user.
+   */
+  async getUserFbrTokens(userId: string): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/admin/users/${userId}/fbr-tokens`, {
+      headers: this.getHeaders(),
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to get FBR tokens');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Update FBR tokens for a user.
+   */
+  async updateUserFbrTokens(userId: string, data: {
+    fbr_sandbox_token?: string;
+    fbr_production_token?: string;
+  }): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/admin/users/${userId}/fbr-tokens`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+      credentials: 'include',
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to update FBR tokens');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Delete FBR token for a user.
+   */
+  async deleteUserFbrToken(userId: string, environment: 'sandbox' | 'production'): Promise<any> {
+    const response = await fetch(`${this.baseUrl}/admin/users/${userId}/fbr-tokens?environment=${environment}`, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to delete FBR token');
+    }
+
+    return response.json();
+  }
+
+  /**
    * Manually trigger FBR master data sync.
    */
   async triggerSync(): Promise<any> {

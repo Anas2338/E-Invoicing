@@ -134,6 +134,21 @@ export const api = {
       const query = queryParams.toString();
       return fetchWithAuth(`/invoices/unified-history${query ? `?${query}` : ''}`);
     },
+
+    getBuyersFromHistory: async (search?: string) => {
+      const queryParams = new URLSearchParams();
+      if (search) queryParams.append('search', search);
+
+      const query = queryParams.toString();
+      return fetchWithAuth(`/invoices/buyers-from-history${query ? `?${query}` : ''}`);
+    },
+
+    bulkPdf: async (invoiceIds: string[]) => {
+      return fetchWithAuth('/invoices/bulk-pdf', {
+        method: 'POST',
+        body: JSON.stringify(invoiceIds),
+      });
+    },
   },
 
   // Dashboard endpoints
@@ -181,6 +196,112 @@ export const api = {
       return fetchWithAuth(`/profile/saved-products?${params.toString()}`);
     },
 
+    createSavedProduct: async (data: {
+      item_code: string;
+      item_name: string;
+      hs_code: string;
+      product_description: string;
+      default_uom?: string;
+      default_rate?: string;
+      default_sale_type?: string;
+      transaction_type?: string;
+      default_unit_price?: number;
+      sro_schedule_no?: string;
+      sro_item_serial_no?: string;
+    }) => {
+      return fetchWithAuth('/profile/saved-products', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+
+    updateSavedProduct: async (id: number, data: {
+      item_code?: string;
+      item_name?: string;
+      hs_code?: string;
+      product_description?: string;
+      default_uom?: string;
+      default_rate?: string;
+      default_sale_type?: string;
+      transaction_type?: string;
+      default_unit_price?: number;
+      sro_schedule_no?: string;
+      sro_item_serial_no?: string;
+    }) => {
+      return fetchWithAuth(`/profile/saved-products/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      });
+    },
+
+    deleteSavedProduct: async (id: number) => {
+      return fetchWithAuth(`/profile/saved-products/${id}`, {
+        method: 'DELETE',
+      });
+    },
+
+    bulkDeleteSavedProducts: async (ids: number[]) => {
+      return fetchWithAuth('/profile/saved-products/bulk-delete', {
+        method: 'POST',
+        body: JSON.stringify(ids),
+      });
+    },
+
+    downloadSavedProductsTemplate: async () => {
+      const headers: Record<string, string> = {};
+
+      const response = await fetch(`${API_BASE_URL}/profile/saved-products/template/download`, {
+        method: 'GET',
+        headers,
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new ApiError(response.status, 'Failed to download template');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'saved_items_template.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    },
+
+    uploadSavedProducts: async (file: File) => {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const headers: Record<string, string> = {};
+
+      // Add CSRF token
+      const csrfToken = getCookie('csrf_token') || (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('csrf_token') : null);
+      if (csrfToken) {
+        headers['X-CSRF-Token'] = csrfToken;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/profile/saved-products/upload`, {
+        method: 'POST',
+        headers,
+        body: formData,
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          window.location.href = '/login';
+          throw new ApiError(401, 'Session expired. Please login again.');
+        }
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new ApiError(response.status, errorData.error || errorData.detail || 'Upload failed');
+      }
+
+      return response.json();
+    },
+
     getSavedHSCodes: async (activeOnly: boolean = true) => {
       const params = new URLSearchParams();
       if (activeOnly) {
@@ -211,6 +332,49 @@ export const api = {
         params.append('active_only', 'true');
       }
       return fetchWithAuth(`/profile/saved-tax-rates?${params.toString()}`);
+    },
+
+    getSavedBuyers: async (activeOnly: boolean = true, search?: string) => {
+      const params = new URLSearchParams();
+      if (activeOnly) {
+        params.append('active_only', 'true');
+      }
+      if (search) {
+        params.append('search', search);
+      }
+      return fetchWithAuth(`/profile/saved-buyers?${params.toString()}`);
+    },
+
+    createSavedBuyer: async (data: {
+      buyer_ntn_cnic: string;
+      buyer_business_name: string;
+      buyer_province?: string;
+      buyer_address?: string;
+      buyer_registration_type?: string;
+    }) => {
+      return fetchWithAuth('/profile/saved-buyers', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+
+    updateSavedBuyer: async (id: number, data: {
+      buyer_ntn_cnic?: string;
+      buyer_business_name?: string;
+      buyer_province?: string;
+      buyer_address?: string;
+      buyer_registration_type?: string;
+    }) => {
+      return fetchWithAuth(`/profile/saved-buyers/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      });
+    },
+
+    deleteSavedBuyer: async (id: number) => {
+      return fetchWithAuth(`/profile/saved-buyers/${id}`, {
+        method: 'DELETE',
+      });
     },
 
     getNextInvoiceNumber: async () => {

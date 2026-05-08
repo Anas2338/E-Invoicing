@@ -89,6 +89,7 @@ class InvoiceBase(SQLModel):
     buyer_registration_type: str = Field(sa_column=Column(String, nullable=False))  # "Registered", "Unregistered"
     invoice_ref_no: Optional[str] = Field(default=None)  # Required only for debit/credit notes
     scenario_id: Optional[str] = Field(default=None)  # Required for sandbox testing (e.g., "SN001")
+    income_tax: str = Field(default="236G", sa_column=Column(String, nullable=False))  # Income tax type: "236G" or "236H"
 
     # Invoice items (stored as JSON to match FBR specification)
     items: List[dict] = Field(sa_column=Column(JSON, nullable=False))
@@ -179,6 +180,7 @@ class InvoiceCreate(SQLModel):
     buyer_registration_type: str  # "Registered", "Unregistered"
     invoice_ref_no: Optional[str] = None  # Required only for debit/credit notes
     scenario_id: Optional[str] = None  # Required for sandbox testing (e.g., "SN001")
+    income_tax: str = "236G"  # Income tax type: "236G" or "236H"
 
     # Invoice items (stored as JSON to match FBR specification)
     items: List[InvoiceItem]
@@ -208,6 +210,7 @@ class InvoiceUpdate(SQLModel):
     buyer_registration_type: Optional[str] = None
     invoice_ref_no: Optional[str] = None
     scenario_id: Optional[str] = None
+    income_tax: Optional[str] = None
     items: Optional[List[dict]] = None
     environment: Optional[Environment] = None
 

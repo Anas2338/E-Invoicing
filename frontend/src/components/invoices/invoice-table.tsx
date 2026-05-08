@@ -2,7 +2,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Eye, Edit, CheckCircle, Send, Trash2, Loader2, RefreshCw } from 'lucide-react';
-import { PrintInvoiceButton } from '@/components/automation/PrintInvoiceButton';
+import { PrintInvoiceButton } from '@/components/invoices/PrintInvoiceButton';
 
 interface Invoice {
   id: string;
@@ -280,16 +280,14 @@ export function InvoiceTable({
                     {postingInvoiceId === invoice.id ? 'Posting...' : 'Post'}
                   </Button>
                 )}
-                {(invoice.status === 'POSTED' || invoice.status === 'submitted') && (
-                  <div className="flex-1 min-w-[80px]">
-                    <PrintInvoiceButton
-                      invoiceId={invoice.id}
-                      invoiceNumber={invoice.invoiceNumber}
-                      status={invoice.status}
-                      className="w-full h-9"
-                    />
-                  </div>
-                )}
+                <div className="flex-1 min-w-[80px]">
+                  <PrintInvoiceButton
+                    invoiceId={invoice.id}
+                    invoiceNumber={invoice.invoiceNumber}
+                    status={invoice.status}
+                    className="w-full h-9"
+                  />
+                </div>
                 {onDelete && isDeletable && (
                   <Button
                     variant="outline"
@@ -482,14 +480,12 @@ export function InvoiceTable({
                     </Button>
                   )}
 
-                  {/* Print Button - Only for POSTED or submitted */}
-                  {(invoice.status === 'POSTED' || invoice.status === 'submitted') && (
-                    <PrintInvoiceButton
-                      invoiceId={invoice.id}
-                      invoiceNumber={invoice.invoiceNumber}
-                      status={invoice.status}
-                    />
-                  )}
+                  {/* Print Button - Available for all invoices */}
+                  <PrintInvoiceButton
+                    invoiceId={invoice.id}
+                    invoiceNumber={invoice.invoiceNumber}
+                    status={invoice.status}
+                  />
 
                   {/* Delete Button - Only for DRAFT or FAILED */}
                   {onDelete && isDeletable && (

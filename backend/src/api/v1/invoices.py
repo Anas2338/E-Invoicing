@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
+from fastapi.responses import StreamingResponse
 from typing import List, Dict, Any, Optional
 from uuid import UUID
 from datetime import date
+from io import BytesIO
 import logging
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -10,6 +12,7 @@ from src.database.session import get_db
 from src.services.invoice_service import InvoiceService
 from src.services.fbr_service import fbr_service
 from src.services.auto_posting_service import AutoPostingService
+from src.services.pdf_service import PDFService
 from src.schemas.invoice import (
     InvoiceCreate, InvoiceResponse, InvoiceUpdate, InvoiceListResponse,
     InvoiceFilter, UnifiedInvoiceListResponse
@@ -126,6 +129,168 @@ def get_unified_invoice_history(
         page=page,
         page_size=page_size,
         total_pages=total_pages
+    )
+
+
+@router.get("/buyers-from-history")
+def get_buyers_from_invoice_history(
+    request: Request,
+    db = Depends(get_database_session),
+    user_id: str = Depends(require_authentication),
+    search: Optional[str] = Query(None, description="Search buyer by name or NTN/CNIC")
+):
+    """
+    Get unique buyers from user's invoice history.
+    Returns distinct buyer information from all invoices created by the user.
+
+    This eliminates the need for a separate saved_buyers table by extracting
+    buyer data directly from existing invoices.
+    """
+    try:
+        user_uuid = UUID(user_id)
+
+        # Get all invoices for this user with buyer information
+        from sqlmodel import select
+
+        statement = select(Invoice).where(
+            Invoice.user_id == user_uuid,
+            Invoice.is_deleted == False,
+            Invoice.buyer_business_name.isnot(None),
+            Invoice.buyer_business_name != ''
+        )
+
+        # Apply search filter if provided
+        if search and search.strip():
+            search_term = f"%{search.strip().lower()}%"
+            statement = statement.where(
+                (Invoice.buyer_business_name.ilike(search_term)) |
+                (Invoice.buyer_ntn_cnic.ilike(search_term))
+            )
+
+        invoices = db.exec(statement).all()
+
+        # Extract unique buyers manually
+        buyers_dict = {}
+        for invoice in invoices:
+            # Create a unique key based on buyer information
+            key = (
+                invoice.buyer_ntn_cnic or "",
+                invoice.buyer_business_name or "",
+                invoice.buyer_province or "",
+                invoice.buyer_address or "",
+                invoice.buyer_registration_type or "Registered"
+            )
+
+            # Keep the most recent occurrence
+            if key not in buyers_dict or invoice.created_at > buyers_dict[key]['last_used']:
+                buyers_dict[key] = {
+                    "buyer_ntn_cnic": invoice.buyer_ntn_cnic or "",
+                    "buyer_business_name": invoice.buyer_business_name or "",
+                    "buyer_province": invoice.buyer_province or "",
+                    "buyer_address": invoice.buyer_address or "",
+                    "buyer_registration_type": invoice.buyer_registration_type or "Registered",
+                    "last_used": invoice.created_at
+                }
+
+        # Convert to list and sort by most recent
+        result = sorted(
+            buyers_dict.values(),
+            key=lambda x: x['last_used'],
+            reverse=True
+        )[:50]  # Limit to 50 most recent
+
+        # Convert datetime to ISO format
+        for buyer in result:
+            buyer['last_used'] = buyer['last_used'].isoformat() if buyer['last_used'] else None
+
+        logger.info(f"Retrieved {len(result)} unique buyers from invoice history for user {user_id}")
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error fetching buyers from invoice history: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch buyers from history: {str(e)}"
+        )
+
+
+@router.post("/bulk-pdf")
+async def generate_bulk_pdf(
+    request: Request,
+    invoice_ids: List[UUID],
+    db = Depends(get_database_session),
+    user_id: str = Depends(require_authentication)
+):
+    """
+    Generate a single PDF containing multiple invoices.
+
+    Args:
+        invoice_ids: List of invoice IDs to include in the PDF
+
+    Returns:
+        StreamingResponse with PDF file
+    """
+    user_uuid = UUID(user_id)
+
+    if not invoice_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No invoice IDs provided"
+        )
+
+    if len(invoice_ids) > 50:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot generate PDF for more than 50 invoices at once (got {len(invoice_ids)})"
+        )
+
+    # Fetch all invoices and verify ownership
+    invoices = []
+    for invoice_id in invoice_ids:
+        invoice = db.get(Invoice, invoice_id)
+        if not invoice:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Invoice {invoice_id} not found"
+            )
+
+        if invoice.user_id != user_uuid:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"You do not have permission to access invoice {invoice_id}"
+            )
+
+        invoices.append(invoice)
+
+    # Generate bulk PDF
+    pdf_service = PDFService()
+    try:
+        pdf_bytes = pdf_service.generate_batch_pdf(invoices)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"Failed to generate bulk PDF: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate PDF"
+        )
+
+    # Generate filename with timestamp
+    from datetime import datetime
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    filename = f"invoices_bulk_{timestamp}.pdf"
+
+    # Return streaming response
+    return StreamingResponse(
+        BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
     )
 
 
@@ -510,10 +675,25 @@ async def validate_invoice_with_fbr(
     try:
         access_token = encryption_service.decrypt(encrypted_token)
     except Exception as decrypt_error:
-        logger.error(f"Failed to decrypt FBR token: {decrypt_error}")
+        error_type = type(decrypt_error).__name__
+        error_msg = str(decrypt_error)
+        logger.error(f"Failed to decrypt FBR token for user {user_uuid}: {error_type}: {error_msg}")
+        logger.error(f"Encrypted token length: {len(encrypted_token) if encrypted_token else 0}")
+        logger.error(f"Encrypted token preview: {encrypted_token[:50] if encrypted_token and len(encrypted_token) > 50 else encrypted_token}")
+
+        # Clear the corrupted token from database
+        if invoice.environment == "SANDBOX":
+            user.fbr_sandbox_token = None
+        else:
+            user.fbr_production_token = None
+
+        db.add(user)
+        db.commit()
+
+        # Return 400 error asking user to reconfigure token with detailed error
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to decrypt FBR token: {str(decrypt_error)}"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"FBR {invoice.environment.title()} token decryption failed ({error_type}: {error_msg}). Token has been cleared. Please update your profile with valid FBR credentials."
         )
 
     try:
@@ -654,10 +834,25 @@ async def post_invoice_to_fbr(
     try:
         access_token = encryption_service.decrypt(encrypted_token)
     except Exception as decrypt_error:
-        logger.error(f"Failed to decrypt FBR token: {decrypt_error}")
+        error_type = type(decrypt_error).__name__
+        error_msg = str(decrypt_error)
+        logger.error(f"Failed to decrypt FBR token for user {user_uuid}: {error_type}: {error_msg}")
+        logger.error(f"Encrypted token length: {len(encrypted_token) if encrypted_token else 0}")
+        logger.error(f"Encrypted token preview: {encrypted_token[:50] if encrypted_token and len(encrypted_token) > 50 else encrypted_token}")
+
+        # Clear the corrupted token from database
+        if invoice.environment == "SANDBOX":
+            user.fbr_sandbox_token = None
+        else:
+            user.fbr_production_token = None
+
+        db.add(user)
+        db.commit()
+
+        # Return 400 error asking user to reconfigure token with detailed error
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to decrypt FBR token: {str(decrypt_error)}"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"FBR {invoice.environment.title()} token decryption failed ({error_type}: {error_msg}). Token has been cleared. Please update your profile with valid FBR credentials."
         )
 
     try:
@@ -740,7 +935,7 @@ async def post_invoice_to_fbr(
         )
 
 
-@router.post("/{invoice_id}/post-to-fbr", response_model=ManualPostingResponse)
+
 async def manual_post_to_fbr(
     invoice_id: UUID,
     request_data: ManualPostingRequest,
@@ -1007,3 +1202,87 @@ async def get_posting_status(
         environment=user.auto_posting_environment,
         paused_until=user.auto_posting_paused_until.isoformat() if user.auto_posting_paused_until else None
     )
+
+
+@router.get("/{invoice_id}/pdf")
+async def get_invoice_pdf(
+    invoice_id: UUID,
+    db = Depends(get_database_session),
+    user_id: str = Depends(require_authentication),
+    disposition: str = Query("attachment", description="Content disposition: 'attachment' or 'inline'")
+):
+    """
+    Generate and download PDF for an invoice.
+
+    For POSTED invoices: Includes FBR response number and QR code
+    For other statuses: Generates basic invoice PDF without FBR data
+    """
+    user_uuid = UUID(user_id)
+
+    # Validate disposition
+    if disposition not in ["attachment", "inline"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid disposition. Must be 'attachment' or 'inline'"
+        )
+
+    # Get invoice
+    invoice = db.get(Invoice, invoice_id)
+    if not invoice:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invoice not found"
+        )
+
+    # Check ownership
+    if invoice.user_id != user_uuid:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to access this invoice"
+        )
+
+    # Check if deleted
+    if invoice.is_deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invoice not found"
+        )
+
+    try:
+        # Generate PDF
+        pdf_service = PDFService()
+        pdf_bytes = pdf_service.generate_invoice_pdf(invoice)
+
+        # Create filename
+        sanitized_number = invoice.external_id.replace('/', '_') if invoice.external_id else str(invoice_id)
+        filename = f"invoice_{sanitized_number}.pdf"
+
+        # Return PDF as streaming response
+        return StreamingResponse(
+            BytesIO(pdf_bytes),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'{disposition}; filename="{filename}"'
+            }
+        )
+
+    except ValueError as e:
+        # PDF generation validation error
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except FileNotFoundError as e:
+        # Missing assets (logo, font)
+        logger.error(f"PDF generation failed - missing assets: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="PDF generation failed - server configuration error"
+        )
+    except Exception as e:
+        # Unexpected error
+        logger.error(f"PDF generation failed: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate PDF: {str(e)}"
+        )

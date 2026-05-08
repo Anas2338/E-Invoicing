@@ -15,7 +15,7 @@ import uuid
 
 # revision identifiers, used by Alembic.
 revision: str = '20260502_add_auto_posting'
-down_revision: Union[str, Sequence[str], None] = '20260428_remove_cross_database_foreign_keys'
+down_revision: Union[str, Sequence[str], None] = '20260428_remove_fk'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { InvoiceTable } from '@/components/invoices/invoice-table';
 import { ValidationResultDialog } from '@/components/invoices/validation-result-dialog';
 import { api, ApiError } from '@/lib/api';
-import { Plus, Trash2, ArrowLeft, CheckCircle, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, ArrowLeft, CheckCircle, RefreshCw, Printer } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 interface Invoice {
@@ -22,6 +22,7 @@ interface Invoice {
   status: string;
   environment: string;
   invoiceType: string;
+  incomeTax: string;
   createdAt: string;
   scheduledDate?: string;
   scheduledTime?: string;
@@ -36,9 +37,11 @@ export default function InvoiceHistoryPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [incomeTaxFilter, setIncomeTaxFilter] = useState('all');
   const [selectedInvoices, setSelectedInvoices] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [bulkValidating, setBulkValidating] = useState(false);
+  const [bulkPrinting, setBulkPrinting] = useState(false);
   const [validatingInvoiceId, setValidatingInvoiceId] = useState<string | null>(null);
   const [postingInvoiceId, setPostingInvoiceId] = useState<string | null>(null);
   const [lastRefreshTime, setLastRefreshTime] = useState<Date>(new Date());
@@ -67,13 +70,19 @@ export default function InvoiceHistoryPage() {
     { value: 'FAILED', label: 'Failed' },
   ];
 
+  const incomeTaxOptions = [
+    { value: 'all', label: 'All' },
+    { value: '236G', label: '236G' },
+    { value: '236H', label: '236H' },
+  ];
+
   useEffect(() => {
     fetchInvoices();
   }, []);
 
   useEffect(() => {
     applyFilters();
-  }, [invoices, searchTerm, statusFilter]);
+  }, [invoices, searchTerm, statusFilter, incomeTaxFilter]);
 
   const fetchInvoices = async (isBackgroundRefresh = false, showRefreshIndicator = false) => {
     try {
@@ -100,6 +109,7 @@ export default function InvoiceHistoryPage() {
           status: invoice.status,
           environment: invoice.environment || '',
           invoiceType: invoice.invoice_type || 'Sale Invoice',
+          incomeTax: invoice.income_tax || '236G',
           createdAt: invoice.created_at,
           scheduledDate: invoice.scheduled_date,
           scheduledTime: invoice.scheduled_time,
@@ -150,6 +160,11 @@ export default function InvoiceHistoryPage() {
     // Apply status filter
     if (statusFilter !== 'all') {
       result = result.filter(invoice => invoice.status === statusFilter);
+    }
+
+    // Apply income tax filter
+    if (incomeTaxFilter !== 'all') {
+      result = result.filter(invoice => invoice.incomeTax === incomeTaxFilter);
     }
 
     setFilteredInvoices(result);
@@ -411,6 +426,87 @@ export default function InvoiceHistoryPage() {
     }
   };
 
+  const handleBulkPrint = async () => {
+    if (selectedInvoices.size === 0) return;
+
+    const selectedInvoicesList = Array.from(selectedInvoices);
+
+    if (!confirm(`Generate PDF for ${selectedInvoicesList.length} selected invoice${selectedInvoicesList.length > 1 ? 's' : ''}?`)) {
+      return;
+    }
+
+    setBulkPrinting(true);
+
+    try {
+      // Helper function to get cookie value by name
+      const getCookie = (name: string): string | null => {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) {
+          return parts.pop()?.split(';').shift() || null;
+        }
+        return null;
+      };
+
+      // Get CSRF token
+      const csrfToken = getCookie('csrf_token') || sessionStorage.getItem('csrf_token');
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      // Add CSRF token for POST request
+      if (csrfToken) {
+        headers['X-CSRF-Token'] = csrfToken;
+      }
+
+      // Call bulk PDF endpoint
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8001/api/v1'}/invoices/bulk-pdf`,
+        {
+          method: 'POST',
+          headers,
+          credentials: 'include', // Important: send httpOnly cookies
+          body: JSON.stringify(selectedInvoicesList),
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to generate PDF');
+      }
+
+      const pdfBlob = await response.blob();
+
+      // Create download link
+      const url = window.URL.createObjectURL(pdfBlob);
+      const link = document.createElement('a');
+      link.href = url;
+
+      // Generate filename with timestamp
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      link.download = `invoices_bulk_${timestamp}.pdf`;
+
+      // Trigger download
+      document.body.appendChild(link);
+      link.click();
+
+      // Cleanup
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(link);
+
+      toast.success(`Successfully generated PDF for ${selectedInvoicesList.length} invoice${selectedInvoicesList.length > 1 ? 's' : ''}`);
+
+      // Clear selection
+      setSelectedInvoices(new Set());
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to generate PDF');
+      console.error('Error during bulk print:', err);
+    } finally {
+      setBulkPrinting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -479,17 +575,24 @@ export default function InvoiceHistoryPage() {
           </p>
         </div>
         <div className="flex flex-col sm:flex-row gap-3">
-          <Button
-            variant="outline"
-            onClick={() => fetchInvoices(true, true)}
-            disabled={refreshing}
-            className="w-full sm:w-auto"
-            title="Refresh invoice list"
-          >
-            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
-          {selectedInvoices.size > 0 && (
+          {selectedInvoices.size === 0 ? (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => fetchInvoices(true, true)}
+                disabled={refreshing}
+                className="w-full sm:w-auto"
+                title="Refresh invoice list"
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+              <Button onClick={() => router.push('/invoices/create')} className="w-full sm:w-auto">
+                <Plus className="h-4 w-4 mr-2" />
+                Create Invoice
+              </Button>
+            </>
+          ) : (
             <>
               <Button
                 variant="outline"
@@ -499,6 +602,15 @@ export default function InvoiceHistoryPage() {
               >
                 <CheckCircle className="h-4 w-4 mr-2" />
                 {bulkValidating ? 'Validating...' : `Validate ${selectedInvoices.size} Selected`}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleBulkPrint}
+                disabled={bulkPrinting}
+                className="w-full sm:w-auto border-[#1e40af] text-[#1e40af] hover:bg-[#1e40af] hover:text-white"
+              >
+                <Printer className="h-4 w-4 mr-2" />
+                {bulkPrinting ? 'Generating...' : `Print ${selectedInvoices.size} Selected`}
               </Button>
               <Button
                 variant="destructive"
@@ -511,16 +623,12 @@ export default function InvoiceHistoryPage() {
               </Button>
             </>
           )}
-          <Button onClick={() => router.push('/invoices/create')} className="w-full sm:w-auto">
-            <Plus className="h-4 w-4 mr-2" />
-            Create Invoice
-          </Button>
         </div>
       </div>
 
       {/* Filters */}
       <div className="bg-white dark:bg-[#1a1a1a] rounded-2xl border border-[#e1e3e5] dark:border-[#2e2e2e] shadow-sm p-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] mb-1">Search</label>
             <Input
@@ -549,12 +657,31 @@ export default function InvoiceHistoryPage() {
             </Select>
           </div>
 
+          <div>
+            <label className="block text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] mb-2">Income Tax Type</label>
+            <Select value={incomeTaxFilter} onValueChange={setIncomeTaxFilter}>
+              <SelectTrigger className="h-11 text-[#202223] dark:text-[#e3e3e3] shadow p-4">
+                <span className="text-[#6d7175] dark:text-[#8c9196]">
+                  {incomeTaxOptions.find(opt => opt.value === incomeTaxFilter)?.label || 'All'}
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                {incomeTaxOptions.map(option => (
+                  <SelectItem key={option.value} value={option.value} className="text-[#202223] dark:text-[#e3e3e3]">
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="flex items-end">
             <Button
               variant="outline"
               onClick={() => {
                 setSearchTerm('');
                 setStatusFilter('all');
+                setIncomeTaxFilter('all');
               }}
               className="w-full"
             >
@@ -565,7 +692,7 @@ export default function InvoiceHistoryPage() {
       </div>
 
       {/* Stats Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-[#e1e3e5] dark:border-[#2e2e2e] shadow-sm p-4">
           <div className="text-sm text-[#6d7175] dark:text-[#8c9196]">Total Invoices</div>
           <div className="text-2xl font-bold text-[#202223] dark:text-[#e3e3e3]">{invoices.length}</div>
@@ -586,6 +713,12 @@ export default function InvoiceHistoryPage() {
           <div className="text-sm text-[#6d7175] dark:text-[#8c9196]">Posted</div>
           <div className="text-2xl font-bold text-[#065f46] dark:text-[#34d399]">
             {invoices.filter(inv => inv.status === 'POSTED').length}
+          </div>
+        </div>
+        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-[#e1e3e5] dark:border-[#2e2e2e] shadow-sm p-4">
+          <div className="text-sm text-[#6d7175] dark:text-[#8c9196]">Failed</div>
+          <div className="text-2xl font-bold text-[#dc2626] dark:text-[#f87171]">
+            {invoices.filter(inv => inv.status === 'FAILED').length}
           </div>
         </div>
       </div>

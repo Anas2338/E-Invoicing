@@ -15,6 +15,8 @@ from src.schemas.file_management import (
     UploadSessionResponse,
     BlockInvoiceRequest,
     BulkBlockRequest,
+    BulkDeleteRequest,
+    BulkRetryRequest,
     DeleteInvoiceResponse,
     DeleteUploadSessionResponse,
 )
@@ -238,5 +240,64 @@ async def bulk_block_invoices(
         "success": True,
         "message": f"Successfully blocked {blocked_count} invoices",
         "blocked_count": blocked_count,
+        "total_requested": len(body.invoice_ids),
+    }
+
+
+@router.post("/invoices/bulk-delete", status_code=status.HTTP_200_OK)
+async def bulk_delete_invoices(
+    body: BulkDeleteRequest,
+    request: Request,
+    user_id: str = Depends(require_automation_access),
+    db: Session = Depends(get_automation_db),
+):
+    """
+    Delete multiple invoices at once.
+
+    Only allowed for invoices with status: pending, failed, expired, or blocked.
+
+    Args:
+        body: List of invoice IDs to delete
+
+    Returns:
+        Count of successfully deleted invoices
+    """
+    service = FileManagementService(db)
+    deleted_count = service.bulk_delete_invoices(body.invoice_ids, user_id)
+
+    return {
+        "success": True,
+        "message": f"Successfully deleted {deleted_count} invoices",
+        "deleted_count": deleted_count,
+        "total_requested": len(body.invoice_ids),
+    }
+
+
+@router.post("/invoices/bulk-retry", status_code=status.HTTP_200_OK)
+async def bulk_retry_invoices(
+    body: BulkRetryRequest,
+    request: Request,
+    user_id: str = Depends(require_automation_access),
+    db: Session = Depends(get_automation_db),
+):
+    """
+    Retry multiple invoices at once.
+
+    Only allowed for invoices with status: pending, failed, or transfer_failed.
+
+    Args:
+        body: List of invoice IDs to retry
+
+    Returns:
+        Count of successfully retried invoices
+    """
+    from src.services.file_management_service import FileManagementService
+    service = FileManagementService(db)
+    retried_count = service.bulk_retry_invoices(body.invoice_ids, user_id)
+
+    return {
+        "success": True,
+        "message": f"Successfully queued {retried_count} invoices for retry",
+        "retried_count": retried_count,
         "total_requested": len(body.invoice_ids),
     }

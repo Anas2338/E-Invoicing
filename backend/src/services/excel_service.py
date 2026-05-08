@@ -25,12 +25,6 @@ class ExcelService:
         "invoice_type",
         "invoice_date",
 
-        # Seller information
-        "seller_ntn_cnic",
-        "seller_business_name",
-        "seller_province",
-        "seller_address",
-
         # Buyer information
         "buyer_ntn_cnic",
         "buyer_business_name",
@@ -38,35 +32,16 @@ class ExcelService:
         "buyer_address",
         "buyer_registration_type",
 
-        # Item details - matching manual sale form exactly
-        "hs_code",
-        "product_description",
-        "tax_rate",
-        "uom",
+        # Item details - simplified with saved_item_code
+        "saved_item_code",
         "quantity",
-        "total_values",
         "value_sales_excluding_st",
         "fixed_notified_value_or_retail_price",
-        "sales_tax_applicable",
-        "sales_tax_withheld_at_source",
-        "extra_tax",
         "further_tax",
-        "sro_schedule_no",
-        "fed_payable",
-        "discount",
-        "sale_type",
-        "sro_item_serial_no",
-
-        # Optional fields
-        "invoice_ref_no",
-        "scenario_id",
 
         # Scheduling
         "scheduled_date",
         "scheduled_time",
-
-        # Environment
-        "environment",
 
         # Status fields (auto-filled by system)
         "status",
@@ -86,68 +61,13 @@ class ExcelService:
     def generate_excel_template(self) -> BytesIO:
         """
         Generate Excel template with predefined headers.
+        Simplified template using saved_item_code for auto-population.
 
         Returns:
             BytesIO object containing Excel file
         """
-        # Create DataFrame with column headers
+        # Create DataFrame with column headers only (no sample row)
         df = pd.DataFrame(columns=self.TEMPLATE_COLUMNS)
-
-        # Add sample row with instructions
-        sample_row = {
-            # Invoice identification
-            "invoice_number": "INV-001",
-            "invoice_type": "Sale Invoice",
-            "invoice_date": "2026-04-10",
-
-            # Seller information
-            "seller_ntn_cnic": "1234567",
-            "seller_business_name": "ABC Company",
-            "seller_province": "PUNJAB",
-            "seller_address": "123 Main Street, Lahore",
-
-            # Buyer information
-            "buyer_ntn_cnic": "7654321",
-            "buyer_business_name": "XYZ Corporation",
-            "buyer_province": "SINDH",
-            "buyer_address": "456 Business Ave, Karachi",
-            "buyer_registration_type": "Registered",
-
-            # Item details - matching manual sale form
-            "hs_code": "8471.30.00",
-            "product_description": "Laptop Computer",
-            "tax_rate": "18",
-            "uom": "NOS",
-            "quantity": "1",
-            "total_values": "118000",
-            "value_sales_excluding_st": "100000",
-            "fixed_notified_value_or_retail_price": "0",
-            "sales_tax_applicable": "18000",
-            "sales_tax_withheld_at_source": "0",
-            "extra_tax": "0",
-            "further_tax": "0",
-            "sro_schedule_no": "",
-            "fed_payable": "0",
-            "discount": "0",
-            "sale_type": "01",
-            "sro_item_serial_no": "",
-
-            # Optional fields
-            "invoice_ref_no": "",
-            "scenario_id": "SN001",
-
-            # Scheduling
-            "scheduled_date": "2026-04-10",
-            "scheduled_time": "10:00",
-
-            # Environment
-            "environment": "SANDBOX",
-
-            # Status fields (auto-filled)
-            "status": "",
-            "reason": ""
-        }
-        df = pd.concat([df, pd.DataFrame([sample_row])], ignore_index=True)
 
         # Create Excel file in memory
         output = BytesIO()
@@ -165,37 +85,18 @@ class ExcelService:
                 15,  # invoice_number
                 15,  # invoice_type
                 12,  # invoice_date
-                15,  # seller_ntn_cnic
-                25,  # seller_business_name
-                15,  # seller_province
-                30,  # seller_address
                 15,  # buyer_ntn_cnic
                 25,  # buyer_business_name
                 15,  # buyer_province
                 30,  # buyer_address
                 20,  # buyer_registration_type
-                15,  # hs_code
-                30,  # product_description
-                10,  # tax_rate
-                10,  # uom
+                20,  # saved_item_code
                 10,  # quantity
-                15,  # total_values
                 20,  # value_sales_excluding_st
                 25,  # fixed_notified_value_or_retail_price
-                20,  # sales_tax_applicable
-                25,  # sales_tax_withheld_at_source
-                12,  # extra_tax
                 12,  # further_tax
-                18,  # sro_schedule_no
-                12,  # fed_payable
-                10,  # discount
-                12,  # sale_type
-                18,  # sro_item_serial_no
-                15,  # invoice_ref_no
-                12,  # scenario_id
                 15,  # scheduled_date
                 15,  # scheduled_time
-                12,  # environment
                 12,  # status
                 30   # reason
             ]
@@ -231,33 +132,31 @@ class ExcelService:
         """
         return self.validator.validate_no_duplicate_invoices(file_source)
 
-    def parse_excel_file(self, file_source: BytesIO | str) -> list[dict]:
+    def parse_excel_file(self, file_source: BytesIO | str, user_id: UUID = None, main_db: Session = None) -> list[dict]:
         """
         Parse Excel file and return invoice data.
+        Auto-populates item details from saved_item_code and seller info from user's business information.
 
         Args:
             file_source: Path to Excel file or BytesIO object
+            user_id: User UUID for fetching saved items and seller info
+            main_db: Main database session for fetching user information
 
         Returns:
             List of invoice dictionaries with FBR-compliant structure
 
         Raises:
-            ValueError: If Excel file is invalid
+            ValueError: If Excel file is invalid or saved_item_code not found
             MemoryError: If file is too large to process in memory
         """
         try:
             # Read Excel file (pandas handles both str and BytesIO)
-            # Force hs_code and tax_rate to be read as strings to preserve formatting
-            # Wrap in try-except to catch memory errors during large file parsing
             try:
                 df = pd.read_excel(
                     file_source,
                     engine='openpyxl',
                     dtype={
-                        'hs_code': str,
-                        'tax_rate': str,
-                        'sro_schedule_no': str,
-                        'sro_item_serial_no': str
+                        'saved_item_code': str
                     }
                 )
             except MemoryError:
@@ -266,28 +165,88 @@ class ExcelService:
                     "Please reduce the file size or split into smaller batches (max 1,000 rows)."
                 )
 
-            # Remove sample row if present (first row with "INV-001")
-            if not df.empty and df.iloc[0]['invoice_number'] == 'INV-001':
-                df = df.iloc[1:]
-
-            # Remove empty rows
+            # Remove empty rows (rows without invoice number)
             df = df.dropna(subset=['invoice_number'])
+
+            # Fetch user's seller information from main database
+            from src.models.user import User
+            seller_info = {}
+            if user_id and main_db:
+                user = main_db.get(User, user_id)
+                if user:
+                    seller_info = {
+                        "seller_ntn_cnic": user.fbr_seller_ntn or "",
+                        "seller_business_name": user.fbr_business_name or "",
+                        "seller_province": user.fbr_seller_province or "",
+                        "seller_address": user.fbr_seller_address or "",
+                    }
+
+            # Fetch all user's saved items for lookup from main database
+            from src.models.user_saved_product import UserSavedProduct
+            saved_items_dict = {}
+            if user_id and main_db:
+                from sqlmodel import select
+                statement = select(UserSavedProduct).where(
+                    UserSavedProduct.user_id == user_id,
+                    UserSavedProduct.is_active == 1
+                )
+                saved_items = main_db.exec(statement).all()
+                saved_items_dict = {item.item_code: item for item in saved_items}
+
+            # Fetch UOM descriptions from FBR master data
+            from src.models.fbr_master_data import FBRUOM, FBRTransactionType
+            uom_descriptions = {}
+            transaction_type_descriptions = {}
+            if main_db:
+                try:
+                    uom_records = main_db.query(FBRUOM).all()
+                    uom_descriptions = {uom.code: uom.name for uom in uom_records}
+                except Exception as e:
+                    logger.warning(f"Failed to fetch UOM descriptions: {str(e)}")
+                    uom_descriptions = {}
+
+                try:
+                    transaction_type_records = main_db.query(FBRTransactionType).all()
+                    transaction_type_descriptions = {tt.code: tt.name for tt in transaction_type_records}
+                except Exception as e:
+                    logger.warning(f"Failed to fetch transaction type descriptions: {str(e)}")
+                    transaction_type_descriptions = {}
 
             # Convert to list of dictionaries
             invoices = []
             validation_errors = []  # Collect all validation errors
             for row_idx, row in df.iterrows():
-                # Parse numeric fields
+                # Get saved_item_code
+                saved_item_code = str(row['saved_item_code']).strip() if pd.notna(row['saved_item_code']) else ""
+
+                # Fetch saved item details
+                if not saved_item_code:
+                    validation_errors.append(f"Row {row_idx + 2} (Invoice {row['invoice_number']}): saved_item_code is required")
+                    continue
+
+                saved_item = saved_items_dict.get(saved_item_code)
+                if not saved_item:
+                    validation_errors.append(f"Row {row_idx + 2} (Invoice {row['invoice_number']}): saved_item_code '{saved_item_code}' not found in your saved items")
+                    continue
+
+                # Parse numeric fields from Excel
                 quantity = float(row['quantity']) if pd.notna(row['quantity']) else 0
-                total_values = float(row['total_values']) if pd.notna(row['total_values']) else 0
                 value_sales_excluding_st = float(row['value_sales_excluding_st']) if pd.notna(row['value_sales_excluding_st']) else 0
                 fixed_notified_value_or_retail_price = float(row['fixed_notified_value_or_retail_price']) if pd.notna(row['fixed_notified_value_or_retail_price']) else 0
-                sales_tax_applicable = float(row['sales_tax_applicable']) if pd.notna(row['sales_tax_applicable']) else 0
-                sales_tax_withheld_at_source = float(row['sales_tax_withheld_at_source']) if pd.notna(row['sales_tax_withheld_at_source']) else 0
-                extra_tax = float(row['extra_tax']) if pd.notna(row['extra_tax']) else 0
                 further_tax = float(row['further_tax']) if pd.notna(row['further_tax']) else 0
-                fed_payable = float(row['fed_payable']) if pd.notna(row['fed_payable']) else 0
-                discount = float(row['discount']) if pd.notna(row['discount']) else 0
+
+                # Calculate sales tax based on saved item's tax rate
+                tax_rate = float(saved_item.default_rate) if saved_item.default_rate else 18.0
+                sales_tax_applicable = (value_sales_excluding_st * tax_rate) / 100
+                total_values = value_sales_excluding_st + sales_tax_applicable + further_tax
+
+                # Get UOM code and description
+                uom_code = saved_item.default_uom or "NOS"
+                uom_description = uom_descriptions.get(uom_code, uom_code)
+
+                # Get transaction type (sale type) code and description
+                transaction_type_code = saved_item.transaction_type or "01"
+                sale_type_description = transaction_type_descriptions.get(transaction_type_code, transaction_type_code)
 
                 # Parse invoice_date to YYYY-MM-DD format
                 invoice_date_str = ""
@@ -304,11 +263,11 @@ class ExcelService:
                     "invoice_type": str(row['invoice_type']).strip() if pd.notna(row['invoice_type']) else "Sale Invoice",
                     "invoice_date": invoice_date_str,
 
-                    # Seller information
-                    "seller_ntn_cnic": str(row['seller_ntn_cnic']).strip() if pd.notna(row['seller_ntn_cnic']) else "",
-                    "seller_business_name": str(row['seller_business_name']).strip() if pd.notna(row['seller_business_name']) else "",
-                    "seller_province": str(row['seller_province']).strip() if pd.notna(row['seller_province']) else "",
-                    "seller_address": str(row['seller_address']).strip() if pd.notna(row['seller_address']) else "",
+                    # Seller information - auto-populated from user's business info
+                    "seller_ntn_cnic": seller_info.get("seller_ntn_cnic", ""),
+                    "seller_business_name": seller_info.get("seller_business_name", ""),
+                    "seller_province": seller_info.get("seller_province", ""),
+                    "seller_address": seller_info.get("seller_address", ""),
 
                     # Buyer information
                     "buyer_ntn_cnic": str(row['buyer_ntn_cnic']).strip() if pd.notna(row['buyer_ntn_cnic']) else "",
@@ -317,34 +276,37 @@ class ExcelService:
                     "buyer_address": str(row['buyer_address']).strip() if pd.notna(row['buyer_address']) else "",
                     "buyer_registration_type": str(row['buyer_registration_type']).strip() if pd.notna(row['buyer_registration_type']) else "Registered",
 
-                    # Item details (single item per row) - matching manual sale form structure
+                    # Item details - auto-populated from saved item
                     "items": [{
-                        "hs_code": str(row['hs_code']).strip() if pd.notna(row['hs_code']) else "",
-                        "product_description": str(row['product_description']).strip() if pd.notna(row['product_description']) else "",
-                        "rate": str(row['tax_rate']).strip() if pd.notna(row['tax_rate']) else "18",
-                        "tax_rate": str(row['tax_rate']).strip() if pd.notna(row['tax_rate']) else "18",  # For frontend display
-                        "uom": str(row['uom']).strip() if pd.notna(row['uom']) else "NOS",
+                        "hs_code": saved_item.hs_code,
+                        "product_description": saved_item.product_description,
+                        "rate": saved_item.default_rate or "18",
+                        "tax_rate": saved_item.default_rate or "18",
+                        "uom": uom_code,
+                        "uom_description": uom_description,  # Add description for frontend display
                         "quantity": quantity,
                         "total_values": total_values,
                         "value_sales_excluding_st": value_sales_excluding_st,
                         "fixed_notified_value_or_retail_price": fixed_notified_value_or_retail_price,
                         "sales_tax_applicable": sales_tax_applicable,
-                        "sales_tax_withheld_at_source": sales_tax_withheld_at_source,
-                        "extra_tax": extra_tax,
+                        "sales_tax_withheld_at_source": 0,
+                        "extra_tax": 0,
                         "further_tax": further_tax,
-                        "sro_schedule_no": str(row['sro_schedule_no']).strip() if pd.notna(row['sro_schedule_no']) else "",
-                        "fed_payable": fed_payable,
-                        "discount": discount,
-                        "sale_type": str(row['sale_type']).strip() if pd.notna(row['sale_type']) else "01",
-                        "sro_item_serial_no": str(row['sro_item_serial_no']).strip() if pd.notna(row['sro_item_serial_no']) else "",
+                        "sro_schedule_no": saved_item.sro_schedule_no or "",
+                        "fed_payable": 0,
+                        "discount": 0,
+                        "sale_type": saved_item.transaction_type or "01",
+                        "sale_type_description": sale_type_description,  # Add description for frontend display
+                        "sro_item_serial_no": saved_item.sro_item_serial_no or "",
+                        "transaction_type": saved_item.transaction_type or "",
                     }],
 
                     # Optional fields
-                    "invoice_ref_no": str(row['invoice_ref_no']).strip() if pd.notna(row['invoice_ref_no']) else "",
-                    "scenario_id": str(row['scenario_id']).strip() if pd.notna(row['scenario_id']) else "",
+                    "invoice_ref_no": "",
+                    "scenario_id": "",
 
-                    # Environment
-                    "environment": str(row['environment']).strip() if pd.notna(row['environment']) else "SANDBOX",
+                    # Environment - always use PRODUCTION for automation
+                    "environment": "PRODUCTION",
                 }
 
                 # SECURITY: Validate invoice data before adding to list
@@ -477,12 +439,6 @@ class ExcelService:
                 "invoice_type": invoice_data.get('invoice_type', ''),
                 "invoice_date": invoice_data.get('invoice_date', ''),
 
-                # Seller information
-                "seller_ntn_cnic": invoice_data.get('seller_ntn_cnic', ''),
-                "seller_business_name": invoice_data.get('seller_business_name', ''),
-                "seller_province": invoice_data.get('seller_province', ''),
-                "seller_address": invoice_data.get('seller_address', ''),
-
                 # Buyer information
                 "buyer_ntn_cnic": invoice_data.get('buyer_ntn_cnic', ''),
                 "buyer_business_name": invoice_data.get('buyer_business_name', ''),
@@ -490,35 +446,16 @@ class ExcelService:
                 "buyer_address": invoice_data.get('buyer_address', ''),
                 "buyer_registration_type": invoice_data.get('buyer_registration_type', ''),
 
-                # Item details
-                "hs_code": item.get('hs_code', ''),
-                "product_description": item.get('product_description', ''),
-                "tax_rate": item.get('rate', ''),
-                "uom": item.get('uom', ''),
+                # Item details - note: saved_item_code not stored in invoice_data, so we show empty
+                "saved_item_code": "",
                 "quantity": item.get('quantity', 0),
-                "total_values": item.get('total_values', 0),
                 "value_sales_excluding_st": item.get('value_sales_excluding_st', 0),
                 "fixed_notified_value_or_retail_price": item.get('fixed_notified_value_or_retail_price', 0),
-                "sales_tax_applicable": item.get('sales_tax_applicable', 0),
-                "sales_tax_withheld_at_source": item.get('sales_tax_withheld_at_source', 0),
-                "extra_tax": item.get('extra_tax', 0),
                 "further_tax": item.get('further_tax', 0),
-                "sro_schedule_no": item.get('sro_schedule_no', ''),
-                "fed_payable": item.get('fed_payable', 0),
-                "discount": item.get('discount', 0),
-                "sale_type": item.get('sale_type', ''),
-                "sro_item_serial_no": item.get('sro_item_serial_no', ''),
-
-                # Optional fields
-                "invoice_ref_no": invoice_data.get('invoice_ref_no', ''),
-                "scenario_id": invoice_data.get('scenario_id', ''),
 
                 # Scheduling
                 "scheduled_date": invoice.scheduled_date.isoformat() if invoice.scheduled_date else '',
                 "scheduled_time": invoice.scheduled_time.strftime('%H:%M') if invoice.scheduled_time else '',
-
-                # Environment
-                "environment": invoice_data.get('environment', ''),
 
                 # Status fields (from processing results)
                 "status": invoice.status.value if invoice.status else '',
@@ -541,9 +478,8 @@ class ExcelService:
             from openpyxl.utils import get_column_letter
 
             column_widths = [
-                15, 15, 12, 15, 25, 15, 30, 15, 25, 15, 30, 20,
-                15, 30, 10, 10, 10, 15, 20, 25, 20, 25, 12, 12,
-                18, 12, 10, 12, 18, 15, 12, 15, 15, 12, 12, 30
+                15, 15, 12, 15, 25, 15, 30, 20,
+                20, 10, 20, 25, 12, 15, 15, 12, 30
             ]
 
             for idx, width in enumerate(column_widths, start=1):

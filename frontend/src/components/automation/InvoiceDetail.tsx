@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { automationApi } from '@/services/automationApi';
-import { Ban, Trash2, CheckCircle } from 'lucide-react';
+import { Trash2, CheckCircle } from 'lucide-react';
 
 interface InvoiceDetailProps {
   invoiceId: string;
@@ -36,38 +36,6 @@ export default function InvoiceDetail({ invoiceId, onClose, onUpdate }: InvoiceD
       setError(err instanceof Error ? err.message : 'Failed to load invoice details');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleBlockInvoice = async () => {
-    if (!data) return;
-
-    try {
-      setActionLoading(true);
-      await automationApi.blockInvoice(invoiceId, 'Blocked by user from detail view');
-      await loadInvoiceDetail();
-      onUpdate?.();
-      alert('Invoice blocked successfully');
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to block invoice');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleUnblockInvoice = async () => {
-    if (!data) return;
-
-    try {
-      setActionLoading(true);
-      await automationApi.unblockInvoice(invoiceId);
-      await loadInvoiceDetail();
-      onUpdate?.();
-      alert('Invoice unblocked successfully');
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to unblock invoice');
-    } finally {
-      setActionLoading(false);
     }
   };
 
@@ -145,6 +113,45 @@ export default function InvoiceDetail({ invoiceId, onClose, onUpdate }: InvoiceD
     }
   };
 
+  const getSaleTypeLabel = (saleType: string) => {
+    const saleTypes: Record<string, string> = {
+      '01': 'Local Supply',
+      '02': 'Export',
+      '03': 'Deemed Export',
+      '04': 'Exempt Supply',
+      '05': 'Zero Rated Supply',
+      '06': 'Non-GST Supply',
+      '07': 'Composition Scheme',
+      '08': 'Nil Rated Supply',
+    };
+    return saleTypes[saleType] || saleType;
+  };
+
+  const formatDateTime = (dateStr: string) => {
+    // Ensure the date string is treated as UTC
+    // If it doesn't end with 'Z', append it to indicate UTC
+    let utcDateStr = dateStr;
+    if (!dateStr.endsWith('Z') && !dateStr.includes('+')) {
+      utcDateStr = dateStr + 'Z';
+    }
+
+    const date = new Date(utcDateStr);
+
+    // Use Intl.DateTimeFormat for proper timezone conversion to Pakistan time
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+      timeZone: 'Asia/Karachi'
+    });
+
+    return formatter.format(date);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -173,8 +180,6 @@ export default function InvoiceDetail({ invoiceId, onClose, onUpdate }: InvoiceD
 
   const { invoice, logs } = data;
 
-  const canBlock = invoice.status === 'pending' || invoice.status === 'failed';
-  const canUnblock = invoice.status === 'blocked';
   const canDelete = ['pending', 'failed', 'expired', 'blocked'].includes(invoice.status);
 
   return (
@@ -198,26 +203,6 @@ export default function InvoiceDetail({ invoiceId, onClose, onUpdate }: InvoiceD
 
       {/* Action Buttons */}
       <div className="flex gap-2">
-        {canBlock && (
-          <button
-            onClick={handleBlockInvoice}
-            disabled={actionLoading}
-            className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 text-sm"
-          >
-            <Ban className="w-4 h-4" />
-            {actionLoading ? 'Blocking...' : 'Block from FBR'}
-          </button>
-        )}
-        {canUnblock && (
-          <button
-            onClick={handleUnblockInvoice}
-            disabled={actionLoading}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm"
-          >
-            <CheckCircle className="w-4 h-4" />
-            {actionLoading ? 'Unblocking...' : 'Unblock'}
-          </button>
-        )}
         {canDelete && (
           showDeleteConfirm ? (
             <div className="flex items-center gap-2">
@@ -270,14 +255,14 @@ export default function InvoiceDetail({ invoiceId, onClose, onUpdate }: InvoiceD
           <div>
             <div className="text-sm text-[#6d7175] dark:text-[#8c9196] mb-1">Created At</div>
             <div className="text-sm text-[#202223] dark:text-[#e3e3e3]">
-              {new Date(invoice.created_at).toLocaleString('en-US', { timeZone: 'Asia/Karachi' })}
+              {formatDateTime(invoice.created_at)}
             </div>
           </div>
           {invoice.processed_at && (
             <div>
               <div className="text-sm text-[#6d7175] dark:text-[#8c9196] mb-1">Processed At</div>
               <div className="text-sm text-[#202223] dark:text-[#e3e3e3]">
-                {new Date(invoice.processed_at).toLocaleString('en-US', { timeZone: 'Asia/Karachi' })}
+                {formatDateTime(invoice.processed_at)}
               </div>
             </div>
           )}
@@ -437,7 +422,7 @@ export default function InvoiceDetail({ invoiceId, onClose, onUpdate }: InvoiceD
                     <div>
                       <div className="text-[#6d7175] dark:text-[#8c9196]">Quantity</div>
                       <div className="font-semibold text-[#202223] dark:text-[#e3e3e3]">
-                        {item.quantity || 0} {item.uom || ''}
+                        {item.quantity || 0} {item.uom_description || item.uom || 'NOS'}
                       </div>
                     </div>
                     <div>
@@ -497,7 +482,7 @@ export default function InvoiceDetail({ invoiceId, onClose, onUpdate }: InvoiceD
                     <div>
                       <div className="text-[#6d7175] dark:text-[#8c9196]">Sale Type</div>
                       <div className="font-semibold text-[#202223] dark:text-[#e3e3e3]">
-                        {item.sale_type || 'N/A'}
+                        {item.sale_type_description || getSaleTypeLabel(item.sale_type || '01')}
                       </div>
                     </div>
                     <div>
@@ -544,7 +529,7 @@ export default function InvoiceDetail({ invoiceId, onClose, onUpdate }: InvoiceD
                   </span>
                 </div>
                 <div className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
-                  {new Date(log.timestamp).toLocaleString('en-US', { timeZone: 'Asia/Karachi' })}
+                  {formatDateTime(log.timestamp)}
                 </div>
                 {log.details && (
                   <div className="text-xs text-[#202223] dark:text-[#e3e3e3] mt-1 bg-[#f6f6f7] dark:bg-[#2e2e2e] p-2 rounded-xl">

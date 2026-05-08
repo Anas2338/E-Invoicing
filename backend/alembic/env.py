@@ -5,16 +5,28 @@ from sqlalchemy import pool
 
 from alembic import context
 
-# Import your models here to register them with Alembic
+# Import ALL models here to register them with Alembic
+from src.models.base import Base
 from src.models.invoice import Invoice  # noqa
 from src.models.user import User  # noqa
 from src.models.fbr_response import FBRResponse  # noqa
-from src.models.base import Base
+from src.models.audit_log import AuditLog  # noqa
+from src.models.posting_log import PostingLog  # noqa
+from src.models.daily_posting_counter import DailyPostingCounter  # noqa
+from src.models.user_saved_product import UserSavedProduct  # noqa
+from src.models.user_saved_buyer import UserSavedBuyer  # noqa
+from src.models.user_saved_hs_code import UserSavedHSCode  # noqa
+from src.models.user_saved_product_description import UserSavedProductDescription  # noqa
+from src.models.user_saved_tax_rate import UserSavedTaxRate  # noqa
+from src.models.user_saved_uom import UserSavedUOM  # noqa
+from src.models.idempotency import IdempotencyCache  # noqa
 
-# Import automation models
+# Import automation models (for automation database)
 from src.models.automation_invoice import AutomationInvoice  # noqa
 from src.models.automation_log import AutomationLog  # noqa
 from src.models.excel_upload_session import ExcelUploadSession  # noqa
+from src.models.transfer_log import TransferLog  # noqa
+from src.models.ai_agent_health_check import AIAgentHealthCheck  # noqa
 
 from src.config.settings import settings
 

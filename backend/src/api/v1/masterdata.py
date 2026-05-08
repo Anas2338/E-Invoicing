@@ -267,6 +267,45 @@ async def get_invoice_types(
         return []
 
 
+@router.get("/hs-codes/validate/{hs_code}", response_model=Dict[str, Any])
+async def validate_hs_code(
+    hs_code: str,
+    db = Depends(get_database_session),
+    user_id: str = Depends(require_authentication)
+):
+    """
+    Validate a single HS code against the local database.
+
+    Args:
+        hs_code: HS code to validate
+
+    Returns:
+        Dictionary with validation result
+    """
+    try:
+        hs_code_obj = db.query(FBRHSCode).filter(FBRHSCode.code == hs_code.strip()).first()
+
+        if hs_code_obj:
+            return {
+                "valid": True,
+                "code": hs_code_obj.code,
+                "description": hs_code_obj.description
+            }
+        else:
+            return {
+                "valid": False,
+                "code": hs_code,
+                "description": None
+            }
+    except Exception as e:
+        logger.error(f"Error validating HS code {hs_code}: {str(e)}")
+        return {
+            "valid": False,
+            "code": hs_code,
+            "description": None
+        }
+
+
 @router.get("/hs-codes", response_model=List[Dict[str, str]])
 async def get_hs_codes(
     db = Depends(get_database_session),

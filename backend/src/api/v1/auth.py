@@ -670,10 +670,31 @@ def update_fbr_credentials(
             token = credentials["fbr_sandbox_token"]
             if token and token.strip():
                 # Encrypt and store token
-                user.fbr_sandbox_token = encryption_service.encrypt(token.strip())
+                try:
+                    encrypted_token = encryption_service.encrypt(token.strip())
+                    user.fbr_sandbox_token = encrypted_token
+                    logger.info(f"Encrypted sandbox token for user {current_user_id}: length={len(encrypted_token)}")
+
+                    # Immediately test decryption to verify it works
+                    try:
+                        test_decrypt = encryption_service.decrypt(encrypted_token)
+                        logger.info(f"Sandbox token encryption verified: decrypts successfully")
+                    except Exception as decrypt_test_error:
+                        logger.error(f"Sandbox token encryption verification FAILED: {type(decrypt_test_error).__name__}: {str(decrypt_test_error)}")
+                        raise HTTPException(
+                            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail=f"Token encryption verification failed: {str(decrypt_test_error)}"
+                        )
+                except Exception as encrypt_error:
+                    logger.error(f"Failed to encrypt sandbox token: {type(encrypt_error).__name__}: {str(encrypt_error)}")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to encrypt token: {str(encrypt_error)}"
+                    )
             else:
                 # Empty string means delete the token
                 user.fbr_sandbox_token = None
+                logger.info(f"Cleared sandbox token for user {current_user_id}")
 
         if "fbr_production_token" in credentials:
             token = credentials["fbr_production_token"]
@@ -790,40 +811,44 @@ def get_fbr_credentials(
         sandbox_token = None
         production_token = None
         system_sync_token = None
+        tokens_cleared = False
 
         if user.fbr_sandbox_token:
             try:
                 sandbox_token = encryption_service.decrypt(user.fbr_sandbox_token)
             except Exception as e:
-                logger.error(f"Failed to decrypt sandbox token for user {current_user_id}: {type(e).__name__}")
-                # Return error to user indicating token corruption
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="FBR sandbox token is corrupted. Please re-enter your credentials in settings."
-                )
+                logger.warning(f"Failed to decrypt sandbox token for user {current_user_id}: {type(e).__name__} - Token may be corrupted, clearing it")
+                # Don't throw error - just treat as if token doesn't exist
+                # User can re-enter token to fix corruption
+                sandbox_token = None
+                user.fbr_sandbox_token = None  # Clear corrupted token
+                tokens_cleared = True
 
         if user.fbr_production_token:
             try:
                 production_token = encryption_service.decrypt(user.fbr_production_token)
             except Exception as e:
-                logger.error(f"Failed to decrypt production token for user {current_user_id}: {type(e).__name__}")
-                # Return error to user indicating token corruption
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="FBR production token is corrupted. Please re-enter your credentials in settings."
-                )
+                logger.warning(f"Failed to decrypt production token for user {current_user_id}: {type(e).__name__} - Token may be corrupted, clearing it")
+                # Don't throw error - just treat as if token doesn't exist
+                production_token = None
+                user.fbr_production_token = None  # Clear corrupted token
+                tokens_cleared = True
 
         # Admin-only: Decrypt system sync token
         if user.role == "admin" and user.fbr_system_sync_token:
             try:
                 system_sync_token = encryption_service.decrypt(user.fbr_system_sync_token)
             except Exception as e:
-                logger.error(f"Failed to decrypt system sync token: {type(e).__name__}")
-                # Return error to admin indicating token corruption
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="System sync token is corrupted. Please re-enter the token in admin settings."
-                )
+                logger.warning(f"Failed to decrypt system sync token: {type(e).__name__} - Token may be corrupted, clearing it")
+                system_sync_token = None
+                user.fbr_system_sync_token = None
+                tokens_cleared = True
+
+        # Commit changes if any tokens were cleared
+        if tokens_cleared:
+            db.add(user)
+            db.commit()
+            db.refresh(user)
 
         response_data = {
             "fbr_environment": user.fbr_environment or "SANDBOX",
