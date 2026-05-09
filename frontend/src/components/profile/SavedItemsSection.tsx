@@ -25,8 +25,6 @@ interface SavedItem {
   sro_schedule_no: string | null;
   sro_item_serial_no: string | null;
   fbr_validated: boolean;
-  fbr_validation_date: string | null;
-  fbr_validation_error: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -168,7 +166,7 @@ export default function SavedItemsSection() {
       if (newItem.fbr_validated) {
         toast.success('✓ Item added and HS Code validated with FBR!');
       } else {
-        toast.warning(`⚠ Item added but HS Code validation failed:\n${newItem.fbr_validation_error}`);
+        toast.warning('⚠ Item added but HS Code validation failed');
       }
 
       await loadData();
@@ -209,7 +207,7 @@ export default function SavedItemsSection() {
       if (updatedItem.fbr_validated) {
         toast.success('✓ Item updated and HS Code validated with FBR!');
       } else {
-        toast.warning(`⚠ Item updated but HS Code validation failed:\n${updatedItem.fbr_validation_error}`);
+        toast.warning('⚠ Item updated but HS Code validation failed');
       }
 
       await loadData();
@@ -243,7 +241,7 @@ export default function SavedItemsSection() {
     setItemName(item.item_name);
     setHsCode(item.hs_code);
     setHsCodeValid(item.fbr_validated);
-    setHsCodeError(item.fbr_validation_error || '');
+    setHsCodeError('');
     setProductDescription(item.product_description);
     setDefaultUom(item.default_uom || '');
     setDefaultRate(item.default_rate || '');

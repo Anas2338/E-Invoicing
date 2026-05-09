@@ -14,17 +14,10 @@ from src.api.v1.auth import router as auth_router
 from src.api.v1.masterdata import router as masterdata_router
 from src.api.v1.fbr_reference import router as fbr_reference_router
 from src.api.v1.password_reset import router as password_reset_router
-from src.api.v1.automation import router as automation_router
 from src.api.v1.admin_users import router as admin_users_router
 from src.api.v1.admin_sync import router as admin_sync_router
-from src.api.v1.admin.transfer import router as admin_transfer_router
 from src.api.v1.notifications import router as notifications_router
 from src.api.v1.saved_products import router as saved_products_router
-from src.api.v1.saved_hs_codes import router as saved_hs_codes_router
-from src.api.v1.saved_product_descriptions import router as saved_product_descriptions_router
-from src.api.v1.saved_uoms import router as saved_uoms_router
-from src.api.v1.saved_tax_rates import router as saved_tax_rates_router
-from src.api.v1.saved_buyers import router as saved_buyers_router
 from src.api.v1.user_profile import router as user_profile_router
 from src.api.v1.dashboard import router as dashboard_router
 
@@ -127,17 +120,10 @@ app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(masterdata_router, prefix="/api/v1/masterdata", tags=["masterdata"])
 app.include_router(fbr_reference_router, prefix="/api/v1/fbr-reference", tags=["fbr-reference"])
 app.include_router(password_reset_router, prefix="/api/v1/password-reset", tags=["password-reset"])
-app.include_router(automation_router, prefix="/api/v1", tags=["automation"])
 app.include_router(admin_users_router, prefix="/api/v1/admin", tags=["admin"])
 app.include_router(admin_sync_router, prefix="/api/v1/admin", tags=["admin-sync"])
-app.include_router(admin_transfer_router, prefix="/api/v1/admin/transfer", tags=["admin-transfer"])
 app.include_router(notifications_router, prefix="/api/v1/notifications", tags=["notifications"])
 app.include_router(saved_products_router, prefix="/api/v1/profile", tags=["saved-products"])
-app.include_router(saved_hs_codes_router, prefix="/api/v1/profile", tags=["saved-hs-codes"])
-app.include_router(saved_product_descriptions_router, prefix="/api/v1/profile", tags=["saved-product-descriptions"])
-app.include_router(saved_uoms_router, prefix="/api/v1/profile", tags=["saved-uoms"])
-app.include_router(saved_tax_rates_router, prefix="/api/v1/profile", tags=["saved-tax-rates"])
-app.include_router(saved_buyers_router, prefix="/api/v1/profile", tags=["saved-buyers"])
 app.include_router(user_profile_router, prefix="/api/v1", tags=["user-profile"])
 app.include_router(dashboard_router, prefix="/api/v1/dashboard", tags=["dashboard"])
 

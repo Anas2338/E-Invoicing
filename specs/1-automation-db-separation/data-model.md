@@ -442,7 +442,8 @@ Invoice(
 
 **Business Rules**:
 - Invoice number must be unique per user
-- Invoice date cannot be in the future
+- Invoice date can be up to 1 year in the future (for scheduled automation)
+- Invoice date cannot be more than 1 year in the past
 - Total amount must equal sum of item amounts
 - Tax amount must match calculated tax from items
 - Seller and buyer NTN must be valid format (7-13 digits)

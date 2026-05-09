@@ -23,7 +23,6 @@ from reportlab.lib import colors
 from PIL import Image
 import qrcode
 
-from ..models.automation_invoice import AutomationInvoice, AutomationInvoiceStatus
 from ..models.invoice import Invoice, InvoiceStatus
 
 logger = logging.getLogger(__name__)
@@ -42,12 +41,12 @@ class PDFService:
         self._fonts_registered = False
         self._logo_cache: Optional[Image.Image] = None
 
-    def generate_invoice_pdf(self, invoice: Union[AutomationInvoice, Invoice]) -> bytes:
+    def generate_invoice_pdf(self, invoice: Invoice) -> bytes:
         """
-        Generate PDF for a single invoice (automation or manual).
+        Generate PDF for a single invoice.
 
         Args:
-            invoice: AutomationInvoice or Invoice object
+            invoice: Invoice object
 
         Returns:
             PDF bytes
@@ -56,76 +55,38 @@ class PDFService:
             FileNotFoundError: If FBR logo or font file is missing
             ValueError: If invoice data is invalid or USIN is missing
         """
-        # Determine invoice type
-        is_automation = isinstance(invoice, AutomationInvoice)
+        # Validate invoice has required data
+        if not invoice.items:
+            raise ValueError("Invoice must have at least one item")
 
-        # Validate invoice status
-        if is_automation:
-            if invoice.status != AutomationInvoiceStatus.TRANSFERRED:
-                raise ValueError(
-                    f"Cannot generate PDF for invoice with status '{invoice.status}'. "
-                    "Only transferred invoices can be printed."
-                )
-        # Manual invoices: Allow all statuses (POSTED invoices will include FBR data, others won't)
+        # Extract invoice data from Invoice model
+        invoice_data = {
+            'invoiceRefNo': invoice.invoice_ref_no or invoice.external_id,
+            'invoiceDate': invoice.invoice_date.isoformat() if invoice.invoice_date else '',
+            'sellerBusinessName': invoice.seller_business_name or '',
+            'sellerNTNCNIC': invoice.seller_ntn_cnic or '',
+            'sellerProvince': invoice.seller_province or '',
+            'sellerAddress': invoice.seller_address or '',
+            'buyerBusinessName': invoice.buyer_business_name or '',
+            'buyerNTNCNIC': invoice.buyer_ntn_cnic or '',
+            'buyerProvince': invoice.buyer_province or '',
+            'buyerAddress': invoice.buyer_address or '',
+            'items': invoice.items,
+            'invoiceType': invoice.invoice_type or '',
+            'transactionTypeId': invoice.transaction_type_id or ''
+        }
 
-        # Extract invoice data based on type
-        if is_automation:
-            # Automation invoice: data is in invoice_data dict
-            if not invoice.invoice_data:
-                raise ValueError("Invoice data is missing")
-
-            invoice_data = invoice.invoice_data
-
-            # Validate required fields
-            required_fields = [
-                'invoiceRefNo', 'invoiceDate', 'sellerBusinessName', 'sellerNTNCNIC',
-                'buyerBusinessName', 'buyerNTNCNIC', 'items'
-            ]
-            missing_fields = [field for field in required_fields if not invoice_data.get(field)]
-            if missing_fields:
-                raise ValueError(
-                    f"Invoice data is missing required fields: {', '.join(missing_fields)}"
-                )
-
-            items = invoice_data.get('items', [])
-
-            # Extract USIN from FBR response
-            if not invoice.fbr_response:
-                raise ValueError("FBR response is missing - invoice may not be transferred")
-            usin = invoice.fbr_response.get('USIN') or invoice.fbr_response.get('usin')
-            if not usin:
-                raise ValueError("USIN not found in FBR response")
-
-            invoice_number = invoice.invoice_number
-        else:
-            # Manual invoice: data is in individual fields
-            invoice_data = {
-                'invoiceRefNo': invoice.external_id,
-                'invoiceDate': invoice.invoice_date,
-                'sellerBusinessName': invoice.seller_business_name,
-                'sellerNTNCNIC': invoice.seller_ntn_cnic,
-                'sellerProvince': invoice.seller_province,
-                'sellerAddress': invoice.seller_address,
-                'buyerBusinessName': invoice.buyer_business_name,
-                'buyerNTNCNIC': invoice.buyer_ntn_cnic,
-                'buyerProvince': invoice.buyer_province,
-                'buyerAddress': invoice.buyer_address,
-                'buyerRegistrationType': invoice.buyer_registration_type,
-                'items': invoice.items
-            }
-
-            items = invoice.items
-
-            # Extract USIN from fbr_reference_number (optional for non-posted invoices)
-            usin = invoice.fbr_reference_number  # Will be None for non-posted invoices
-            invoice_number = invoice.external_id
+        # Extract USIN from fbr_reference_number (optional for non-posted invoices)
+        usin = invoice.fbr_reference_number  # Will be None for non-posted invoices
+        invoice_number = invoice.external_id
 
         # Validate items array
+        items = invoice.items
         if not isinstance(items, list) or len(items) == 0:
             raise ValueError("Invoice must have at least one line item")
 
         logger.info(
-            f"Generating PDF for {'automation' if is_automation else 'manual'} invoice {invoice_number}"
+            f"Generating PDF for invoice {invoice_number}"
             f"{f' (USIN: {usin})' if usin else ' (no FBR data)'}"
         )
 
@@ -177,12 +138,12 @@ class PDFService:
             logger.error(f"Failed to generate PDF for invoice {invoice_number}: {e}")
             raise
 
-    def generate_batch_pdf(self, invoices: list[Union[AutomationInvoice, Invoice]]) -> bytes:
+    def generate_batch_pdf(self, invoices: list[Invoice]) -> bytes:
         """
         Generate PDF for multiple invoices with page breaks.
 
         Args:
-            invoices: List of AutomationInvoice or Invoice objects in selection order
+            invoices: List of Invoice objects in selection order
 
         Returns:
             PDF bytes containing all invoices
@@ -217,60 +178,28 @@ class PDFService:
 
             # Generate each invoice on a separate page
             for idx, invoice in enumerate(invoices):
-                is_automation = isinstance(invoice, AutomationInvoice)
+                # Extract invoice data
+                invoice_data = {
+                    'invoiceRefNo': invoice.invoice_ref_no or invoice.external_id,
+                    'invoiceDate': invoice.invoice_date.isoformat() if invoice.invoice_date else '',
+                    'sellerBusinessName': invoice.seller_business_name or '',
+                    'sellerNTNCNIC': invoice.seller_ntn_cnic or '',
+                    'sellerProvince': invoice.seller_province or '',
+                    'sellerAddress': invoice.seller_address or '',
+                    'buyerBusinessName': invoice.buyer_business_name or '',
+                    'buyerNTNCNIC': invoice.buyer_ntn_cnic or '',
+                    'buyerProvince': invoice.buyer_province or '',
+                    'buyerAddress': invoice.buyer_address or '',
+                    'items': invoice.items,
+                    'invoiceType': invoice.invoice_type or '',
+                    'transactionTypeId': invoice.transaction_type_id or ''
+                }
 
-                # Validate invoice status
-                if is_automation:
-                    if invoice.status != AutomationInvoiceStatus.TRANSFERRED:
-                        logger.warning(
-                            f"Skipping invoice {invoice.invoice_number} with status '{invoice.status}'"
-                        )
-                        raise ValueError(
-                            f"Cannot generate PDF for invoice {invoice.invoice_number} "
-                            f"with status '{invoice.status}'. Only transferred invoices can be printed."
-                        )
-                # Manual invoices: Allow all statuses
+                items = invoice.items
 
-                # Extract invoice data based on type
-                if is_automation:
-                    # Automation invoice: data is in invoice_data dict
-                    if not invoice.invoice_data:
-                        raise ValueError(f"Invoice {invoice.invoice_number} is missing invoice data")
-
-                    invoice_data = invoice.invoice_data
-                    items = invoice_data.get('items', [])
-
-                    # Extract USIN from FBR response
-                    if not invoice.fbr_response:
-                        raise ValueError(f"Invoice {invoice.invoice_number} is missing FBR response")
-
-                    usin = invoice.fbr_response.get('USIN') or invoice.fbr_response.get('usin')
-                    if not usin:
-                        raise ValueError(f"Invoice {invoice.invoice_number} is missing USIN in FBR response")
-
-                    invoice_number = invoice.invoice_number
-                else:
-                    # Manual invoice: data is in individual fields
-                    invoice_data = {
-                        'invoiceRefNo': invoice.external_id,
-                        'invoiceDate': invoice.invoice_date,
-                        'sellerBusinessName': invoice.seller_business_name,
-                        'sellerNTNCNIC': invoice.seller_ntn_cnic,
-                        'sellerProvince': invoice.seller_province,
-                        'sellerAddress': invoice.seller_address,
-                        'buyerBusinessName': invoice.buyer_business_name,
-                        'buyerNTNCNIC': invoice.buyer_ntn_cnic,
-                        'buyerProvince': invoice.buyer_province,
-                        'buyerAddress': invoice.buyer_address,
-                        'buyerRegistrationType': invoice.buyer_registration_type,
-                        'items': invoice.items
-                    }
-
-                    items = invoice.items
-
-                    # Extract USIN from fbr_reference_number (optional for non-posted invoices)
-                    usin = invoice.fbr_reference_number  # Will be None for non-posted invoices
-                    invoice_number = invoice.external_id
+                # Extract USIN from fbr_reference_number (optional for non-posted invoices)
+                usin = invoice.fbr_reference_number  # Will be None for non-posted invoices
+                invoice_number = invoice.external_id
 
                 if not items:
                     raise ValueError(f"Invoice {invoice_number} has no line items")

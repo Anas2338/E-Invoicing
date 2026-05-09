@@ -8,7 +8,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 interface RegisterFormProps {
-  onSubmit: (email: string, password: string, name: string) => void;
+  onSubmit: (email: string, password: string, name: string, pin: string) => void;
   disabled: boolean;
   error: string | null;
 }
@@ -18,6 +18,8 @@ export function RegisterForm({ onSubmit, disabled, error }: RegisterFormProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [pin, setPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
@@ -40,7 +42,23 @@ export function RegisterForm({ onSubmit, disabled, error }: RegisterFormProps) {
       return;
     }
 
-    onSubmit(email, password, name);
+    // PIN validation
+    if (!pin) {
+      toast.error('PIN is required for account recovery');
+      return;
+    }
+
+    if (pin !== confirmPin) {
+      toast.error('PINs do not match');
+      return;
+    }
+
+    if (!/^\d{4,6}$/.test(pin)) {
+      toast.error('PIN must be 4-6 digits');
+      return;
+    }
+
+    onSubmit(email, password, name, pin);
   };
 
   return (
@@ -177,6 +195,59 @@ export function RegisterForm({ onSubmit, disabled, error }: RegisterFormProps) {
                 <Eye className="h-5 w-5 text-[#8c9196] dark:text-[#6d7175] hover:text-[#6d7175] dark:hover:text-[#8c9196]" />
               )}
             </button>
+          </div>
+        </div>
+
+        <div className="relative">
+          <Label htmlFor="pin">Recovery PIN (4-6 digits)</Label>
+          <div className="relative mt-1">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <svg className="h-5 w-5 text-[#8c9196] dark:text-[#6d7175]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+              </svg>
+            </div>
+            <Input
+              id="pin"
+              name="pin"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={6}
+              required
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+              disabled={disabled}
+              placeholder="Enter 4-6 digit PIN"
+              className="pl-10"
+            />
+          </div>
+          <p className="mt-2 text-xs text-[#6d7175] dark:text-[#8c9196]">
+            This PIN will be used to reset your password if you forget it
+          </p>
+        </div>
+
+        <div className="relative">
+          <Label htmlFor="confirm-pin">Confirm PIN</Label>
+          <div className="relative mt-1">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <svg className="h-5 w-5 text-[#8c9196] dark:text-[#6d7175]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+            </div>
+            <Input
+              id="confirm-pin"
+              name="confirm-pin"
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={6}
+              required
+              value={confirmPin}
+              onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ''))}
+              disabled={disabled}
+              placeholder="Confirm your PIN"
+              className="pl-10"
+            />
           </div>
         </div>
       </div>

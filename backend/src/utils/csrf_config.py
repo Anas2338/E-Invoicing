@@ -36,6 +36,8 @@ def get_csrf_config():
 CSRF_EXEMPT_PATHS = {
     "/api/v1/auth/login",
     "/api/v1/auth/register",
+    "/api/v1/auth/password-reset/with-pin",
+    "/api/v1/auth/password-reset/verify-pin",
     "/api/v1/password-reset/request",
     "/api/v1/password-reset/verify",
     "/api/v1/password-reset/confirm",

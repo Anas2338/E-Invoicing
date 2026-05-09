@@ -7,7 +7,6 @@ import logging
 
 from src.database.session import get_db
 from src.models.invoice import Invoice, InvoiceStatus
-from src.models.automation_invoice import AutomationInvoice, AutomationInvoiceStatus
 from src.api.middleware.auth_middleware import require_authentication
 from src.utils.rate_limits import RateLimits
 from slowapi import Limiter
@@ -30,10 +29,9 @@ def get_dashboard_stats(
 
     Returns:
     - Manual invoice counts by status
-    - Automation invoice counts by status
     - Recent 10 invoices
 
-    PERFORMANCE: Single endpoint replaces 6 separate API calls.
+    PERFORMANCE: Single endpoint with optimized queries.
     Uses COUNT queries instead of fetching full records.
     """
     user_uuid = UUID(user_id)
@@ -61,36 +59,7 @@ def get_dashboard_stats(
         if status_lower in manual_stats:
             manual_stats[status_lower] = count
 
-    # Query 2: Get automation invoice counts by status (single query with GROUP BY)
-    automation_counts_query = (
-        select(
-            AutomationInvoice.status,
-            func.count(AutomationInvoice.id).label('count')
-        )
-        .where(AutomationInvoice.user_id == user_uuid)
-        .group_by(AutomationInvoice.status)
-    )
-    automation_counts_result = db.execute(automation_counts_query).all()
-
-    # Convert to dict
-    automation_stats = {
-        'pending': 0,
-        'validated': 0,
-        'submitted': 0,
-        'failed': 0
-    }
-    for status, count in automation_counts_result:
-        # Map automation statuses
-        if status == AutomationInvoiceStatus.PENDING:
-            automation_stats['pending'] = count
-        elif status == AutomationInvoiceStatus.VALIDATED:
-            automation_stats['validated'] = count
-        elif status == AutomationInvoiceStatus.SUBMITTED:
-            automation_stats['submitted'] = count
-        elif status == AutomationInvoiceStatus.FAILED:
-            automation_stats['failed'] = count
-
-    # Query 3: Get recent 10 manual invoices (lightweight - only needed fields)
+    # Query 2: Get recent 10 manual invoices (lightweight - only needed fields)
     recent_invoices_query = (
         select(Invoice)
         .where(Invoice.user_id == user_uuid)
@@ -125,9 +94,6 @@ def get_dashboard_stats(
 
     return {
         'manual_stats': manual_stats,
-        'automation_stats': automation_stats,
         'recent_invoices': recent_invoices_data,
-        'total_manual': sum(manual_stats.values()),
-        'total_automation': sum(automation_stats.values()),
-        'total_all': sum(manual_stats.values()) + sum(automation_stats.values())
+        'total_manual': sum(manual_stats.values())
     }

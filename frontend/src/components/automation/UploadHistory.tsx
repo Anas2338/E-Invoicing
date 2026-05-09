@@ -33,13 +33,21 @@ export default function UploadHistory() {
   const handleDeleteSession = async (sessionId: string) => {
     try {
       setDeletingSessionId(sessionId);
-      await automationApi.deleteUploadSession(sessionId);
 
-      // Remove from local state
+      // Optimistic update: remove from UI immediately
+      const previousSessions = [...sessions];
       setSessions(sessions.filter(s => s.id !== sessionId));
       setShowDeleteConfirm(null);
+
+      // Call API in background
+      await automationApi.deleteUploadSession(sessionId);
+
     } catch (err) {
+      // Rollback on error: restore the session
       setError(err instanceof Error ? err.message : 'Failed to delete upload session');
+
+      // Reload sessions to restore correct state
+      await loadSessions();
     } finally {
       setDeletingSessionId(null);
     }
@@ -48,17 +56,25 @@ export default function UploadHistory() {
   const handleDeleteExcelFile = async (sessionId: string) => {
     try {
       setDeletingFileId(sessionId);
-      await automationApi.deleteExcelFile(sessionId);
 
-      // Update local state to reflect file deletion
+      // Optimistic update: update UI immediately
+      const previousSessions = [...sessions];
       setSessions(sessions.map(s =>
         s.id === sessionId
           ? { ...s, has_file: false, can_delete_file: false }
           : s
       ));
       setShowDeleteFileConfirm(null);
+
+      // Call API in background
+      await automationApi.deleteExcelFile(sessionId);
+
     } catch (err) {
+      // Rollback on error: restore previous state
       setError(err instanceof Error ? err.message : 'Failed to delete Excel file');
+
+      // Reload sessions to restore correct state
+      await loadSessions();
     } finally {
       setDeletingFileId(null);
     }

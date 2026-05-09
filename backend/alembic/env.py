@@ -10,25 +10,34 @@ from src.models.base import Base
 from src.models.invoice import Invoice  # noqa
 from src.models.user import User  # noqa
 from src.models.fbr_response import FBRResponse  # noqa
-from src.models.audit_log import AuditLog  # noqa
+from src.models.user_saved_product import UserSavedProduct  # noqa
+from src.models.idempotency import IdempotencyCache  # noqa
 from src.models.posting_log import PostingLog  # noqa
 from src.models.daily_posting_counter import DailyPostingCounter  # noqa
-from src.models.user_saved_product import UserSavedProduct  # noqa
-from src.models.user_saved_buyer import UserSavedBuyer  # noqa
-from src.models.user_saved_hs_code import UserSavedHSCode  # noqa
-from src.models.user_saved_product_description import UserSavedProductDescription  # noqa
-from src.models.user_saved_tax_rate import UserSavedTaxRate  # noqa
-from src.models.user_saved_uom import UserSavedUOM  # noqa
-from src.models.idempotency import IdempotencyCache  # noqa
 
-# Import automation models (for automation database)
-from src.models.automation_invoice import AutomationInvoice  # noqa
-from src.models.automation_log import AutomationLog  # noqa
-from src.models.excel_upload_session import ExcelUploadSession  # noqa
-from src.models.transfer_log import TransferLog  # noqa
-from src.models.ai_agent_health_check import AIAgentHealthCheck  # noqa
+# Import FBR master data models
+from src.models.fbr_master_data import (
+    FBRBase,
+    FBRProvince,
+    FBRUOM,
+    FBRHSCode,
+    FBRTransactionType,
+    FBRInvoiceType,
+    FBRSROItem,
+    FBRSyncLog
+)  # noqa
 
 from src.config.settings import settings
+
+# Combine metadata from both Base and FBRBase
+from sqlalchemy import MetaData
+combined_metadata = MetaData()
+
+# Merge tables from both metadata objects
+for table in Base.metadata.tables.values():
+    table.to_metadata(combined_metadata)
+for table in FBRBase.metadata.tables.values():
+    table.to_metadata(combined_metadata)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -45,13 +54,10 @@ is_automation_db = config.config_file_name and 'alembic_automation.ini' in confi
 # Set the database URL from settings
 if is_automation_db:
     config.set_main_option('sqlalchemy.url', settings.automation_database_url)
-    # For automation database, use only automation models' metadata
-    # We'll use Base.metadata but only automation tables will be created
     target_metadata = Base.metadata
 else:
     config.set_main_option('sqlalchemy.url', settings.database_url)
-    # For main database, use all models' metadata
-    target_metadata = Base.metadata
+    target_metadata = combined_metadata
 
 
 def run_migrations_offline() -> None:

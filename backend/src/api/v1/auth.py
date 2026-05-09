@@ -12,7 +12,7 @@ import logging
 
 from src.database.session import get_db
 from src.models.user import User
-from src.schemas.user import UserCreate, UserLogin, UserToken, UserProfile, UserProfileUpdate
+from src.schemas.user import UserCreate, UserLogin, UserToken, UserProfile, UserProfileUpdate, PasswordResetWithPin
 from src.api.middleware.auth_middleware import require_authentication
 from src.utils.jwt_utils import create_access_token, create_refresh_token
 from src.utils.helpers import sanitize_input
@@ -331,6 +331,25 @@ def register_user(request: Request, user_create: UserCreate, db: Session = Depen
                 detail=error_message
             )
 
+        # Validate PIN if provided
+        if user_create.pin:
+            pin = user_create.pin.strip()
+            if not pin.isdigit():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="PIN must contain only digits"
+                )
+            if len(pin) < 4 or len(pin) > 6:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="PIN must be 4-6 digits"
+                )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="PIN is required for account recovery"
+            )
+
         # Check if user already exists
         statement = select(User).where(User.email == email)
         existing_user = db.exec(statement).first()
@@ -343,10 +362,12 @@ def register_user(request: Request, user_create: UserCreate, db: Session = Depen
 
         # Create new user
         hashed_password = get_password_hash(user_create.password)
+        hashed_pin = get_password_hash(user_create.pin) if user_create.pin else None
         new_user = User(
             email=email,
             name=name,
             hashed_password=hashed_password,
+            hashed_pin=hashed_pin,
             is_active=True,
             account_status='pending',  # New users start as pending
             approval_flags={"has_production_access": False, "can_post_to_production": False}
@@ -1042,4 +1063,136 @@ def update_environment_preference(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Failed to update environment preference"
+        )
+
+
+@router.post("/password-reset/verify-pin")
+@limiter.limit("5/15minutes")
+def verify_pin_for_reset(request: Request, credentials: dict, db: Session = Depends(get_db)):
+    """
+    Verify email and PIN combination before password reset.
+    Returns success if credentials are valid.
+    """
+    # Sanitize input
+    email = sanitize_input(credentials.get("email", ""))
+    pin = credentials.get("pin", "").strip()
+
+    try:
+        # Find user by email
+        statement = select(User).where(User.email == email)
+        user = db.exec(statement).first()
+
+        if not user:
+            # Don't reveal if user exists or not for security
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or PIN"
+            )
+
+        # Check if user has a PIN set
+        if not user.hashed_pin:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No PIN set for this account. Please contact support."
+            )
+
+        # Verify PIN
+        if not verify_password(pin, user.hashed_pin):
+            logger.warning(f"Failed PIN verification for user: {email}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or PIN"
+            )
+
+        logger.info(f"PIN verification successful for user: {email}")
+
+        return {
+            "success": True,
+            "message": "Credentials verified. You can now set a new password."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"PIN verification failed for {email}: {type(e).__name__}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification failed. Please try again."
+        )
+
+
+
+@router.post("/password-reset/with-pin")
+@limiter.limit("5/15minutes")
+def reset_password_with_pin(request: Request, reset_data: PasswordResetWithPin, db: Session = Depends(get_db)):
+    """
+    Reset password using email and PIN verification.
+    """
+    # Sanitize input
+    email = sanitize_input(reset_data.email)
+    pin = reset_data.pin.strip()
+    new_password = reset_data.new_password
+
+    try:
+        # Validate new password strength
+        is_valid, error_message = validate_password_strength(new_password)
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_message
+            )
+
+        # Find user by email
+        statement = select(User).where(User.email == email)
+        user = db.exec(statement).first()
+
+        if not user:
+            # Don't reveal if user exists or not for security
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or PIN"
+            )
+
+        # Check if user has a PIN set
+        if not user.hashed_pin:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No PIN set for this account. Please contact support."
+            )
+
+        # Verify PIN
+        if not verify_password(pin, user.hashed_pin):
+            logger.warning(f"Failed PIN verification for user: {email}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid email or PIN"
+            )
+
+        # Update password
+        user.hashed_password = get_password_hash(new_password)
+
+        # Increment token version to invalidate all existing sessions
+        user.token_version += 1
+
+        # Reset any account lockout
+        user.failed_login_attempts = 0
+        user.locked_until = None
+
+        db.add(user)
+        db.commit()
+
+        logger.info(f"Password reset successful for user: {email}")
+
+        return {
+            "success": True,
+            "message": "Password reset successful. You can now login with your new password."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Password reset failed for {email}: {type(e).__name__}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password reset failed. Please try again."
         )

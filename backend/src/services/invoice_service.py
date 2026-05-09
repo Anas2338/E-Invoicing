@@ -8,10 +8,6 @@ from fastapi import HTTPException, status
 from src.models.invoice import Invoice, InvoiceCreate, InvoiceUpdate, InvoiceStatus
 from src.models.user import User
 from src.models.fbr_response import FBRResponse
-from src.models.user_saved_hs_code import UserSavedHSCode
-from src.models.user_saved_product_description import UserSavedProductDescription
-from src.models.user_saved_uom import UserSavedUOM
-from src.models.user_saved_tax_rate import UserSavedTaxRate
 from src.schemas.invoice import InvoiceFilter
 from src.utils.helpers import calculate_hash
 
@@ -74,89 +70,6 @@ class InvoiceService:
         logger.info(f"Invoice {db_invoice.id} created for user {user_id}")
 
         return db_invoice
-
-    def _validate_invoice_items(self, db: Session, items: List, user_id: UUID) -> None:
-        """
-        Validate that all invoice items use data from user's saved profile.
-        Validates HS codes, product descriptions, UOMs, and tax rates separately.
-
-        Args:
-            db: Database session
-            items: List of invoice items to validate
-            user_id: ID of the user
-
-        Raises:
-            HTTPException: If any item uses data not in user's saved profile
-        """
-        # Get all user's saved data
-        saved_hs_codes = db.query(UserSavedHSCode).filter(
-            UserSavedHSCode.user_id == user_id,
-            UserSavedHSCode.is_active == 1,
-            UserSavedHSCode.fbr_validated == True
-        ).all()
-
-        saved_descriptions = db.query(UserSavedProductDescription).filter(
-            UserSavedProductDescription.user_id == user_id,
-            UserSavedProductDescription.is_active == 1
-        ).all()
-
-        saved_uoms = db.query(UserSavedUOM).filter(
-            UserSavedUOM.user_id == user_id,
-            UserSavedUOM.is_active == 1
-        ).all()
-
-        saved_tax_rates = db.query(UserSavedTaxRate).filter(
-            UserSavedTaxRate.user_id == user_id,
-            UserSavedTaxRate.is_active == 1
-        ).all()
-
-        # Create lookup sets for faster validation
-        hs_codes_set = {h.hs_code.strip().lower() for h in saved_hs_codes}
-        descriptions_set = {d.product_description.strip().lower() for d in saved_descriptions}
-        uoms_set = {u.uom_code.strip().upper() for u in saved_uoms}
-        tax_rates_set = {t.tax_rate.strip() for t in saved_tax_rates}
-
-        # Validate each item
-        invalid_items = []
-        for idx, item in enumerate(items):
-            errors = []
-
-            # Validate HS code
-            if item.hs_code.strip().lower() not in hs_codes_set:
-                errors.append(f"HS Code '{item.hs_code}' not in your saved HS codes")
-
-            # Validate product description
-            if item.product_description.strip().lower() not in descriptions_set:
-                errors.append(f"Description '{item.product_description}' not in your saved descriptions")
-
-            # Validate UOM
-            if item.uom.strip().upper() not in uoms_set:
-                errors.append(f"UOM '{item.uom}' not in your saved UOMs")
-
-            # Validate tax rate
-            if item.rate.strip() not in tax_rates_set:
-                errors.append(f"Tax Rate '{item.rate}%' not in your saved tax rates")
-
-            if errors:
-                invalid_items.append({
-                    "index": idx + 1,
-                    "errors": errors
-                })
-
-        if invalid_items:
-            error_details = "The following items contain data not in your profile:\n"
-            for item in invalid_items:
-                error_details += f"\nItem {item['index']}:\n"
-                for error in item['errors']:
-                    error_details += f"  - {error}\n"
-            error_details += "\nPlease add the required data to your profile before creating invoices."
-
-            logger.warning(f"User {user_id} attempted to create invoice with invalid items: {invalid_items}")
-
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=error_details
-            )
 
     def get_invoice_by_id(self, db: Session, invoice_id: UUID, user_id: UUID) -> Optional[Invoice]:
         """

@@ -1116,7 +1116,7 @@ async def get_posting_status(
     user_id: str = Depends(require_authentication)
 ):
     """
-    Get current auto-posting status and statistics for the user.
+    Get current auto-posting status for the user.
     """
     user_uuid = UUID(user_id)
     auto_posting_service = AutoPostingService(db)
@@ -1145,44 +1145,11 @@ async def get_posting_status(
     ):
         status_str = "outside_hours"
     else:
-        remaining = auto_posting_service.get_daily_limit_remaining(user, current_datetime)
-        if remaining <= 0:
-            status_str = "limit_reached"
-        else:
-            status_str = "active"
-
-    # Get today's statistics
-    window_start_date = auto_posting_service.get_window_start_date(
-        current_datetime,
-        user.auto_posting_start_time,
-        user.auto_posting_end_time
-    )
-
-    counter = auto_posting_service.get_or_create_daily_counter(
-        user_uuid,
-        window_start_date,
-        window_start_date
-    )
-
-    # Count failed invoices today
-    from sqlalchemy import and_, func
-    from src.models.posting_log import PostingLog
-    failed_count = db.execute(
-        select(func.count(PostingLog.id)).where(
-            and_(
-                PostingLog.user_id == user_uuid,
-                PostingLog.result == 'failure',
-                PostingLog.created_at >= datetime.combine(window_start_date, datetime.min.time())
-            )
-        )
-    ).scalar() or 0
-
-    remaining = user.auto_posting_daily_limit - counter.posted_count
+        status_str = "active"
 
     # Calculate next check time (next 5-minute cycle)
     next_check_time = None
     if status_str == "active":
-        # Next cycle is in 5 minutes
         from datetime import timedelta
         next_check_time = (current_datetime + timedelta(minutes=5)).isoformat()
 
@@ -1195,9 +1162,9 @@ async def get_posting_status(
             user.auto_posting_end_time
         ),
         next_check_time=next_check_time,
-        today_posted_count=counter.posted_count,
-        today_failed_count=failed_count,
-        remaining_limit=max(0, remaining),
+        today_posted_count=0,
+        today_failed_count=0,
+        remaining_limit=user.auto_posting_daily_limit,
         daily_limit=user.auto_posting_daily_limit,
         environment=user.auto_posting_environment,
         paused_until=user.auto_posting_paused_until.isoformat() if user.auto_posting_paused_until else None

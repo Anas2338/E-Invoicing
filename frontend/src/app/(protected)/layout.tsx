@@ -4,6 +4,8 @@ import { useAuth } from '@/providers/auth-provider';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { Navigation } from '@/components/navigation';
+import { UploadSessionProvider } from '@/contexts/UploadSessionContext';
+import { ValidationProgressWidget } from '@/components/automation/ValidationProgressWidget';
 
 export default function ProtectedLayout({
   children,
@@ -35,11 +37,14 @@ export default function ProtectedLayout({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-[#0a0a0a]">
-      <Navigation />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {children}
+    <UploadSessionProvider>
+      <div className="min-h-screen bg-gray-50 dark:bg-[#0a0a0a]">
+        <Navigation />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          {children}
+        </div>
+        <ValidationProgressWidget />
       </div>
-    </div>
+    </UploadSessionProvider>
   );
 }

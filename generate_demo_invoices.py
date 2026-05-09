@@ -57,7 +57,7 @@ def random_time_between(start_hour, start_min, end_hour, end_min):
     minutes = random_minutes % 60
     return time(hours, minutes)
 
-scheduled_times = [random_time_between(13, 30, 14, 0) for _ in range(num_invoices)]
+scheduled_times = [random_time_between(17, 25, 18, 0) for _ in range(num_invoices)]
 
 # Status and reason: NaN
 status = [np.nan] * num_invoices

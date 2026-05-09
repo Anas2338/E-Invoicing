@@ -18,6 +18,7 @@ class UserCreate(UserBase):
     Schema for creating users.
     """
     password: Optional[str] = None  # Password would typically be handled separately
+    pin: Optional[str] = None  # 4-6 digit PIN for password reset
 
 
 class UserUpdate(BaseModel):
@@ -89,3 +90,12 @@ class UserProfileUpdate(BaseModel):
     class Config:
         # Reject any extra fields not defined in schema
         extra = "forbid"
+
+
+class PasswordResetWithPin(BaseModel):
+    """
+    Schema for password reset using email and PIN.
+    """
+    email: str
+    pin: str
+    new_password: str

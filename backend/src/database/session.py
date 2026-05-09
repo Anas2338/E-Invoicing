@@ -10,15 +10,8 @@ from src.config.settings import settings
 from src.models.user import User
 from src.models.invoice import Invoice
 from src.models.fbr_response import FBRResponse
-from src.models.audit_log import AuditLog
 from src.models.idempotency import IdempotencyCache
-from src.models.automation_invoice import AutomationInvoice
-from src.models.automation_log import AutomationLog
-from src.models.excel_upload_session import ExcelUploadSession
-from src.models.ai_agent_health_check import AIAgentHealthCheck
 from src.models.user_saved_product import UserSavedProduct
-from src.models.daily_posting_counter import DailyPostingCounter
-from src.models.posting_log import PostingLog
 
 # Import FBR models (these use a separate declarative base)
 from src.models.fbr_master_data import (
@@ -75,7 +68,6 @@ def validate_database_url_security(url: str) -> None:
 
 # Validate database URL security before creating engine
 validate_database_url_security(settings.database_url)
-validate_database_url_security(settings.automation_database_url)
 
 # Create the main database engine
 # PERFORMANCE: Optimized for cloud databases (Neon) with high latency
@@ -91,21 +83,6 @@ engine = create_engine(
     # Additional configuration for Neon cloud database
     connect_args={
         "connect_timeout": 60,  # 60 second connection timeout for cold start
-    }
-)
-
-# Create the automation database engine
-# Separate engine for automation data (bulk uploads, scheduled invoices)
-automation_engine = create_engine(
-    settings.automation_database_url,
-    echo=settings.db_echo,
-    pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
-    pool_recycle=300,
-    pool_timeout=30,
-    connect_args={
-        "connect_timeout": 60,
     }
 )
 
@@ -139,34 +116,9 @@ def get_db_session() -> Generator:
         db.close()
 
 
-@contextmanager
-def get_automation_db_session() -> Generator:
-    """
-    Context manager for automation database sessions.
-    Ensures session is properly closed after use.
-    """
-    db = Session(automation_engine)
-    try:
-        yield db
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-    finally:
-        db.close()
-
-
 def get_db():
     """
     Dependency for FastAPI to provide main database sessions.
     """
     with get_db_session() as session:
-        yield session
-
-
-def get_automation_db():
-    """
-    Dependency for FastAPI to provide automation database sessions.
-    """
-    with get_automation_db_session() as session:
         yield session

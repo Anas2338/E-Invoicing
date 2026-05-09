@@ -33,10 +33,8 @@ class SavedProductCreate(BaseModel):
     default_rate: Optional[str] = None
     default_sale_type: Optional[str] = "01"
     transaction_type: Optional[str] = None
-    default_unit_price: Optional[float] = None
     sro_schedule_no: Optional[str] = None
     sro_item_serial_no: Optional[str] = None
-    display_order: Optional[int] = 0
 
 
 class SavedProductUpdate(BaseModel):
@@ -49,10 +47,8 @@ class SavedProductUpdate(BaseModel):
     default_rate: Optional[str] = None
     default_sale_type: Optional[str] = None
     transaction_type: Optional[str] = None
-    default_unit_price: Optional[float] = None
     sro_schedule_no: Optional[str] = None
     sro_item_serial_no: Optional[str] = None
-    display_order: Optional[int] = None
     is_active: Optional[int] = None
 
 
@@ -67,14 +63,10 @@ class SavedProductResponse(BaseModel):
     default_rate: Optional[str]
     default_sale_type: Optional[str]
     transaction_type: Optional[str]
-    default_unit_price: Optional[float]
     sro_schedule_no: Optional[str]
     sro_item_serial_no: Optional[str]
-    display_order: int
     is_active: int
     fbr_validated: bool
-    fbr_validation_date: Optional[str]
-    fbr_validation_error: Optional[str]
     created_at: str
     updated_at: str
 
@@ -103,7 +95,6 @@ async def get_saved_products(
             query = query.filter(UserSavedProduct.is_active == 1)
 
         products = query.order_by(
-            UserSavedProduct.display_order,
             UserSavedProduct.created_at
         ).all()
 
@@ -119,14 +110,10 @@ async def get_saved_products(
                 "default_rate": product.default_rate,
                 "default_sale_type": product.default_sale_type,
                 "transaction_type": product.transaction_type,
-                "default_unit_price": float(product.default_unit_price) if product.default_unit_price else None,
                 "sro_schedule_no": product.sro_schedule_no,
                 "sro_item_serial_no": product.sro_item_serial_no,
-                "display_order": product.display_order,
                 "is_active": product.is_active,
                 "fbr_validated": product.fbr_validated,
-                "fbr_validation_date": product.fbr_validation_date.isoformat() if product.fbr_validation_date else None,
-                "fbr_validation_error": product.fbr_validation_error,
                 "created_at": product.created_at.isoformat() if product.created_at else None,
                 "updated_at": product.updated_at.isoformat() if product.updated_at else None
             })
@@ -178,14 +165,10 @@ async def get_saved_product(
             "default_rate": product.default_rate,
             "default_sale_type": product.default_sale_type,
             "transaction_type": product.transaction_type,
-            "default_unit_price": float(product.default_unit_price) if product.default_unit_price else None,
             "sro_schedule_no": product.sro_schedule_no,
             "sro_item_serial_no": product.sro_item_serial_no,
-            "display_order": product.display_order,
             "is_active": product.is_active,
             "fbr_validated": product.fbr_validated,
-            "fbr_validation_date": product.fbr_validation_date.isoformat() if product.fbr_validation_date else None,
-            "fbr_validation_error": product.fbr_validation_error,
             "created_at": product.created_at.isoformat() if product.created_at else None,
             "updated_at": product.updated_at.isoformat() if product.updated_at else None
         }
@@ -243,41 +226,54 @@ async def create_saved_product(
                     detail=f"Transaction type '{product.transaction_type}' not found in FBR master data"
                 )
 
+        # Format HS code: normalize to 8 digits with dot (1234.5678)
+        hs_code_cleaned = product.hs_code.replace('.', '').replace(' ', '')
+
+        # Pad to 8 digits if needed
+        if len(hs_code_cleaned) == 7:
+            hs_code_cleaned = hs_code_cleaned + '0'
+        elif len(hs_code_cleaned) == 6:
+            hs_code_cleaned = hs_code_cleaned + '00'
+        elif len(hs_code_cleaned) < 6:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid HS code '{product.hs_code}' - must be at least 6 digits"
+            )
+        elif len(hs_code_cleaned) > 8:
+            hs_code_cleaned = hs_code_cleaned[:8]
+
+        # Format with dot: 1234.5678
+        hs_code_formatted = f"{hs_code_cleaned[:4]}.{hs_code_cleaned[4:]}"
+
         # Validate HS code against FBR master data
         fbr_hs_code = db.query(FBRHSCode).filter(
-            FBRHSCode.code == product.hs_code
+            FBRHSCode.code == hs_code_formatted
         ).first()
 
         fbr_validated = False
-        fbr_validation_error = None
 
         if not fbr_hs_code:
-            fbr_validation_error = f"HS Code '{product.hs_code}' not found in FBR master data"
-            logger.warning(f"User {user_id} attempted to save invalid HS code: {product.hs_code}")
+            logger.warning(f"User {user_id} attempted to save invalid HS code: {hs_code_formatted}")
         else:
             # HS code exists in FBR master data - mark as validated
             # User can use their own product description
             fbr_validated = True
-            logger.info(f"User {user_id} saved FBR-validated HS code: {product.hs_code}")
+            logger.info(f"User {user_id} saved FBR-validated HS code: {hs_code_formatted}")
 
         new_product = UserSavedProduct(
             user_id=UUID(user_id),
             item_code=product.item_code.strip(),
             item_name=product.item_name.strip(),
-            hs_code=product.hs_code,
+            hs_code=hs_code_formatted,
             product_description=product.product_description,
             default_uom=product.default_uom,
             default_rate=product.default_rate,
             default_sale_type=product.default_sale_type,
             transaction_type=product.transaction_type,
-            default_unit_price=product.default_unit_price,
             sro_schedule_no=product.sro_schedule_no,
             sro_item_serial_no=product.sro_item_serial_no,
-            display_order=product.display_order,
             is_active=1,
-            fbr_validated=fbr_validated,
-            fbr_validation_date=datetime.utcnow() if fbr_validated else None,
-            fbr_validation_error=fbr_validation_error
+            fbr_validated=fbr_validated
         )
 
         db.add(new_product)
@@ -361,7 +357,24 @@ async def update_saved_product(
                 )
             product.item_name = product_update.item_name.strip()
         if product_update.hs_code is not None:
-            product.hs_code = product_update.hs_code
+            # Format HS code: normalize to 8 digits with dot (1234.5678)
+            hs_code_cleaned = product_update.hs_code.replace('.', '').replace(' ', '')
+
+            # Pad to 8 digits if needed
+            if len(hs_code_cleaned) == 7:
+                hs_code_cleaned = hs_code_cleaned + '0'
+            elif len(hs_code_cleaned) == 6:
+                hs_code_cleaned = hs_code_cleaned + '00'
+            elif len(hs_code_cleaned) < 6:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid HS code '{product_update.hs_code}' - must be at least 6 digits"
+                )
+            elif len(hs_code_cleaned) > 8:
+                hs_code_cleaned = hs_code_cleaned[:8]
+
+            # Format with dot: 1234.5678
+            product.hs_code = f"{hs_code_cleaned[:4]}.{hs_code_cleaned[4:]}"
         if product_update.product_description is not None:
             product.product_description = product_update.product_description
         if product_update.default_uom is not None:
@@ -382,14 +395,10 @@ async def update_saved_product(
                     detail=f"Transaction type '{product_update.transaction_type}' not found in FBR master data"
                 )
             product.transaction_type = product_update.transaction_type
-        if product_update.default_unit_price is not None:
-            product.default_unit_price = product_update.default_unit_price
         if product_update.sro_schedule_no is not None:
             product.sro_schedule_no = product_update.sro_schedule_no
         if product_update.sro_item_serial_no is not None:
             product.sro_item_serial_no = product_update.sro_item_serial_no
-        if product_update.display_order is not None:
-            product.display_order = product_update.display_order
         if product_update.is_active is not None:
             product.is_active = product_update.is_active
 
@@ -401,14 +410,10 @@ async def update_saved_product(
 
             if not fbr_hs_code:
                 product.fbr_validated = False
-                product.fbr_validation_error = f"HS Code '{product.hs_code}' not found in FBR master data"
-                product.fbr_validation_date = None
             else:
                 # HS code exists in FBR master data - mark as validated
                 # User can use their own product description
                 product.fbr_validated = True
-                product.fbr_validation_date = datetime.utcnow()
-                product.fbr_validation_error = None
 
         db.commit()
         db.refresh(product)
@@ -425,14 +430,10 @@ async def update_saved_product(
             "default_rate": product.default_rate,
             "default_sale_type": product.default_sale_type,
             "transaction_type": product.transaction_type,
-            "default_unit_price": float(product.default_unit_price) if product.default_unit_price else None,
             "sro_schedule_no": product.sro_schedule_no,
             "sro_item_serial_no": product.sro_item_serial_no,
-            "display_order": product.display_order,
             "is_active": product.is_active,
             "fbr_validated": product.fbr_validated,
-            "fbr_validation_date": product.fbr_validation_date.isoformat() if product.fbr_validation_date else None,
-            "fbr_validation_error": product.fbr_validation_error,
             "created_at": product.created_at.isoformat() if product.created_at else None,
             "updated_at": product.updated_at.isoformat() if product.updated_at else None
         }
@@ -566,47 +567,6 @@ async def bulk_delete_saved_products(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to bulk delete saved products: {str(e)}"
-        )
-
-
-@router.post("/saved-products/reorder")
-async def reorder_saved_products(
-    product_ids: List[int],
-    db=Depends(get_database_session),
-    user_id: str = Depends(require_authentication)
-):
-    """
-    Reorder saved products.
-
-    Args:
-        product_ids: List of product IDs in desired order
-
-    Returns:
-        Success message
-    """
-    try:
-        # Update display_order for each product
-        for index, product_id in enumerate(product_ids):
-            product = db.query(UserSavedProduct).filter(
-                UserSavedProduct.id == product_id,
-                UserSavedProduct.user_id == UUID(user_id)
-            ).first()
-
-            if product:
-                product.display_order = index
-
-        db.commit()
-
-        logger.info(f"User {user_id} reordered saved products")
-
-        return {"message": f"Reordered {len(product_ids)} products"}
-
-    except Exception as e:
-        logger.error(f"Error reordering saved products: {str(e)}")
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to reorder saved products: {str(e)}"
         )
 
 
@@ -896,10 +856,8 @@ async def upload_saved_products(
                 fbr_hs_code = all_hs_codes.get(hs_code_for_validation)
 
                 fbr_validated = False
-                fbr_validation_error = None
 
                 if not fbr_hs_code:
-                    fbr_validation_error = f"HS Code '{hs_code_input}' (validated as '{hs_code_for_validation}') not found in FBR master data"
                     logger.warning(f"Row {index + 2}: HS Code validation failed - input='{hs_code_input}', searched='{hs_code_for_validation}'")
                 else:
                     fbr_validated = True
@@ -920,7 +878,7 @@ async def upload_saved_products(
                     user_id=UUID(user_id),
                     item_code=item_code,
                     item_name=item_name,
-                    hs_code=hs_code_to_store,  # Store without dots (matches manual system)
+                    hs_code=hs_code_to_store,  # Store with dots (1234.5678 format)
                     product_description=product_description,
                     default_uom=default_uom_code,
                     default_rate=default_rate,
@@ -928,11 +886,8 @@ async def upload_saved_products(
                     transaction_type=transaction_type_code,
                     sro_schedule_no=sro_schedule_no,
                     sro_item_serial_no=sro_item_serial_no,
-                    display_order=0,
                     is_active=1,
-                    fbr_validated=fbr_validated,
-                    fbr_validation_date=datetime.utcnow() if fbr_validated else None,
-                    fbr_validation_error=fbr_validation_error
+                    fbr_validated=fbr_validated
                 )
 
                 db.add(new_product)

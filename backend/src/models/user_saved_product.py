@@ -31,21 +31,15 @@ class UserSavedProduct(Base, table=True):
     default_sale_type: Optional[str] = Field(default=None, max_length=10)
     transaction_type: Optional[str] = Field(default=None, max_length=10)  # Transaction type code
 
-    # Optional: Default pricing
-    default_unit_price: Optional[float] = Field(default=None)
-
     # SRO fields (optional)
     sro_schedule_no: Optional[str] = Field(default=None, max_length=50)
     sro_item_serial_no: Optional[str] = Field(default=None, max_length=50)
 
     # FBR Validation
     fbr_validated: bool = Field(default=False)
-    fbr_validation_date: Optional[datetime] = Field(default=None)
-    fbr_validation_error: Optional[str] = Field(default=None)
 
     # Metadata
     is_active: int = Field(default=1)
-    display_order: int = Field(default=0)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

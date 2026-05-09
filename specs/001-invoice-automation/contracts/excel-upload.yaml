@@ -1,8 +1,15 @@
 openapi: 3.0.3
 info:
   title: Excel Upload API
-  description: API endpoints for Excel template download and upload
-  version: 1.0.0
+  description: |
+    API endpoints for Excel template download and upload.
+
+    **New Simplified Template Structure:**
+    - Uses `saved_item_code` to auto-populate item details (HS code, description, tax rate, UOM, transaction type, SRO fields)
+    - Seller information is automatically fetched from user's Business Information settings
+    - Only requires buyer info, saved_item_code, quantity, and pricing fields
+    - Environment is always set to PRODUCTION for automation
+  version: 2.0.0
 
 servers:
   - url: http://localhost:8000/api/v1

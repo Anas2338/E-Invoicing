@@ -110,6 +110,7 @@ class User(UserBase, Base, table=True):
     # Additional fields for the table
     email: str = Field(sa_column=Column(String, unique=True, index=True, nullable=False))
     hashed_password: str = Field(sa_column=Column(String, nullable=False))
+    hashed_pin: Optional[str] = Field(default=None, sa_column=Column(String, nullable=True))
     created_at: datetime = Field(sa_column=Column(DateTime, default=datetime.utcnow))
     updated_at: datetime = Field(sa_column=Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow))
 

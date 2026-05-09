@@ -1,9 +1,9 @@
 """
 Auto-posting service for FBR invoice posting automation.
 
-Handles time window logic, daily limit tracking, and sequential posting.
+Handles time window logic and sequential posting.
 """
-from datetime import datetime, time, date, timedelta
+from datetime import datetime, time, date
 from typing import Optional, Tuple
 from sqlmodel import Session, select
 from sqlalchemy import and_
@@ -47,36 +47,6 @@ class AutoPostingService:
             # Midnight-spanning case: 22:00 - 02:00
             return current_time >= start_time or current_time <= end_time
 
-    def get_window_start_date(
-        self,
-        current_datetime: datetime,
-        start_time: time,
-        end_time: time
-    ) -> date:
-        """
-        Get the date when the current posting window started.
-
-        For midnight-spanning windows, if current time is before end_time,
-        the window started on the previous day.
-
-        Args:
-            current_datetime: Current datetime
-            start_time: Window start time
-            end_time: Window end time
-
-        Returns:
-            Date when window started
-        """
-        current_time = current_datetime.time()
-        current_date = current_datetime.date()
-
-        # Check if this is a midnight-spanning window
-        if start_time > end_time:
-            # If current time is before end_time, window started yesterday
-            if current_time <= end_time:
-                return current_date - timedelta(days=1)
-
-        return current_date
 
     def get_or_create_daily_counter(
         self,

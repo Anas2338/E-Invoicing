@@ -16,7 +16,6 @@ from src.models.user import User
 from src.models.user_saved_product import UserSavedProduct
 from src.utils.encryption import get_encryption_service
 from src.services.auto_posting_service import AutoPostingService
-from src.services.audit_service import AuditService
 from src.schemas.auto_posting import (
     AutoPostingConfig,
     AutoPostingConfigUpdate,
@@ -521,30 +520,9 @@ async def update_auto_posting_config(
         db.commit()
         db.refresh(user)
 
-        # Audit log for configuration changes
-        # Convert time objects to strings for JSON serialization
+        # Log configuration changes
         changes_dict = config_update.dict(exclude_unset=True)
-        if 'auto_posting_start_time' in changes_dict and changes_dict['auto_posting_start_time']:
-            changes_dict['auto_posting_start_time'] = changes_dict['auto_posting_start_time'].isoformat()
-        if 'auto_posting_end_time' in changes_dict and changes_dict['auto_posting_end_time']:
-            changes_dict['auto_posting_end_time'] = changes_dict['auto_posting_end_time'].isoformat()
-
-        AuditService.log_fbr_interaction(
-            db=db,
-            user_id=UUID(user_id),
-            action="update_auto_posting_config",
-            resource_type="user_profile",
-            resource_id=str(user_id),
-            environment=user.auto_posting_environment or "SANDBOX",
-            request_payload={
-                "auto_posting_enabled": user.auto_posting_enabled,
-                "auto_posting_environment": user.auto_posting_environment,
-                "auto_posting_daily_limit": user.auto_posting_daily_limit,
-                "changes": changes_dict
-            }
-        )
-
-        logger.info(f"User {user_id} updated auto-posting configuration")
+        logger.info(f"User {user_id} updated auto-posting configuration: {changes_dict}")
 
         return {
             "auto_posting_enabled": user.auto_posting_enabled,
