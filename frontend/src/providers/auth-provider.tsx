@@ -29,7 +29,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string, name: string) => Promise<{status?: string; message?: string} | void>;
+  signUp: (email: string, password: string, name: string, pin: string) => Promise<{status?: string; message?: string} | void>;
   signOut: () => Promise<void>;
   isAuthenticated: boolean;
 }
