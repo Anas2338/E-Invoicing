@@ -443,7 +443,11 @@ def get_profile(
             fbr_seller_ntn=user.fbr_seller_ntn,
             fbr_business_name=user.fbr_business_name,
             fbr_seller_province=user.fbr_seller_province,
-            fbr_seller_address=user.fbr_seller_address
+            fbr_seller_address=user.fbr_seller_address,
+            invoice_prefix=user.invoice_prefix,
+            invoice_start_number=user.invoice_start_number,
+            invoice_padding=user.invoice_padding,
+            invoice_include_year=user.invoice_include_year,
         )
     except HTTPException:
         raise
@@ -498,7 +502,11 @@ def update_profile(
             fbr_seller_ntn=user.fbr_seller_ntn,
             fbr_business_name=user.fbr_business_name,
             fbr_seller_province=user.fbr_seller_province,
-            fbr_seller_address=user.fbr_seller_address
+            fbr_seller_address=user.fbr_seller_address,
+            invoice_prefix=user.invoice_prefix,
+            invoice_start_number=user.invoice_start_number,
+            invoice_padding=user.invoice_padding,
+            invoice_include_year=user.invoice_include_year,
         )
     except HTTPException:
         raise

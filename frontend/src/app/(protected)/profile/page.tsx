@@ -548,7 +548,7 @@ export default function ProfilePage() {
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     <Button
                       type="button"
                       onClick={handleManualSync}
@@ -583,7 +583,7 @@ export default function ProfilePage() {
                   {syncStatus && syncStatus.status === 'success' && (
                     <div className="mt-4 p-3 bg-[#d1fae5] dark:bg-[#064e3b]/30 border border-[#a7f3d0] dark:border-[#065f46] rounded-lg">
                       <p className="text-sm text-[#065f46] dark:text-[#34d399] font-medium mb-2">Sync Details:</p>
-                      <div className="grid grid-cols-2 gap-2 text-xs text-[#065f46] dark:text-[#34d399]">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-[#065f46] dark:text-[#34d399]">
                         {syncStatus.data_types && Object.entries(syncStatus.data_types).map(([key, value]: [string, any]) => (
                           <div key={key}>
                             <span className="font-semibold">{key}:</span> {value.synced} records

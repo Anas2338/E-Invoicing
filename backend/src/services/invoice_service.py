@@ -57,6 +57,7 @@ class InvoiceService:
             buyer_registration_type=invoice_create.buyer_registration_type,
             invoice_ref_no=invoice_create.invoice_ref_no,
             scenario_id=invoice_create.scenario_id,
+            income_tax=getattr(invoice_create, 'income_tax', None) or "236G",
             items=[item.model_dump() for item in invoice_create.items],
             environment=invoice_create.environment,
             status=InvoiceStatus.DRAFT

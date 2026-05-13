@@ -18,7 +18,7 @@ class AutoPostingConfigBase(BaseModel):
         description="End time of posting window (24-hour format)"
     )
     auto_posting_environment: str = Field(
-        default="SANDBOX",
+        default="PRODUCTION",
         description="Target FBR environment (SANDBOX/PRODUCTION)"
     )
     auto_posting_daily_limit: int = Field(

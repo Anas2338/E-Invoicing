@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ChevronLeft, ChevronRight, Download, Eye, RefreshCw, Loader2, XCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Eye, RefreshCw, Loader2, XCircle, Pause, Play } from 'lucide-react';
 import { automationApi } from '@/services/automationApi';
 import { toast } from 'sonner';
 
@@ -44,8 +44,14 @@ interface InvoiceTableProps {
   onDownload: (sessionId: string) => void;
   onRetry?: (invoiceId: string) => void;
   retryingInvoiceId?: string | null;
+  onPause?: (invoiceId: string) => void;
+  pausingInvoiceId?: string | null;
+  onResume?: (invoiceId: string) => void;
+  resumingInvoiceId?: string | null;
   onBulkDelete?: (invoiceIds: string[]) => void;
   onBulkRetry?: (invoiceIds: string[]) => void;
+  onBulkPause?: (invoiceIds: string[]) => void;
+  onBulkResume?: (invoiceIds: string[]) => void;
 }
 
 export function InvoiceTable({
@@ -59,8 +65,14 @@ export function InvoiceTable({
   onDownload,
   onRetry,
   retryingInvoiceId,
+  onPause,
+  pausingInvoiceId,
+  onResume,
+  resumingInvoiceId,
   onBulkDelete,
-  onBulkRetry
+  onBulkRetry,
+  onBulkPause,
+  onBulkResume
 }: InvoiceTableProps) {
   const [localFilters, setLocalFilters] = useState(filters);
   const [selectedInvoices, setSelectedInvoices] = useState<string[]>([]);
@@ -110,6 +122,30 @@ export function InvoiceTable({
     }
   };
 
+  const handleBulkPause = async () => {
+    if (selectedInvoices.length === 0 || !onBulkPause) return;
+
+    setBulkActionLoading(true);
+    try {
+      await onBulkPause(selectedInvoices);
+      setSelectedInvoices([]);
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
+
+  const handleBulkResume = async () => {
+    if (selectedInvoices.length === 0 || !onBulkResume) return;
+
+    setBulkActionLoading(true);
+    try {
+      await onBulkResume(selectedInvoices);
+      setSelectedInvoices([]);
+    } finally {
+      setBulkActionLoading(false);
+    }
+  };
+
   const handleApplyFilters = () => {
     onFilterChange(localFilters);
   };
@@ -133,6 +169,7 @@ export function InvoiceTable({
       transfer_failed: { label: 'Transfer Failed', className: 'bg-[#ffedd5] text-[#7c2d12] dark:bg-[#431407]/30 dark:text-[#fb923c]' },
       failed: { label: 'Failed', className: 'bg-[#fee2e2] text-[#991b1b] dark:bg-[#7f1d1d]/30 dark:text-[#f87171]' },
       blocked: { label: 'Blocked', className: 'bg-[#ffedd5] text-[#7c2d12] dark:bg-[#431407]/30 dark:text-[#fb923c]' },
+      paused: { label: 'Paused', className: 'bg-[#fef3c7] text-[#92400e] dark:bg-[#451a03]/30 dark:text-[#fbbf24]' },
       expired: { label: 'Expired', className: 'bg-[#f6f6f7] text-[#6d7175] dark:bg-[#2e2e2e] dark:text-[#8c9196]' }
     };
 
@@ -207,6 +244,30 @@ export function InvoiceTable({
                   Retry Selected
                 </Button>
               )}
+              {onBulkPause && (
+                <Button
+                  onClick={handleBulkPause}
+                  disabled={bulkActionLoading}
+                  size="sm"
+                  variant="outline"
+                  className="text-amber-600 border-amber-600 hover:bg-amber-50"
+                >
+                  <Pause className="h-4 w-4 mr-2" />
+                  Pause Selected
+                </Button>
+              )}
+              {onBulkResume && (
+                <Button
+                  onClick={handleBulkResume}
+                  disabled={bulkActionLoading}
+                  size="sm"
+                  variant="outline"
+                  className="text-green-600 border-green-600 hover:bg-green-50"
+                >
+                  <Play className="h-4 w-4 mr-2" />
+                  Resume Selected
+                </Button>
+              )}
               {onBulkDelete && (
                 <Button
                   onClick={handleBulkDelete}
@@ -246,6 +307,7 @@ export function InvoiceTable({
                 <SelectItem value="transfer_failed">Transfer Failed</SelectItem>
                 <SelectItem value="failed">Failed</SelectItem>
                 <SelectItem value="blocked">Blocked</SelectItem>
+                <SelectItem value="paused">Paused</SelectItem>
                 <SelectItem value="expired">Expired</SelectItem>
               </SelectContent>
             </Select>
@@ -385,6 +447,38 @@ export function InvoiceTable({
                             <Eye className="h-4 w-4 mr-1" />
                             View
                           </Button>
+                          {invoice.status === 'validated' && onPause && (
+                            <Button
+                              onClick={() => onPause(invoice.id)}
+                              variant="ghost"
+                              size="sm"
+                              disabled={pausingInvoiceId === invoice.id}
+                              className="text-amber-600 hover:text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                            >
+                              {pausingInvoiceId === invoice.id ? (
+                                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                              ) : (
+                                <Pause className="h-4 w-4 mr-1" />
+                              )}
+                              Pause
+                            </Button>
+                          )}
+                          {invoice.status === 'paused' && onResume && (
+                            <Button
+                              onClick={() => onResume(invoice.id)}
+                              variant="ghost"
+                              size="sm"
+                              disabled={resumingInvoiceId === invoice.id}
+                              className="text-green-600 hover:text-green-700 hover:bg-green-50 disabled:opacity-50"
+                            >
+                              {resumingInvoiceId === invoice.id ? (
+                                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                              ) : (
+                                <Play className="h-4 w-4 mr-1" />
+                              )}
+                              Resume
+                            </Button>
+                          )}
                           {(invoice.status === 'pending' || invoice.status === 'transfer_failed') && onRetry && (
                             <Button
                               onClick={() => onRetry(invoice.id)}

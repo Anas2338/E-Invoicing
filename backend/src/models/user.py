@@ -61,9 +61,9 @@ class UserBase(SQLModel):
 
     # Invoice numbering settings
     invoice_prefix: Optional[str] = Field(default='INV-', sa_column=Column(String(20), nullable=True))
-    invoice_start_number: Optional[int] = Field(default=1, sa_column=Column(String, nullable=True))
-    invoice_padding: Optional[int] = Field(default=4, sa_column=Column(String, nullable=True))
-    invoice_include_year: Optional[bool] = Field(default=False, sa_column=Column(String, nullable=True))
+    invoice_start_number: Optional[int] = Field(default=1, sa_column=Column(Integer, nullable=True))
+    invoice_padding: Optional[int] = Field(default=4, sa_column=Column(Integer, nullable=True))
+    invoice_include_year: Optional[bool] = Field(default=False, sa_column=Column(Boolean, nullable=True))
 
     # Auto-posting configuration fields
     auto_posting_enabled: bool = Field(

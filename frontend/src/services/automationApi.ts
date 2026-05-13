@@ -42,6 +42,7 @@ export interface DashboardStats {
   pending_count: number;
   expired_count: number;
   validated_count: number;
+  paused_count: number;
   transferred_count: number;
   transfer_failed_count: number;
   failed_count: number;
@@ -92,6 +93,10 @@ export interface UploadSession {
   can_delete: boolean;
   can_delete_file: boolean;
   has_file: boolean;
+  processing_status: string;
+  processed_rows: number;
+  total_rows: number;
+  error_message?: string;
 }
 
 export interface UploadSessionsResponse {
@@ -522,6 +527,92 @@ class AutomationApiClient {
     }
 
     return response.blob();
+  }
+
+  /**
+   * Pause a validated invoice to prevent AI agent transfer.
+   */
+  async pauseInvoice(invoiceId: string): Promise<{ success: boolean; message: string; invoice_id: string; status: string }> {
+    const response = await fetch(
+      `${this.baseUrl}/automation/invoice/${invoiceId}/pause`,
+      {
+        method: 'POST',
+        headers: this.getHeaders(),
+        credentials: 'include',
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to pause invoice');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Resume a paused invoice so AI agent can transfer it.
+   */
+  async resumeInvoice(invoiceId: string): Promise<{ success: boolean; message: string; invoice_id: string; status: string }> {
+    const response = await fetch(
+      `${this.baseUrl}/automation/invoice/${invoiceId}/resume`,
+      {
+        method: 'POST',
+        headers: this.getHeaders(),
+        credentials: 'include',
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to resume invoice');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Bulk pause multiple validated invoices.
+   */
+  async bulkPauseInvoices(invoiceIds: string[]): Promise<{ paused_count: number }> {
+    const response = await fetch(
+      `${this.baseUrl}/automation/invoices/bulk-pause`,
+      {
+        method: 'POST',
+        headers: this.getHeaders(true),
+        credentials: 'include',
+        body: JSON.stringify({ invoice_ids: invoiceIds }),
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to pause invoices');
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Bulk resume multiple paused invoices.
+   */
+  async bulkResumeInvoices(invoiceIds: string[]): Promise<{ resumed_count: number }> {
+    const response = await fetch(
+      `${this.baseUrl}/automation/invoices/bulk-resume`,
+      {
+        method: 'POST',
+        headers: this.getHeaders(true),
+        credentials: 'include',
+        body: JSON.stringify({ invoice_ids: invoiceIds }),
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to resume invoices');
+    }
+
+    return response.json();
   }
 
   /**

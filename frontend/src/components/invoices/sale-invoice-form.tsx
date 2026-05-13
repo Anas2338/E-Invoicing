@@ -60,7 +60,8 @@ export function SaleInvoiceForm({
   // Invoice header state
   const [invoiceNo, setInvoiceNo] = useState('');
   const [invoiceType, setInvoiceType] = useState<'Sale Invoice' | 'Debit Note'>('Sale Invoice');
-  const [invoiceDate, setInvoiceDate] = useState('');
+  const todayKarachi = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' });
+  const [invoiceDate, setInvoiceDate] = useState(isEditMode ? '' : todayKarachi);
   const [invoiceRefNo, setInvoiceRefNo] = useState('');
   const [scenarioId, setScenarioId] = useState('SN001');
   const [environment, setEnvironment] = useState<'SANDBOX' | 'PRODUCTION'>('SANDBOX');
@@ -101,7 +102,7 @@ export function SaleInvoiceForm({
     valueSalesExcludingST: 0,
     fixedNotifiedValueOrRetailPrice: 0,
     salesTaxApplicable: 0,
-    salesTaxWithheldAtSource: '',
+    salesTaxWithheldAtSource: '0',
     extraTax: 0,
     furtherTax: 0,
     sroScheduleNo: '',
@@ -516,13 +517,14 @@ export function SaleInvoiceForm({
       return prevItems.map(item => {
         const valueExclTax = parseFloat(String(item.valueSalesExcludingST)) || 0;
         const salesTax = parseFloat(String(item.salesTaxApplicable)) || 0;
+        const discount = Number(item.discount) || 0;
 
         if (buyerRegistrationType === 'Unregistered') {
           // Calculate 4% of Value Excl. Sales Tax
           if (valueExclTax > 0) {
             const furtherTax = valueExclTax * 0.04;
-            // Recalculate Total Value = Value Excl. Tax + Sales Tax + Further Tax
-            const totalValue = valueExclTax + salesTax + furtherTax;
+            // Total Value = Value Excl. Tax + Sales Tax + Further Tax - Discount
+            const totalValue = valueExclTax + salesTax + furtherTax - discount;
             return {
               ...item,
               furtherTax: parseFloat(furtherTax.toFixed(2)),
@@ -531,8 +533,8 @@ export function SaleInvoiceForm({
           }
         } else {
           // Clear Further Tax for Registered buyers and recalculate Total Value
-          // Total Value = Value Excl. Tax + Sales Tax (no Further Tax)
-          const totalValue = valueExclTax + salesTax;
+          // Total Value = Value Excl. Tax + Sales Tax - Discount (no Further Tax)
+          const totalValue = valueExclTax + salesTax - discount;
           return {
             ...item,
             furtherTax: 0,
@@ -559,7 +561,7 @@ export function SaleInvoiceForm({
       valueSalesExcludingST: 0,
       fixedNotifiedValueOrRetailPrice: 0,
       salesTaxApplicable: 0,
-      salesTaxWithheldAtSource: '',
+      salesTaxWithheldAtSource: '0',
       extraTax: 0,
       furtherTax: 0,
       sroScheduleNo: '',
@@ -585,13 +587,9 @@ export function SaleInvoiceForm({
       setTransactionTypeId(selectedItem.transaction_type);
       setHasSelectedTransactionType(true);
 
-      // Find the transaction type name
-      const transactionType = masterData?.transaction_types.find(t => t.code === selectedItem.transaction_type);
-      const transactionTypeName = transactionType?.name?.trim() || '';
-
-      // Auto-set Sale Type for all items to match Transaction Type NAME
+      // Auto-set Sale Type for all items directly from saved item's transaction_type
       setItems(prevItems =>
-        prevItems.map(item => ({ ...item, saleType: transactionTypeName }))
+        prevItems.map(item => ({ ...item, saleType: selectedItem.transaction_type }))
       );
     }
 
@@ -616,12 +614,9 @@ export function SaleInvoiceForm({
     const uomObj = masterData?.uom.find(u => u.code === uomCode);
     updateItem(index, 'uoM', uomObj?.name || uomCode);
 
-    // Set sale type from transaction type if available
+    // Set sale type directly from saved item's transaction_type
     if (selectedItem.transaction_type) {
-      const transactionType = masterData?.transaction_types.find(t => t.code === selectedItem.transaction_type);
-      if (transactionType) {
-        updateItem(index, 'saleType', transactionType.name || '01');
-      }
+      updateItem(index, 'saleType', selectedItem.transaction_type);
     }
 
     // Set SRO fields if available
@@ -678,31 +673,34 @@ export function SaleInvoiceForm({
       const updatedItems = [...prevItems];
       updatedItems[index] = { ...updatedItems[index], [field]: value };
 
-      // Auto-calculate when Value Excl. Sales Tax or Fixed/Retail Price is updated
-      if (field === 'valueSalesExcludingST' || field === 'fixedNotifiedValueOrRetailPrice') {
+      // Auto-calculate when Value Excl. Sales Tax, Fixed/Retail Price, Further Tax, or Discount is updated
+      if (field === 'valueSalesExcludingST' || field === 'fixedNotifiedValueOrRetailPrice' || field === 'furtherTax' || field === 'discount') {
         const valueExclTax = Number(updatedItems[index].valueSalesExcludingST) || 0;
         const fixedPrice = Number(updatedItems[index].fixedNotifiedValueOrRetailPrice) || 0;
         const taxRate = parseFloat(updatedItems[index].rate) || 0;
+        const discount = Number(updatedItems[index].discount) || 0;
 
         // Use the greater value between Value Excl. Tax and Fixed/Retail Price
-        // If both are equal, use Value Excl. Tax (which is the same anyway)
         const baseValue = Math.max(valueExclTax, fixedPrice);
 
         if (baseValue > 0 && taxRate >= 0) {
           // Calculate Sales Tax Applicable = Base Value × (Tax Rate / 100)
           const salesTax = baseValue * (taxRate / 100);
 
-          // Calculate Further Tax (4%) for Unregistered buyers
-          let furtherTax = 0;
-          if (buyerRegistrationType === 'Unregistered') {
+          // Calculate Further Tax (4%) for Unregistered buyers only when NOT manually edited
+          // Skip auto-recalculation when editing furtherTax or discount directly
+          let furtherTax = Number(updatedItems[index].furtherTax) || 0;
+          if (field !== 'furtherTax' && field !== 'discount' && buyerRegistrationType === 'Unregistered') {
             furtherTax = baseValue * 0.04;
           }
 
-          // Calculate Total Value (Inc. Tax) = Base Value + Sales Tax + Further Tax
-          const totalValue = baseValue + salesTax + furtherTax;
+          // Total Value (Inc. Tax) = Base Value + Sales Tax + Further Tax - Discount
+          const totalValue = baseValue + salesTax + furtherTax - discount;
 
-          updatedItems[index].salesTaxApplicable = parseFloat(salesTax.toFixed(2));
-          updatedItems[index].furtherTax = parseFloat(furtherTax.toFixed(2));
+          if (field !== 'discount') {
+            updatedItems[index].salesTaxApplicable = parseFloat(salesTax.toFixed(2));
+            updatedItems[index].furtherTax = parseFloat(furtherTax.toFixed(2));
+          }
           updatedItems[index].totalValues = parseFloat(totalValue.toFixed(2));
         }
       }
@@ -896,7 +894,7 @@ export function SaleInvoiceForm({
                         <SelectItem value="none" disabled>No options available - Configure FBR token</SelectItem>
                       ) : (
                         masterData?.invoice_types.map((type) => (
-                          <SelectItem key={type.code} value={type.name}>{type.name}</SelectItem>
+                          <SelectItem key={type.code} value={type.code}>{type.name}</SelectItem>
                         ))
                       )}
                     </SelectContent>
@@ -1385,7 +1383,7 @@ export function SaleInvoiceForm({
                     required
                   />
                   <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
-                    Auto-calculated from value excl. tax
+                    Auto-calculated (inc. tax + further tax - discount)
                   </p>
                 </div>
 
@@ -1438,12 +1436,10 @@ export function SaleInvoiceForm({
                       updateItem(index, 'furtherTax', val === '' ? 0 : parseFloat(val));
                     }}
                     required={buyerRegistrationType === 'Unregistered'}
-                    readOnly={buyerRegistrationType === 'Unregistered'}
-                    className={buyerRegistrationType === 'Unregistered' ? 'bg-gray-50 dark:bg-gray-800' : ''}
                   />
                   {buyerRegistrationType === 'Unregistered' && (
                     <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
-                      Auto-calculated (4% of Value Excl. Sales Tax)
+                      Auto-filled at 4% of Value Excl. Sales Tax (editable)
                     </p>
                   )}
                 </div>
@@ -1545,17 +1541,33 @@ export function SaleInvoiceForm({
           <CardTitle>Income Tax</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="max-w-md">
-            <Label htmlFor="incomeTax">Income Tax Type *</Label>
-            <Select value={incomeTax} onValueChange={(val) => setIncomeTax(val as '236G' | '236H')}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select income tax type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="236G">236G</SelectItem>
-                <SelectItem value="236H">236H</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="max-w-md space-y-4">
+            <div>
+              <Label htmlFor="totalAmount">Total Amount</Label>
+              <Input
+                id="totalAmount"
+                type="number"
+                step="0.01"
+                value={items.reduce((sum, item) => sum + (Number(item.totalValues) || 0), 0).toFixed(2)}
+                readOnly
+                className="bg-gray-50 dark:bg-gray-800"
+              />
+              <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
+                Sum of total values (inc. tax) from all items
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="incomeTax">Income Tax Type *</Label>
+              <Select value={incomeTax} onValueChange={(val) => setIncomeTax(val as '236G' | '236H')}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select income tax type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="236G">236G</SelectItem>
+                  <SelectItem value="236H">236H</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardContent>
       </Card>

@@ -33,21 +33,13 @@ export default function UploadHistory() {
   const handleDeleteSession = async (sessionId: string) => {
     try {
       setDeletingSessionId(sessionId);
-
-      // Optimistic update: remove from UI immediately
-      const previousSessions = [...sessions];
-      setSessions(sessions.filter(s => s.id !== sessionId));
-      setShowDeleteConfirm(null);
-
-      // Call API in background
       await automationApi.deleteUploadSession(sessionId);
 
+      // Remove from local state
+      setSessions(sessions.filter(s => s.id !== sessionId));
+      setShowDeleteConfirm(null);
     } catch (err) {
-      // Rollback on error: restore the session
       setError(err instanceof Error ? err.message : 'Failed to delete upload session');
-
-      // Reload sessions to restore correct state
-      await loadSessions();
     } finally {
       setDeletingSessionId(null);
     }
@@ -56,28 +48,35 @@ export default function UploadHistory() {
   const handleDeleteExcelFile = async (sessionId: string) => {
     try {
       setDeletingFileId(sessionId);
+      await automationApi.deleteExcelFile(sessionId);
 
-      // Optimistic update: update UI immediately
-      const previousSessions = [...sessions];
+      // Update local state to reflect file deletion
       setSessions(sessions.map(s =>
         s.id === sessionId
           ? { ...s, has_file: false, can_delete_file: false }
           : s
       ));
       setShowDeleteFileConfirm(null);
-
-      // Call API in background
-      await automationApi.deleteExcelFile(sessionId);
-
     } catch (err) {
-      // Rollback on error: restore previous state
       setError(err instanceof Error ? err.message : 'Failed to delete Excel file');
-
-      // Reload sessions to restore correct state
-      await loadSessions();
     } finally {
       setDeletingFileId(null);
     }
+  };
+
+  const getStatusBadge = (status: string) => {
+    const badges: Record<string, { bg: string; text: string; label: string }> = {
+      processing: { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-800 dark:text-blue-300', label: 'Processing' },
+      completed: { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-800 dark:text-green-300', label: 'Completed' },
+      failed: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-800 dark:text-red-300', label: 'Failed' },
+      uploading: { bg: 'bg-gray-100 dark:bg-gray-800', text: 'text-gray-800 dark:text-gray-300', label: 'Uploading' },
+    };
+    const badge = badges[status] || { bg: 'bg-gray-100 dark:bg-gray-800', text: 'text-gray-800 dark:text-gray-300', label: status };
+    return (
+      <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${badge.bg} ${badge.text}`}>
+        {badge.label}
+      </span>
+    );
   };
 
   const formatDate = (dateString: string) => {
@@ -168,6 +167,9 @@ export default function UploadHistory() {
                 Upload Date
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Status
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Total
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -192,6 +194,9 @@ export default function UploadHistory() {
               <tr key={session.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                   {formatDate(session.uploaded_at)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm">
+                  {getStatusBadge(session.processing_status)}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
                   {session.total_count}

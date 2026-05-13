@@ -1,6 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Annotated
 from uuid import UUID
 from datetime import date
 from io import BytesIO
@@ -8,11 +8,12 @@ import logging
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from src.database.session import get_db
+from src.database.session import get_db, get_automation_db
 from src.services.invoice_service import InvoiceService
 from src.services.fbr_service import fbr_service
 from src.services.auto_posting_service import AutoPostingService
 from src.services.pdf_service import PDFService
+from src.services.excel_service import ExcelService
 from src.schemas.invoice import (
     InvoiceCreate, InvoiceResponse, InvoiceUpdate, InvoiceListResponse,
     InvoiceFilter, UnifiedInvoiceListResponse
@@ -24,6 +25,8 @@ from src.models.user import User
 from src.models.invoice import Invoice, InvoiceStatus
 from src.models.fbr_response import FBRResponse
 from src.utils.rate_limits import RateLimits
+from src.utils.secure_file_validator import SecureFileValidator
+from src.utils.excel_validator import ExcelValidator
 
 
 logger = logging.getLogger(__name__)
@@ -83,6 +86,122 @@ def create_invoice(
         transferred_at=db_invoice.transferred_at,
         automation_invoice_id=db_invoice.automation_invoice_id
     )
+
+
+@router.get("/excel/template/download")
+def download_manual_excel_template(
+    db = Depends(get_automation_db),
+    user_id: str = Depends(require_authentication)
+):
+    """
+    Download Excel template for manual invoice upload.
+    Template includes income_tax column (236G/236H).
+    Does NOT include scheduled_date/scheduled_time (those are automation-only).
+    """
+    excel_service = ExcelService(db)
+    template_file = excel_service.generate_manual_excel_template()
+
+    return StreamingResponse(
+        template_file,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": "attachment; filename=bulk_invoice_template.xlsx"
+        }
+    )
+
+
+@router.post("/excel/upload")
+@limiter.limit("5/hour")
+async def upload_manual_excel(
+    request: Request,
+    file: Annotated[UploadFile, File(...)],
+    db = Depends(get_database_session),
+    automation_db = Depends(get_automation_db),
+    user_id: str = Depends(require_authentication)
+):
+    """
+    Upload Excel file to create manual invoices in bulk.
+    Each row creates a draft invoice directly in the main database.
+    Validates invoice_date is today or previous date (no future dates allowed).
+
+    Rate limit: 5 uploads per hour.
+    """
+    user_uuid = UUID(user_id)
+
+    # Read file content
+    file_content = await file.read()
+    file_bytes = BytesIO(file_content)
+
+    # Security validation
+    is_valid, error_message = SecureFileValidator.validate_file_comprehensive(
+        file_bytes=file_bytes,
+        filename=file.filename or ""
+    )
+
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_message
+        )
+
+    file_bytes.seek(0)
+
+    # Manual Excel structure validation (uses MANUAL_REQUIRED_COLUMNS)
+    is_valid, errors = ExcelValidator.validate_manual_excel_file(file_bytes)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid Excel file structure: {'; '.join(errors)}"
+        )
+
+    file_bytes.seek(0)
+
+    # Parse Excel file for manual invoices
+    excel_service = ExcelService(automation_db)
+    try:
+        invoice_data_list = excel_service.parse_excel_for_manual_invoice(file_bytes, user_uuid, db)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+    if not invoice_data_list:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Excel file contains no valid invoice data"
+        )
+
+    # Create invoices in the main database
+    invoice_service = InvoiceService()
+    created_invoices = []
+    errors_list = []
+
+    for invoice_data in invoice_data_list:
+        try:
+            # Convert dict to InvoiceCreate schema
+            invoice_create = InvoiceCreate(**invoice_data)
+            db_invoice = invoice_service.create_invoice(db, invoice_create, user_uuid)
+            created_invoices.append({
+                "id": str(db_invoice.id),
+                "external_id": db_invoice.external_id,
+                "invoice_type": db_invoice.invoice_type,
+                "status": db_invoice.status.value if hasattr(db_invoice.status, 'value') else str(db_invoice.status),
+            })
+        except Exception as e:
+            errors_list.append({
+                "invoice_number": invoice_data.get("external_id", "unknown"),
+                "error": str(e)
+            })
+
+    return {
+        "success": True,
+        "message": f"Created {len(created_invoices)} invoice(s) from Excel file.",
+        "total_created": len(created_invoices),
+        "total_failed": len(errors_list),
+        "invoices": created_invoices,
+        "errors": errors_list if errors_list else None
+    }
 
 
 @router.get("/unified-history", response_model=UnifiedInvoiceListResponse)

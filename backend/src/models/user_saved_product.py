@@ -26,10 +26,10 @@ class UserSavedProduct(Base, table=True):
     product_description: str
 
     # Default values for invoice items
-    default_uom: Optional[str] = Field(default=None, max_length=10)
+    default_uom: Optional[str] = Field(default=None, max_length=200)  # Store UOM name
     default_rate: Optional[str] = Field(default=None, max_length=10)
-    default_sale_type: Optional[str] = Field(default=None, max_length=10)
-    transaction_type: Optional[str] = Field(default=None, max_length=10)  # Transaction type code
+    default_sale_type: Optional[str] = Field(default=None, max_length=200)  # Store transaction type name
+    transaction_type: Optional[str] = Field(default=None, max_length=200)  # Store transaction type name
 
     # SRO fields (optional)
     sro_schedule_no: Optional[str] = Field(default=None, max_length=50)

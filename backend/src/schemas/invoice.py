@@ -104,6 +104,7 @@ class InvoiceCreate(BaseModel):
     scenario_id: Optional[str] = None  # Required for sandbox testing (e.g., "SN001")
     items: List[InvoiceItem]
     environment: Environment
+    income_tax: Optional[str] = "236G"  # Income tax type: "236G" or "236H"
 
 
 class InvoiceUpdate(BaseModel):

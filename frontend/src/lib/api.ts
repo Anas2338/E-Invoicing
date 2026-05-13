@@ -235,7 +235,7 @@ export const api = {
     },
 
     deleteSavedProduct: async (id: number) => {
-      return fetchWithAuth(`/profile/saved-products/${id}`, {
+      return fetchWithAuth(`/profile/saved-products/${id}?hard_delete=true`, {
         method: 'DELETE',
       });
     },
@@ -300,38 +300,6 @@ export const api = {
       }
 
       return response.json();
-    },
-
-    getSavedHSCodes: async (activeOnly: boolean = true) => {
-      const params = new URLSearchParams();
-      if (activeOnly) {
-        params.append('active_only', 'true');
-      }
-      return fetchWithAuth(`/profile/saved-hs-codes?${params.toString()}`);
-    },
-
-    getSavedProductDescriptions: async (activeOnly: boolean = true) => {
-      const params = new URLSearchParams();
-      if (activeOnly) {
-        params.append('active_only', 'true');
-      }
-      return fetchWithAuth(`/profile/saved-product-descriptions?${params.toString()}`);
-    },
-
-    getSavedUOMs: async (activeOnly: boolean = true) => {
-      const params = new URLSearchParams();
-      if (activeOnly) {
-        params.append('active_only', 'true');
-      }
-      return fetchWithAuth(`/profile/saved-uoms?${params.toString()}`);
-    },
-
-    getSavedTaxRates: async (activeOnly: boolean = true) => {
-      const params = new URLSearchParams();
-      if (activeOnly) {
-        params.append('active_only', 'true');
-      }
-      return fetchWithAuth(`/profile/saved-tax-rates?${params.toString()}`);
     },
 
     getSavedBuyers: async (activeOnly: boolean = true, search?: string) => {

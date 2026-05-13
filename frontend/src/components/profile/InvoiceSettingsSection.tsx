@@ -72,6 +72,8 @@ export default function InvoiceSettingsSection() {
       });
 
       toast.success('Invoice settings saved successfully');
+      // Refresh settings from backend to reflect changes
+      await fetchInvoiceSettings();
     } catch (error) {
       console.error('Failed to save invoice settings:', error);
       toast.error('Failed to save invoice settings');
@@ -160,7 +162,7 @@ export default function InvoiceSettingsSection() {
             </p>
           </div>
 
-          <div className="flex items-center space-x-2 pt-6">
+          <div className="flex items-center space-x-2 md:pt-6 pt-0">
             <Checkbox
               id="invoiceIncludeYear"
               checked={invoiceIncludeYear}

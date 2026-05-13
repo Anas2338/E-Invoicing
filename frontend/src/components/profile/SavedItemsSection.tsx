@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -59,6 +59,7 @@ export default function SavedItemsSection() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedItems, setSelectedItems] = useState<number[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   // Form state
   const [itemCode, setItemCode] = useState('');
@@ -249,6 +250,7 @@ export default function SavedItemsSection() {
     setSroScheduleNo(item.sro_schedule_no || '');
     setSroItemSerialNo(item.sro_item_serial_no || '');
     setShowAddForm(true);
+    setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
   };
 
   const handleDownloadTemplate = async () => {
@@ -393,17 +395,17 @@ export default function SavedItemsSection() {
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="min-w-0">
             <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
-              <Package className="h-5 w-5" />
+              <Package className="h-5 w-5 flex-shrink-0" />
               Saved Items
             </CardTitle>
             <CardDescription className="text-sm mt-1">
               Manage your saved items for quick invoice creation ({items.length} items)
             </CardDescription>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 flex-shrink-0">
             {!showAddForm && (
               <>
                 <Button
@@ -503,7 +505,7 @@ export default function SavedItemsSection() {
 
         {/* Add/Edit Form */}
         {showAddForm && (
-          <form onSubmit={editingItem ? handleEditItem : handleAddItem} className="mb-6 p-4 border border-[#e1e3e5] dark:border-[#2e2e2e] rounded-xl bg-[#f6f6f7] dark:bg-[#1a1a1a]">
+          <form ref={formRef} onSubmit={editingItem ? handleEditItem : handleAddItem} className="mb-6 p-4 border border-[#e1e3e5] dark:border-[#2e2e2e] rounded-xl bg-[#f6f6f7] dark:bg-[#1a1a1a]">
             <h3 className="text-base font-semibold text-[#202223] dark:text-[#e3e3e3] mb-4">
               {editingItem ? 'Edit Item' : 'Add New Item'}
             </h3>
@@ -598,14 +600,14 @@ export default function SavedItemsSection() {
                 <Select value={defaultUom} onValueChange={setDefaultUom}>
                   <SelectTrigger className="mt-1">
                     {defaultUom ? (
-                      <span>{uoms.find(u => u.code === defaultUom)?.name || defaultUom}</span>
+                      <span>{defaultUom}</span>
                     ) : (
                       <span className="text-muted-foreground">Select UOM</span>
                     )}
                   </SelectTrigger>
                   <SelectContent>
                     {uoms.map((uom) => (
-                      <SelectItem key={uom.code} value={uom.code}>
+                      <SelectItem key={uom.code} value={uom.name}>
                         {uom.name}
                       </SelectItem>
                     ))}
@@ -633,7 +635,7 @@ export default function SavedItemsSection() {
                 <Select value={transactionType} onValueChange={setTransactionType}>
                   <SelectTrigger className="mt-1">
                     {transactionType ? (
-                      <span>{transactionTypes.find(t => t.code === transactionType)?.name || transactionType}</span>
+                      <span>{transactionType}</span>
                     ) : (
                       <span className="text-muted-foreground">Select transaction type</span>
                     )}
@@ -698,8 +700,8 @@ export default function SavedItemsSection() {
         {/* Search Filter */}
         {items.length > 0 && !showAddForm && (
           <div className="mb-4 space-y-3">
-            <div className="flex items-center gap-3">
-              <div className="relative flex-1">
+            <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2">
+              <div className="relative flex-1 min-w-[160px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#6d7175] dark:text-[#8c9196]" />
                 <Input
                   type="text"
@@ -710,45 +712,44 @@ export default function SavedItemsSection() {
                   className="pl-10"
                 />
               </div>
-              <Button
-                onClick={handleSearch}
-                size="sm"
-                variant="outline"
-                className="flex-shrink-0"
-              >
-                Search
-              </Button>
-              {searchQuery && (
+              <div className="flex flex-wrap gap-2">
                 <Button
-                  onClick={handleClearSearch}
+                  onClick={handleSearch}
                   size="sm"
                   variant="outline"
-                  className="flex-shrink-0"
                 >
-                  Clear
+                  Search
                 </Button>
-              )}
-              {selectedItems.length > 0 && (
-                <Button
-                  onClick={handleBulkDelete}
-                  disabled={isDeleting}
-                  variant="destructive"
-                  size="sm"
-                  className="flex-shrink-0"
-                >
-                  {isDeleting ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Deleting...
-                    </>
-                  ) : (
-                    <>
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete ({selectedItems.length})
-                    </>
-                  )}
-                </Button>
-              )}
+                {searchQuery && (
+                  <Button
+                    onClick={handleClearSearch}
+                    size="sm"
+                    variant="outline"
+                  >
+                    Clear
+                  </Button>
+                )}
+                {selectedItems.length > 0 && (
+                  <Button
+                    onClick={handleBulkDelete}
+                    disabled={isDeleting}
+                    variant="destructive"
+                    size="sm"
+                  >
+                    {isDeleting ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Deleting...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete ({selectedItems.length})
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -812,36 +813,36 @@ export default function SavedItemsSection() {
             {filteredItems.map((item) => (
               <div
                 key={item.id}
-                className="p-4 border border-[#e1e3e5] dark:border-[#2e2e2e] rounded-xl bg-white dark:bg-[#1a1a1a]"
+                className="p-3 sm:p-4 border border-[#e1e3e5] dark:border-[#2e2e2e] rounded-xl bg-white dark:bg-[#1a1a1a]"
               >
-                <div className="flex items-start gap-3">
+                <div className="flex items-start gap-2 sm:gap-3">
                   <Checkbox
                     id={`item-${item.id}`}
                     checked={selectedItems.includes(item.id)}
                     onCheckedChange={() => handleSelectItem(item.id)}
-                    className="mt-1"
+                    className="mt-1 flex-shrink-0"
                   />
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-2">
-                      <h4 className="font-semibold text-[#202223] dark:text-[#e3e3e3]">
+                    <div className="flex flex-wrap items-center gap-1 sm:gap-2 mb-2">
+                      <h4 className="font-semibold text-[#202223] dark:text-[#e3e3e3] text-sm sm:text-base">
                         {item.item_name}
                       </h4>
                       <span className="text-xs text-[#6d7175] dark:text-[#8c9196] font-mono">
                         ({item.item_code})
                       </span>
                       {item.fbr_validated ? (
-                        <Badge className="bg-[#d1fae5] text-[#065f46] dark:bg-[#064e3b]/30 dark:text-[#34d399] flex items-center gap-1">
+                        <Badge className="bg-[#d1fae5] text-[#065f46] dark:bg-[#064e3b]/30 dark:text-[#34d399] flex items-center gap-1 text-xs">
                           <CheckCircle className="h-3 w-3" />
                           Validated
                         </Badge>
                       ) : (
-                        <Badge className="bg-[#fee2e2] text-[#991b1b] dark:bg-[#7f1d1d]/30 dark:text-[#f87171] flex items-center gap-1">
+                        <Badge className="bg-[#fee2e2] text-[#991b1b] dark:bg-[#7f1d1d]/30 dark:text-[#f87171] flex items-center gap-1 text-xs">
                           <XCircle className="h-3 w-3" />
                           Not Validated
                         </Badge>
                       )}
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 sm:gap-2 text-xs sm:text-sm">
                       <div>
                         <span className="text-[#6d7175] dark:text-[#8c9196]">HS Code:</span>{' '}
                         <span className="text-[#202223] dark:text-[#e3e3e3] font-medium">{formatHSCode(item.hs_code)}</span>
@@ -863,12 +864,12 @@ export default function SavedItemsSection() {
                         </span>
                       </div>
                     </div>
-                    <div className="mt-2 text-sm">
+                    <div className="mt-2 text-xs sm:text-sm">
                       <span className="text-[#6d7175] dark:text-[#8c9196]">Description:</span>{' '}
                       <span className="text-[#202223] dark:text-[#e3e3e3]">{item.product_description}</span>
                     </div>
                     {(item.sro_schedule_no || item.sro_item_serial_no) && (
-                      <div className="mt-2 text-sm">
+                      <div className="mt-2 text-xs sm:text-sm">
                         {item.sro_schedule_no && (
                           <span className="text-[#6d7175] dark:text-[#8c9196]">
                             SRO Schedule: <span className="text-[#202223] dark:text-[#e3e3e3]">{item.sro_schedule_no}</span>
@@ -883,22 +884,22 @@ export default function SavedItemsSection() {
                       </div>
                     )}
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-1 sm:gap-2 flex-shrink-0">
                     <Button
                       variant="outline"
                       size="icon"
                       onClick={() => startEdit(item)}
-                      className="flex-shrink-0"
+                      className="h-8 w-8 sm:h-9 sm:w-9"
                     >
-                      <Edit2 className="h-4 w-4" />
+                      <Edit2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                     </Button>
                     <Button
                       variant="destructive"
                       size="icon"
                       onClick={() => handleDeleteItem(item.id)}
-                      className="flex-shrink-0"
+                      className="h-8 w-8 sm:h-9 sm:w-9"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                     </Button>
                   </div>
                 </div>

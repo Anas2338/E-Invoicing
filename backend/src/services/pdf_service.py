@@ -62,7 +62,7 @@ class PDFService:
         # Extract invoice data from Invoice model
         invoice_data = {
             'invoiceRefNo': invoice.invoice_ref_no or invoice.external_id,
-            'invoiceDate': invoice.invoice_date.isoformat() if invoice.invoice_date else '',
+            'invoiceDate': invoice.invoice_date if invoice.invoice_date else '',
             'sellerBusinessName': invoice.seller_business_name or '',
             'sellerNTNCNIC': invoice.seller_ntn_cnic or '',
             'sellerProvince': invoice.seller_province or '',
@@ -128,7 +128,7 @@ class PDFService:
             buffer.close()
 
             logger.info(
-                f"Successfully generated PDF for {'automation' if is_automation else 'manual'} "
+                f"Successfully generated PDF for {invoice.source} "
                 f"invoice {invoice_number} ({len(pdf_bytes)} bytes)"
             )
 
@@ -181,7 +181,7 @@ class PDFService:
                 # Extract invoice data
                 invoice_data = {
                     'invoiceRefNo': invoice.invoice_ref_no or invoice.external_id,
-                    'invoiceDate': invoice.invoice_date.isoformat() if invoice.invoice_date else '',
+                    'invoiceDate': invoice.invoice_date if invoice.invoice_date else '',
                     'sellerBusinessName': invoice.seller_business_name or '',
                     'sellerNTNCNIC': invoice.seller_ntn_cnic or '',
                     'sellerProvince': invoice.seller_province or '',

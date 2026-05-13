@@ -3,6 +3,7 @@ FBR (Federal Board of Revenue) API Integration Service.
 Handles validation and posting of invoices to FBR Digital Invoicing System.
 """
 
+import json
 import httpx
 import logging
 from typing import Dict, Any, Optional
@@ -56,6 +57,7 @@ class FBRService:
         "23": "Goods as per SRO.297(I)/2023",
         "24": "Non-Adjustable Supplies"
     }
+    SALE_TYPE_REVERSE_MAPPING = {v: k for k, v in SALE_TYPE_MAPPING.items()}
 
     def _get_validate_url(self, environment: str) -> str:
         """Get the appropriate validation URL based on environment."""
@@ -129,16 +131,19 @@ class FBRService:
         # Transform items from snake_case to camelCase
         transformed_items = []
         for item in (invoice.items or []):
-            # Get sale type - can be either code or description
-            sale_type_value = item.get("sale_type", "01")
+            # Normalize sale_type: could be code, description, or empty
+            sale_type_input = str(item.get("sale_type", "01")).strip()
 
-            # If it's a code (2 digits or less), convert to description
-            # Otherwise, use the value as-is (it's already a description)
-            if sale_type_value and len(str(sale_type_value).strip()) <= 3 and str(sale_type_value).strip().isdigit():
-                sale_type_description = self.SALE_TYPE_MAPPING.get(sale_type_value, sale_type_value)
+            # If it's a description, convert to code first
+            if sale_type_input in self.SALE_TYPE_REVERSE_MAPPING:
+                sale_type_code = self.SALE_TYPE_REVERSE_MAPPING[sale_type_input]
+            elif sale_type_input.isdigit() and sale_type_input in self.SALE_TYPE_MAPPING:
+                sale_type_code = sale_type_input
             else:
-                # Already a description, use as-is but trim any extra spaces
-                sale_type_description = str(sale_type_value).strip()
+                # Unrecognized or empty — fall back to default
+                sale_type_code = "01"
+
+            sale_type_description = self.SALE_TYPE_MAPPING[sale_type_code]
 
             # Get rate and ensure it has % suffix
             rate = str(item.get("rate", "0"))
@@ -189,7 +194,7 @@ class FBRService:
         if invoice.invoice_ref_no:
             fbr_data["invoiceRefNo"] = invoice.invoice_ref_no
 
-        if invoice.scenario_id:
+        if invoice.scenario_id and invoice.environment == "SANDBOX":
             fbr_data["scenarioId"] = invoice.scenario_id
 
         return fbr_data

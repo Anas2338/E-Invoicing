@@ -294,14 +294,18 @@ class InvoiceValidator:
                 if not is_valid:
                     return False, f"Item {idx}: {error}"
 
-            # Business logic: total_values should equal value_sales_excluding_st + sales_tax_applicable
+            # Business logic: total_values = max(value_excl, fixed_price) + sales_tax + further_tax - discount
             total = item.get('total_values', 0)
             value_excl_tax = item.get('value_sales_excluding_st', 0)
+            fixed_price = item.get('fixed_notified_value_or_retail_price', 0)
             tax = item.get('sales_tax_applicable', 0)
+            further_tax = item.get('further_tax', 0)
+            discount = item.get('discount', 0)
 
-            expected_total = round(value_excl_tax + tax, 2)
+            base_value = max(value_excl_tax, fixed_price)
+            expected_total = round(base_value + tax + further_tax - discount, 2)
             if abs(total - expected_total) > 0.01:  # Allow 1 cent rounding difference
-                return False, f"Item {idx}: Total value ({total}) must equal value excluding tax ({value_excl_tax}) + sales tax ({tax})"
+                return False, f"Item {idx}: Total value ({total}) must equal base value ({base_value}) + sales tax ({tax}) + further tax ({further_tax}) - discount ({discount})"
 
         logger.info("Invoice data validation passed")
         return True, None

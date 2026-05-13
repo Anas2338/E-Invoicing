@@ -214,18 +214,6 @@ async def create_saved_product(
                 detail="Item name is required and cannot be empty"
             )
 
-        # Validate transaction_type against FBR master data if provided
-        if product.transaction_type:
-            fbr_transaction_type = db.query(FBRTransactionType).filter(
-                FBRTransactionType.code == product.transaction_type
-            ).first()
-
-            if not fbr_transaction_type:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Transaction type '{product.transaction_type}' not found in FBR master data"
-                )
-
         # Format HS code: normalize to 8 digits with dot (1234.5678)
         hs_code_cleaned = product.hs_code.replace('.', '').replace(' ', '')
 
@@ -284,6 +272,7 @@ async def create_saved_product(
 
         return {
             "id": new_product.id,
+            "item_code": new_product.item_code,
             "item_name": new_product.item_name,
             "hs_code": new_product.hs_code,
             "product_description": new_product.product_description,
@@ -291,14 +280,10 @@ async def create_saved_product(
             "default_rate": new_product.default_rate,
             "default_sale_type": new_product.default_sale_type,
             "transaction_type": new_product.transaction_type,
-            "default_unit_price": float(new_product.default_unit_price) if new_product.default_unit_price else None,
             "sro_schedule_no": new_product.sro_schedule_no,
             "sro_item_serial_no": new_product.sro_item_serial_no,
-            "display_order": new_product.display_order,
             "is_active": new_product.is_active,
             "fbr_validated": new_product.fbr_validated,
-            "fbr_validation_date": new_product.fbr_validation_date.isoformat() if new_product.fbr_validation_date else None,
-            "fbr_validation_error": new_product.fbr_validation_error,
             "created_at": new_product.created_at.isoformat() if new_product.created_at else None,
             "updated_at": new_product.updated_at.isoformat() if new_product.updated_at else None
         }
@@ -384,16 +369,6 @@ async def update_saved_product(
         if product_update.default_sale_type is not None:
             product.default_sale_type = product_update.default_sale_type
         if product_update.transaction_type is not None:
-            # Validate transaction_type against FBR master data
-            fbr_transaction_type = db.query(FBRTransactionType).filter(
-                FBRTransactionType.code == product_update.transaction_type
-            ).first()
-
-            if not fbr_transaction_type:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Transaction type '{product_update.transaction_type}' not found in FBR master data"
-                )
             product.transaction_type = product_update.transaction_type
         if product_update.sro_schedule_no is not None:
             product.sro_schedule_no = product_update.sro_schedule_no
@@ -452,16 +427,16 @@ async def update_saved_product(
 @router.delete("/saved-products/{product_id}")
 async def delete_saved_product(
     product_id: int,
-    hard_delete: bool = False,
+    hard_delete: bool = True,
     db=Depends(get_database_session),
     user_id: str = Depends(require_authentication)
 ):
     """
-    Delete a saved product (soft delete by default).
+    Delete a saved product (hard delete by default).
 
     Args:
         product_id: ID of the saved product to delete
-        hard_delete: If True, permanently delete the product (default: False)
+        hard_delete: If False, soft-delete by setting is_active=0 (default: True)
 
     Returns:
         Success message
@@ -507,16 +482,16 @@ async def delete_saved_product(
 @router.post("/saved-products/bulk-delete")
 async def bulk_delete_saved_products(
     product_ids: List[int],
-    hard_delete: bool = False,
+    hard_delete: bool = True,
     db=Depends(get_database_session),
     user_id: str = Depends(require_authentication)
 ):
     """
-    Delete multiple saved products in bulk (soft delete by default).
+    Delete multiple saved products in bulk (hard delete by default).
 
     Args:
         product_ids: List of product IDs to delete
-        hard_delete: If True, permanently delete the products (default: False)
+        hard_delete: If False, soft-delete by setting is_active=0 (default: True)
 
     Returns:
         Success message with count
@@ -823,34 +798,9 @@ async def upload_saved_products(
 
                 logger.debug(f"Row {index + 2}: HS Code input='{hs_code_input}' -> formatted='{hs_code_formatted}'")
 
-                # Validate and convert UOM (accept both code and name) - use cached data
-                fbr_uom = all_uoms.get(default_uom_input)
-
-                # If not found by code, try name match
-                if not fbr_uom:
-                    fbr_uom = all_uoms_by_name.get(default_uom_input.strip().lower())
-
-                if not fbr_uom:
-                    errors.append(f"Row {index + 2}: Invalid UOM '{default_uom_input}'")
-                    error_count += 1
-                    continue
-
-                default_uom_code = fbr_uom.code
-
-                # Validate transaction_type - use cached data
-                fbr_transaction_type = all_transaction_types.get(transaction_type_input)
-
-                # If not found by code, try name match
-                if not fbr_transaction_type:
-                    fbr_transaction_type = all_transaction_types_by_name.get(transaction_type_input.strip().lower())
-
-                if not fbr_transaction_type:
-                    available_names = [f"'{t.name.strip()}'" for t in list(all_transaction_types.values())[:5]]
-                    errors.append(f"Row {index + 2}: Invalid transaction type '{transaction_type_input}'. Available types: {', '.join(available_names)}...")
-                    error_count += 1
-                    continue
-
-                transaction_type_code = fbr_transaction_type.code
+                # Store exactly what's in the Excel file (no validation or conversion)
+                default_uom_to_store = default_uom_input
+                transaction_type_to_store = transaction_type_input
 
                 # Validate HS code - use cached data
                 fbr_hs_code = all_hs_codes.get(hs_code_for_validation)
@@ -880,10 +830,10 @@ async def upload_saved_products(
                     item_name=item_name,
                     hs_code=hs_code_to_store,  # Store with dots (1234.5678 format)
                     product_description=product_description,
-                    default_uom=default_uom_code,
+                    default_uom=default_uom_to_store,  # Store exactly what's in Excel
                     default_rate=default_rate,
-                    default_sale_type="01",
-                    transaction_type=transaction_type_code,
+                    default_sale_type=transaction_type_to_store,  # Store exactly what's in Excel
+                    transaction_type=transaction_type_to_store,  # Store exactly what's in Excel
                     sro_schedule_no=sro_schedule_no,
                     sro_item_serial_no=sro_item_serial_no,
                     is_active=1,

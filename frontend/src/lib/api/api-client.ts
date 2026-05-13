@@ -153,6 +153,44 @@ export class InvoiceService extends ApiClient {
     return { success: true, invoice: response };
   }
 
+  async downloadManualExcelTemplate(): Promise<Blob> {
+    const url = `${this.baseUrl}/invoices/excel/template/download`;
+    const response = await fetch(url, {
+      credentials: 'include',
+    });
+    if (!response.ok) {
+      throw new Error('Failed to download template');
+    }
+    return response.blob();
+  }
+
+  async uploadManualExcel(file: File): Promise<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const csrfToken = getCsrfToken();
+    if (!csrfToken) {
+      throw new Error('CSRF token not found. Please log out and log in again to refresh your session.');
+    }
+
+    const url = `${this.baseUrl}/invoices/excel/upload`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'X-CSRF-Token': csrfToken,
+      },
+      credentials: 'include',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Upload failed');
+    }
+
+    return response.json();
+  }
+
   async updateInvoice(id: string, invoiceData: any): Promise<any> {
     const response = await this.request(`/invoices/${id}`, {
       method: 'PUT',
@@ -333,175 +371,6 @@ export class UserService extends ApiClient {
     is_complete: boolean;
   }> {
     return this.request('/profile/seller-info');
-  }
-
-  // Saved HS Codes Management
-  async getSavedHSCodes(activeOnly: boolean = true): Promise<any[]> {
-    const params = new URLSearchParams();
-    if (activeOnly) {
-      params.append('active_only', 'true');
-    }
-    return this.request(`/profile/saved-hs-codes?${params.toString()}`);
-  }
-
-  async createSavedHSCode(data: { hs_code: string }): Promise<any> {
-    return this.request('/profile/saved-hs-codes', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async updateSavedHSCode(id: number, data: { hs_code: string }): Promise<any> {
-    return this.request(`/profile/saved-hs-codes/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async deleteSavedHSCode(id: number): Promise<{ message: string }> {
-    return this.request(`/profile/saved-hs-codes/${id}`, {
-      method: 'DELETE',
-    });
-  }
-
-  // Saved Product Descriptions Management
-  async getSavedProductDescriptions(activeOnly: boolean = true): Promise<any[]> {
-    const params = new URLSearchParams();
-    if (activeOnly) {
-      params.append('active_only', 'true');
-    }
-    return this.request(`/profile/saved-product-descriptions?${params.toString()}`);
-  }
-
-  async createSavedProductDescription(data: { product_description: string }): Promise<any> {
-    return this.request('/profile/saved-product-descriptions', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async updateSavedProductDescription(id: number, data: { product_description: string }): Promise<any> {
-    return this.request(`/profile/saved-product-descriptions/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async deleteSavedProductDescription(id: number): Promise<{ message: string }> {
-    return this.request(`/profile/saved-product-descriptions/${id}`, {
-      method: 'DELETE',
-    });
-  }
-
-  // Saved UOMs Management
-  async getSavedUOMs(activeOnly: boolean = true): Promise<any[]> {
-    const params = new URLSearchParams();
-    if (activeOnly) {
-      params.append('active_only', 'true');
-    }
-    return this.request(`/profile/saved-uoms?${params.toString()}`);
-  }
-
-  async createSavedUOM(data: { uom_code: string; uom_name: string }): Promise<any> {
-    return this.request('/profile/saved-uoms', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async updateSavedUOM(id: number, data: { uom_code: string; uom_name: string }): Promise<any> {
-    return this.request(`/profile/saved-uoms/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async deleteSavedUOM(id: number): Promise<{ message: string }> {
-    return this.request(`/profile/saved-uoms/${id}`, {
-      method: 'DELETE',
-    });
-  }
-
-  // Saved Tax Rates Management
-  async getSavedTaxRates(activeOnly: boolean = true): Promise<any[]> {
-    const params = new URLSearchParams();
-    if (activeOnly) {
-      params.append('active_only', 'true');
-    }
-    return this.request(`/profile/saved-tax-rates?${params.toString()}`);
-  }
-
-  async createSavedTaxRate(data: { tax_rate: string; description?: string }): Promise<any> {
-    return this.request('/profile/saved-tax-rates', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async updateSavedTaxRate(id: number, data: { tax_rate: string; description?: string }): Promise<any> {
-    return this.request(`/profile/saved-tax-rates/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async deleteSavedTaxRate(id: number): Promise<{ message: string }> {
-    return this.request(`/profile/saved-tax-rates/${id}`, {
-      method: 'DELETE',
-    });
-  }
-
-  // Saved Products Management (Unified Items)
-  async getSavedProducts(activeOnly: boolean = true): Promise<any[]> {
-    const params = new URLSearchParams();
-    if (activeOnly) {
-      params.append('active_only', 'true');
-    }
-    return this.request(`/profile/saved-products?${params.toString()}`);
-  }
-
-  async createSavedProduct(data: {
-    item_code: string;
-    item_name: string;
-    hs_code: string;
-    product_description: string;
-    default_uom?: string;
-    default_rate?: string;
-    default_sale_type?: string;
-    transaction_type?: string;
-    default_unit_price?: number;
-    sro_schedule_no?: string;
-    sro_item_serial_no?: string;
-  }): Promise<any> {
-    return this.request('/profile/saved-products', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async updateSavedProduct(id: number, data: {
-    item_code?: string;
-    item_name?: string;
-    hs_code?: string;
-    product_description?: string;
-    default_uom?: string;
-    default_rate?: string;
-    default_sale_type?: string;
-    transaction_type?: string;
-    default_unit_price?: number;
-    sro_schedule_no?: string;
-    sro_item_serial_no?: string;
-  }): Promise<any> {
-    return this.request(`/profile/saved-products/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
-  }
-
-  async deleteSavedProduct(id: number): Promise<{ message: string }> {
-    return this.request(`/profile/saved-products/${id}`, {
-      method: 'DELETE',
-    });
   }
 }
 

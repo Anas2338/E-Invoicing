@@ -20,6 +20,12 @@ from src.models.fbr_master_data import (
 )
 from src.models.fbr_notifications import FBRChangeNotification, FBRDataSnapshot
 
+# Import automation metadata (separate metadata for automation database tables)
+from src.models.automation_invoice import AutomationInvoice
+from src.models.automation_log import AutomationLog
+from src.models.excel_upload_session import ExcelUploadSession
+from src.models.ai_agent_health_check import AIAgentHealthCheck
+
 logger = logging.getLogger(__name__)
 
 
@@ -86,17 +92,38 @@ engine = create_engine(
     }
 )
 
+# Validate automation database URL security
+validate_database_url_security(settings.automation_database_url)
+
+# Create the automation database engine (separate database for automation system)
+automation_engine = create_engine(
+    settings.automation_database_url,
+    echo=settings.db_echo,
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=10,
+    pool_recycle=300,
+    pool_timeout=30,
+    connect_args={
+        "connect_timeout": 60,
+    }
+)
+
 
 def create_db_and_tables():
     """
     Create database tables based on SQLModel models and FBR models.
     Use Alembic migrations for production.
     """
-    # Create SQLModel tables
+    # Create SQLModel tables in main database
     SQLModel.metadata.create_all(bind=engine)
 
-    # Create FBR model tables (using separate declarative base)
+    # Create FBR model tables in main database (using separate declarative base)
     FBRBase.metadata.create_all(bind=engine)
+
+    # Create automation model tables in automation database (using separate metadata)
+    from src.models.automation_base import automation_metadata
+    automation_metadata.create_all(bind=automation_engine)
 
 
 @contextmanager
@@ -121,4 +148,29 @@ def get_db():
     Dependency for FastAPI to provide main database sessions.
     """
     with get_db_session() as session:
+        yield session
+
+
+@contextmanager
+def get_automation_db_session() -> Generator:
+    """
+    Context manager for automation database sessions.
+    Ensures session is properly closed after use.
+    """
+    db = Session(automation_engine)
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def get_automation_db():
+    """
+    Dependency for FastAPI to provide automation database sessions.
+    """
+    with get_automation_db_session() as session:
         yield session

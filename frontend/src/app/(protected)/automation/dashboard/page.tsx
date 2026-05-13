@@ -18,6 +18,8 @@ export default function DashboardPage() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [retryingInvoiceId, setRetryingInvoiceId] = useState<string | null>(null);
+  const [pausingInvoiceId, setPausingInvoiceId] = useState<string | null>(null);
+  const [resumingInvoiceId, setResumingInvoiceId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && user && !user.automation_enabled) {
@@ -121,6 +123,52 @@ export default function DashboardPage() {
     }
   };
 
+  const handlePause = async (invoiceId: string) => {
+    try {
+      setPausingInvoiceId(invoiceId);
+      await automationApi.pauseInvoice(invoiceId);
+      toast.success('Invoice paused. It will not be transferred until resumed.');
+      loadInvoices();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to pause invoice');
+    } finally {
+      setPausingInvoiceId(null);
+    }
+  };
+
+  const handleResume = async (invoiceId: string) => {
+    try {
+      setResumingInvoiceId(invoiceId);
+      await automationApi.resumeInvoice(invoiceId);
+      toast.success('Invoice resumed. It will be transferred in the next AI agent cycle.');
+      loadInvoices();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to resume invoice');
+    } finally {
+      setResumingInvoiceId(null);
+    }
+  };
+
+  const handleBulkPause = async (invoiceIds: string[]) => {
+    try {
+      const response = await automationApi.bulkPauseInvoices(invoiceIds);
+      toast.success(`Successfully paused ${response.paused_count} invoice(s)`);
+      loadInvoices();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to pause invoices');
+    }
+  };
+
+  const handleBulkResume = async (invoiceIds: string[]) => {
+    try {
+      const response = await automationApi.bulkResumeInvoices(invoiceIds);
+      toast.success(`Successfully resumed ${response.resumed_count} invoice(s)`);
+      loadInvoices();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to resume invoices');
+    }
+  };
+
   const handleBulkDelete = async (invoiceIds: string[]) => {
     try {
       const response = await automationApi.bulkDeleteInvoices(invoiceIds);
@@ -192,8 +240,14 @@ export default function DashboardPage() {
             onDownload={handleDownload}
             onRetry={handleRetry}
             retryingInvoiceId={retryingInvoiceId}
+            onPause={handlePause}
+            pausingInvoiceId={pausingInvoiceId}
+            onResume={handleResume}
+            resumingInvoiceId={resumingInvoiceId}
             onBulkDelete={handleBulkDelete}
             onBulkRetry={handleBulkRetry}
+            onBulkPause={handleBulkPause}
+            onBulkResume={handleBulkResume}
           />
         </div>
       )}

@@ -35,10 +35,43 @@ class ExcelValidator:
         "value_sales_excluding_st",
         "fixed_notified_value_or_retail_price",
         "further_tax",
+        "discount",
+        "income_tax",
 
         # Scheduling
         "scheduled_date",
         "scheduled_time",
+
+        # Status fields
+        "status",
+        "reason"
+    ]
+
+    # Required columns for manual invoice Excel template
+    # Same as automation but without scheduled_date/scheduled_time, with income_tax added
+    MANUAL_REQUIRED_COLUMNS = [
+        # Invoice identification
+        "invoice_number",
+        "invoice_type",
+        "invoice_date",
+
+        # Buyer information
+        "buyer_ntn_cnic",
+        "buyer_business_name",
+        "buyer_province",
+        "buyer_address",
+        "buyer_registration_type",
+
+        # Item details - simplified with saved_item_code
+        "saved_item_code",
+        "quantity",
+        "value_sales_excluding_st",
+        "fixed_notified_value_or_retail_price",
+        "further_tax",
+        "discount",
+
+        # Income tax
+        "income_tax",
 
         # Status fields
         "status",
@@ -186,6 +219,67 @@ class ExcelValidator:
 
         # Validate no duplicates
         is_valid, error_msg = ExcelValidator.validate_no_duplicate_invoices(file_source)
+        if not is_valid:
+            errors.append(error_msg)
+
+        return len(errors) == 0, errors
+
+    @staticmethod
+    def validate_manual_excel_structure(file_source: Union[str, BytesIO]) -> tuple[bool, Optional[str]]:
+        """
+        Validate manual Excel file has the required columns for manual invoice upload.
+
+        Args:
+            file_source: Path to Excel file or BytesIO object
+
+        Returns:
+            Tuple of (is_valid, error_message)
+        """
+        try:
+            df = pd.read_excel(file_source, engine='openpyxl')
+
+            if df.empty:
+                return False, "Excel file is empty"
+
+            if len(df) > ExcelValidator.MAX_ROWS:
+                return False, f"Excel file has {len(df)} rows, maximum allowed is {ExcelValidator.MAX_ROWS}"
+
+            actual_columns = [col.strip() for col in df.columns]
+
+            missing_columns = []
+            for required_col in ExcelValidator.MANUAL_REQUIRED_COLUMNS:
+                if required_col not in actual_columns:
+                    missing_columns.append(required_col)
+
+            if missing_columns:
+                return False, f"Missing required columns: {', '.join(missing_columns)}"
+
+            return True, None
+
+        except Exception as e:
+            return False, f"Error reading Excel file: {str(e)}"
+
+    @staticmethod
+    def validate_manual_excel_file(file_source: Union[str, BytesIO]) -> tuple[bool, list[str]]:
+        """
+        Run all validations on manual Excel file.
+        Note: Duplicate invoice numbers are allowed — they represent multi-item invoices.
+
+        Args:
+            file_source: Path to Excel file or BytesIO object
+
+        Returns:
+            Tuple of (is_valid, list_of_errors)
+        """
+        errors = []
+
+        try:
+            ExcelValidator.validate_file_size(file_source)
+        except ExcelValidationError as e:
+            errors.append(str(e))
+            return False, errors
+
+        is_valid, error_msg = ExcelValidator.validate_manual_excel_structure(file_source)
         if not is_valid:
             errors.append(error_msg)
 

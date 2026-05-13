@@ -68,6 +68,11 @@ export default function AutomationDashboard() {
       color: 'bg-[#e0e7ff] border-[#c7d2fe] text-[#3730a3] dark:bg-[#312e81]/30 dark:border-[#312e81] dark:text-[#a5b4fc]',
     },
     {
+      label: 'Paused',
+      value: stats.paused_count,
+      color: 'bg-[#fef3c7] border-[#fde68a] text-[#92400e] dark:bg-[#451a03]/30 dark:border-[#451a03] dark:text-[#fbbf24]',
+    },
+    {
       label: 'Transferred',
       value: stats.transferred_count,
       color: 'bg-[#d1fae5] border-[#a7f3d0] text-[#065f46] dark:bg-[#064e3b]/30 dark:border-[#065f46] dark:text-[#34d399]',

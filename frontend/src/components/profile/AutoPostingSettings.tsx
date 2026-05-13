@@ -2,6 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/providers/auth-provider';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { toast } from 'react-toastify';
+import { Zap, Clock, AlertTriangle, Loader2 } from 'lucide-react';
 import {
   getAutoPostingConfig,
   updateAutoPostingConfig,
@@ -23,10 +27,9 @@ export default function AutoPostingSettings() {
   const [enabled, setEnabled] = useState(false);
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('18:00');
-  const [environment, setEnvironment] = useState<'SANDBOX' | 'PRODUCTION'>('SANDBOX');
+  const environment = 'PRODUCTION';
   const [dailyLimit, setDailyLimit] = useState(100);
 
-  // Load configuration
   useEffect(() => {
     if (isAuthenticated) {
       loadConfig();
@@ -42,11 +45,9 @@ export default function AutoPostingSettings() {
       const data = await getAutoPostingConfig();
       setConfig(data);
 
-      // Update form state
       setEnabled(data.auto_posting_enabled);
-      setStartTime(data.auto_posting_start_time.substring(0, 5)); // HH:MM format
+      setStartTime(data.auto_posting_start_time.substring(0, 5));
       setEndTime(data.auto_posting_end_time.substring(0, 5));
-      setEnvironment(data.auto_posting_environment);
       setDailyLimit(data.auto_posting_daily_limit);
     } catch (err: any) {
       setError(err.message || 'Failed to load auto-posting configuration');
@@ -59,7 +60,6 @@ export default function AutoPostingSettings() {
     const newEnabled = !enabled;
     setEnabled(newEnabled);
 
-    // Auto-save when toggling
     try {
       setSaving(true);
       setError(null);
@@ -76,12 +76,9 @@ export default function AutoPostingSettings() {
       const result = await updateAutoPostingConfig(update);
       setConfig(result);
       setSuccess(`Auto-posting ${newEnabled ? 'enabled' : 'disabled'} successfully`);
-
-      // Clear success message after 3 seconds
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
       setError(err.message || 'Failed to update auto-posting');
-      // Revert the toggle on error
       setEnabled(!newEnabled);
     } finally {
       setSaving(false);
@@ -94,13 +91,11 @@ export default function AutoPostingSettings() {
       setError(null);
       setSuccess(null);
 
-      // Validate daily limit
       if (dailyLimit < 1 || dailyLimit > 1000) {
         setError('Daily limit must be between 1 and 1000');
         return;
       }
 
-      // Check if switching to Production
       if (environment === 'PRODUCTION' && config?.auto_posting_environment === 'SANDBOX') {
         setShowProductionConfirm(true);
         return;
@@ -128,9 +123,12 @@ export default function AutoPostingSettings() {
     const result = await updateAutoPostingConfig(update);
     setConfig(result);
     setSuccess('Auto-posting configuration saved successfully');
+    setEnabled(result.auto_posting_enabled);
+    setStartTime(result.auto_posting_start_time.substring(0, 5));
+    setEndTime(result.auto_posting_end_time.substring(0, 5));
+    setDailyLimit(result.auto_posting_daily_limit);
+    window.location.reload();
     setShowProductionConfirm(false);
-
-    // Clear success message after 3 seconds
     setTimeout(() => setSuccess(null), 3000);
   };
 
@@ -156,170 +154,179 @@ export default function AutoPostingSettings() {
 
   if (loading) {
     return (
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-        <h2 className="text-xl font-semibold mb-4">Auto-Posting Settings</h2>
-        <div className="animate-pulse space-y-4">
-          <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4"></div>
-          <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>
-        </div>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+            <Zap className="h-5 w-5" />
+            Auto-Posting Settings
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin" />
+          </div>
+        </CardContent>
+      </Card>
     );
   }
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-semibold">Auto-Posting Settings</h2>
-        {enabled && (
-          <button
-            onClick={handleEmergencyPause}
-            disabled={saving}
-            className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
-          >
-            Emergency Pause
-          </button>
-        )}
-      </div>
-
-      {error && (
-        <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded">
-          <p className="text-red-800 dark:text-red-200">{error}</p>
-        </div>
-      )}
-
-      {success && (
-        <div className="mb-4 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded">
-          <p className="text-green-800 dark:text-green-200">{success}</p>
-        </div>
-      )}
-
-      <div className="space-y-6">
-        {/* Enable/Disable Toggle */}
-        <div className="flex items-center justify-between">
+    <Card>
+      <CardHeader>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
-            <label className="text-sm font-medium">Enable Auto-Posting</label>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              Automatically post validated invoices to FBR during configured hours
-            </p>
+            <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+              <Zap className="h-5 w-5" />
+              Auto-Posting Settings
+            </CardTitle>
+            <CardDescription className="text-sm mt-1">
+              Configure automatic posting of validated invoices to FBR
+            </CardDescription>
           </div>
-          <button
-            onClick={handleToggle}
-            disabled={saving}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              enabled ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
-            } ${saving ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                enabled ? 'translate-x-6' : 'translate-x-1'
-              }`}
-            />
-          </button>
-        </div>
-
-        {/* Time Window */}
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-2">Start Time</label>
-            <input
-              type="time"
-              value={startTime}
-              onChange={(e) => setStartTime(e.target.value)}
-              disabled={!enabled}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 disabled:opacity-50"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-2">End Time</label>
-            <input
-              type="time"
-              value={endTime}
-              onChange={(e) => setEndTime(e.target.value)}
-              disabled={!enabled}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 disabled:opacity-50"
-            />
-          </div>
-        </div>
-        <p className="text-sm text-gray-500 dark:text-gray-400">
-          Midnight-spanning windows are supported (e.g., 22:00 - 02:00)
-        </p>
-
-        {/* Environment */}
-        <div>
-          <label className="block text-sm font-medium mb-2">Environment</label>
-          <select
-            value={environment}
-            onChange={(e) => setEnvironment(e.target.value as 'SANDBOX' | 'PRODUCTION')}
-            disabled={!enabled}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 disabled:opacity-50"
-          >
-            <option value="SANDBOX">Sandbox (Testing)</option>
-            <option value="PRODUCTION">Production (Live)</option>
-          </select>
-          {environment === 'PRODUCTION' && (
-            <p className="mt-2 text-sm text-amber-600 dark:text-amber-400">
-              ⚠️ Production posting will use real FBR credentials and create actual invoices
-            </p>
+          {enabled && (
+            <Button
+              onClick={handleEmergencyPause}
+              disabled={saving}
+              variant="destructive"
+              size="sm"
+              className="flex-shrink-0"
+            >
+              <AlertTriangle className="h-4 w-4 mr-2" />
+              Emergency Pause
+            </Button>
           )}
         </div>
+      </CardHeader>
+      <CardContent>
+        {error && (
+          <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+            <p className="text-sm text-red-800 dark:text-red-200">{error}</p>
+          </div>
+        )}
 
-        {/* Daily Limit */}
-        <div>
-          <label className="block text-sm font-medium mb-2">
-            Daily Limit (1-1000)
-          </label>
-          <input
-            type="number"
-            min="1"
-            max="1000"
-            value={dailyLimit}
-            onChange={(e) => setDailyLimit(parseInt(e.target.value) || 1)}
-            disabled={!enabled}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 disabled:opacity-50"
-          />
-          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-            Maximum number of invoices to post per day
-          </p>
-        </div>
+        {success && (
+          <div className="mb-4 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+            <p className="text-sm text-green-800 dark:text-green-200">{success}</p>
+          </div>
+        )}
 
-        {/* Save Button */}
-        <div className="flex justify-end">
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-          >
-            {saving ? 'Saving...' : 'Save Configuration'}
-          </button>
-        </div>
-      </div>
+        <div className="space-y-6">
+          {/* Enable/Disable Toggle */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <label className="text-sm font-medium text-[#202223] dark:text-[#e3e3e3]">Enable Auto-Posting</label>
+              <p className="text-sm text-[#6d7175] dark:text-[#8c9196]">
+                Automatically post validated invoices to FBR during configured hours
+              </p>
+            </div>
+            <button
+              onClick={handleToggle}
+              disabled={saving}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0 ${
+                enabled ? 'bg-[#008060] dark:bg-[#00a876]' : 'bg-gray-200 dark:bg-gray-700'
+              } ${saving ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  enabled ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
 
-      {/* Production Confirmation Dialog */}
-      {showProductionConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md">
-            <h3 className="text-lg font-semibold mb-4">Switch to Production?</h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-6">
-              You are about to switch auto-posting to Production environment. This will post invoices
-              to the live FBR system using your Production credentials. Are you sure?
-            </p>
-            <div className="flex justify-end space-x-4">
-              <button
-                onClick={() => setShowProductionConfirm(false)}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={saveConfig}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-              >
-                Confirm
-              </button>
+          {/* Time Window */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-[#202223] dark:text-[#e3e3e3] mb-2">Start Time</label>
+              <input
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                disabled={!enabled}
+                className="w-full px-3 py-2 border border-[#c9cccf] dark:border-[#5c5f62] rounded-lg bg-white dark:bg-[#1a1a1a] text-[#202223] dark:text-[#e3e3e3] disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#008060] dark:focus:ring-[#00a876] text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[#202223] dark:text-[#e3e3e3] mb-2">End Time</label>
+              <input
+                type="time"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                disabled={!enabled}
+                className="w-full px-3 py-2 border border-[#c9cccf] dark:border-[#5c5f62] rounded-lg bg-white dark:bg-[#1a1a1a] text-[#202223] dark:text-[#e3e3e3] disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#008060] dark:focus:ring-[#00a876] text-sm"
+              />
             </div>
           </div>
+          <p className="text-sm text-[#6d7175] dark:text-[#8c9196]">
+            <Clock className="h-3.5 w-3.5 inline mr-1" />
+            Midnight-spanning windows are supported (e.g., 22:00 - 02:00)
+          </p>
+
+          {/* Daily Limit */}
+          <div>
+            <label className="block text-sm font-medium text-[#202223] dark:text-[#e3e3e3] mb-2">
+              Daily Limit (1-1000)
+            </label>
+            <input
+              type="number"
+              min="1"
+              max="1000"
+              value={dailyLimit}
+              onChange={(e) => setDailyLimit(parseInt(e.target.value) || 1)}
+              disabled={!enabled}
+              className="w-full sm:w-48 px-3 py-2 border border-[#c9cccf] dark:border-[#5c5f62] rounded-lg bg-white dark:bg-[#1a1a1a] text-[#202223] dark:text-[#e3e3e3] disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-[#008060] dark:focus:ring-[#00a876] text-sm"
+            />
+            <p className="mt-2 text-sm text-[#6d7175] dark:text-[#8c9196]">
+              Maximum number of invoices to post per day
+            </p>
+          </div>
+
+          {/* Save Button */}
+          <div className="flex justify-end">
+            <Button
+              onClick={handleSave}
+              disabled={saving}
+              className="bg-[#008060] hover:bg-[#006e52] dark:bg-[#00a876] dark:hover:bg-[#008f64]"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save Configuration'
+              )}
+            </Button>
+          </div>
         </div>
-      )}
-    </div>
+
+        {/* Production Confirmation Dialog */}
+        {showProductionConfirm && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-[#1a1a1a] rounded-xl p-6 max-w-md w-full shadow-lg">
+              <h3 className="text-lg font-semibold text-[#202223] dark:text-[#e3e3e3] mb-4">Switch to Production?</h3>
+              <p className="text-[#6d7175] dark:text-[#8c9196] text-sm mb-6">
+                You are about to switch auto-posting to Production environment. This will post invoices
+                to the live FBR system using your Production credentials. Are you sure?
+              </p>
+              <div className="flex justify-end gap-3">
+                <Button
+                  onClick={() => setShowProductionConfirm(false)}
+                  variant="outline"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={saveConfig}
+                  className="bg-[#008060] hover:bg-[#006e52] dark:bg-[#00a876] dark:hover:bg-[#008f64]"
+                >
+                  Confirm
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

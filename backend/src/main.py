@@ -20,6 +20,7 @@ from src.api.v1.notifications import router as notifications_router
 from src.api.v1.saved_products import router as saved_products_router
 from src.api.v1.user_profile import router as user_profile_router
 from src.api.v1.dashboard import router as dashboard_router
+from src.api.v1.automation import router as automation_router
 
 # Import middleware
 from src.api.middleware.auth_middleware import AuthMiddleware
@@ -126,6 +127,7 @@ app.include_router(notifications_router, prefix="/api/v1/notifications", tags=["
 app.include_router(saved_products_router, prefix="/api/v1/profile", tags=["saved-products"])
 app.include_router(user_profile_router, prefix="/api/v1", tags=["user-profile"])
 app.include_router(dashboard_router, prefix="/api/v1/dashboard", tags=["dashboard"])
+app.include_router(automation_router, prefix="/api/v1", tags=["automation"])
 
 @app.get("/")
 def read_root():
