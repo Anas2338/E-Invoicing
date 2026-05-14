@@ -23,27 +23,20 @@ jobs:
 
         git clone https://huggingface.co/spaces/$HF_USERNAME/$HF_SPACE_NAME hf
 
-        # Copy ai-agent files
-        cp ai-agent/main.py hf/
-        cp ai-agent/agent.py hf/
-        cp ai-agent/config.py hf/
-        cp ai-agent/validation.py hf/
-        cp ai-agent/ai_client.py hf/
-        cp ai-agent/claude_client.py hf/
-        cp ai-agent/gemini_client.py hf/
-        cp ai-agent/database.py hf/
-        cp ai-agent/fallback_classifier.py hf/
-        cp ai-agent/metrics.py hf/
-        cp ai-agent/health_server.py hf/
+        # Copy ai-agent build files
         cp ai-agent/pyproject.toml hf/
         cp ai-agent/uv.lock hf/
-        cp -r ai-agent/skills hf/ 2>/dev/null || true
 
-        # Copy backend/src (required for imports)
+        # Copy ai-agent application code (directory structure)
+        cp -r ai-agent/src hf/
+        cp -r ai-agent/alembic hf/
+        cp -r ai-agent/assets hf/
+
+        # Copy backend/src (required for shared imports)
         mkdir -p hf/backend
         cp -r backend/src hf/backend/
 
-        # Copy HF-specific Dockerfile to root
+        # Copy Dockerfile
         cp ai-agent/Dockerfile hf/Dockerfile
 
         cd hf
