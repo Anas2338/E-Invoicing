@@ -45,7 +45,7 @@ jobs:
         cp -r backend/src hf/backend/
 
         # Copy HF-specific Dockerfile to root
-        cp ai-agent/Dockerfile.hf hf/Dockerfile
+        cp ai-agent/Dockerfile hf/Dockerfile
 
         cd hf
         git add .
