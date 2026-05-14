@@ -40,6 +40,12 @@ const nextConfig = {
     const isDevelopment = process.env.NODE_ENV === 'development';
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8001';
 
+    // Extract AI agent origin for CSP (CSP path matching can fail with proxies/redirects)
+    const aiAgentUrl = process.env.NEXT_PUBLIC_AI_AGENT_API_URL || 'http://localhost:8002/api/v1';
+    const aiAgentOrigin = (() => {
+      try { return new URL(aiAgentUrl).origin; } catch { return aiAgentUrl; }
+    })();
+
     // CSP directives
     const cspDirectives = [
       "default-src 'self'",
@@ -48,7 +54,7 @@ const nextConfig = {
       "img-src 'self' data: https:",
       "font-src 'self' data:",
       "media-src 'self' data:", // Allow audio/video data URIs
-      `connect-src 'self' https://localhost:8001 http://localhost:8001 https://localhost:8002 http://localhost:8002 ${backendUrl} ${process.env.NEXT_PUBLIC_AI_AGENT_API_URL || 'http://localhost:8002/api/v1'}`, // API connections to both backends
+      `connect-src 'self' https://localhost:8001 http://localhost:8001 https://localhost:8002 http://localhost:8002 ${backendUrl} ${aiAgentOrigin}`, // API connections to both backends
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
