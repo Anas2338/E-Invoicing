@@ -37,7 +37,6 @@ jobs:
         cp ai-agent/health_server.py hf/
         cp ai-agent/pyproject.toml hf/
         cp ai-agent/uv.lock hf/
-        cp ai-agent/.env.example hf/
         cp -r ai-agent/skills hf/ 2>/dev/null || true
 
         # Copy backend/src (required for imports)
