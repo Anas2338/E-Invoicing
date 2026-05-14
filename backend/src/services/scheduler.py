@@ -62,10 +62,10 @@ async def auto_posting_job():
 
             # Process each eligible user
             for user in eligible_users:
-                # Get eligible invoices (VALIDATED or TRANSFERRED status)
+                # Get eligible invoices (VALIDATED status includes transferred-from-automation)
                 invoices = db.query(Invoice).filter(
                     Invoice.user_id == user.id,
-                    Invoice.status.in_([InvoiceStatus.VALIDATED, InvoiceStatus.TRANSFERRED]),
+                    Invoice.status == InvoiceStatus.VALIDATED,
                     Invoice.is_deleted == False
                 ).order_by(Invoice.created_at).limit(user.auto_posting_daily_limit).all()
 

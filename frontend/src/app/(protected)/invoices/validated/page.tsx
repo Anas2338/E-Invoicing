@@ -10,7 +10,6 @@ import { ArrowLeft } from 'lucide-react';
 
 interface Invoice {
   id: string;
-  source: 'manual' | 'automated';
   invoiceNumber: string;
   date: string;
   buyerName: string;

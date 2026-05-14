@@ -186,8 +186,14 @@ def login_user(request: Request, user_login: UserLogin, db: Session = Depends(ge
             "automation_enabled": user.automation_enabled
         }
 
-        # Create response with httpOnly cookie and CSRF token in body for cross-origin support
-        response = JSONResponse(content={"user": user_profile, "csrf_token": csrf_token})
+        # Create response with httpOnly cookie, access token in body, and CSRF token for cross-origin support
+        # access_token is included in the body so the frontend can send it as Authorization header
+        # when calling other services (AI-agent) on different ports
+        response = JSONResponse(content={
+            "user": user_profile,
+            "access_token": access_token,
+            "csrf_token": csrf_token,
+        })
 
         # SECURITY: Use secure cookies with SameSite=None for cross-origin support
         # Required for Vercel frontend + Hugging Face backend deployment
@@ -377,21 +383,9 @@ def register_user(request: Request, user_create: UserCreate, db: Session = Depen
         db.commit()
         db.refresh(new_user)
 
-        # Send notification email to admin
-        try:
-            from src.utils.email_utils import send_admin_notification_email
-            send_admin_notification_email(
-                user_email=new_user.email,
-                user_name=new_user.name or "N/A",
-                user_id=str(new_user.id)
-            )
-        except Exception as e:
-            # Log error but don't fail registration
-            print(f"Failed to send admin notification: {str(e)}")
-
         # Return success message without token (user cannot login until approved)
         return {
-            "message": "Registration successful! Your account is pending admin approval. You will receive an email once your account is approved.",
+            "message": "Registration successful! Your account is pending admin approval. Please contact your administrator.",
             "email": new_user.email,
             "status": "pending_approval"
         }

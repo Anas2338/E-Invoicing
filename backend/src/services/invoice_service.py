@@ -473,24 +473,28 @@ class InvoiceService:
             # Calculate total amount from items
             total_amount = sum(item.get('total_values', 0) for item in invoice.items) if invoice.items else 0
 
+            # Normalize TRANSFERRED to VALIDATED — transferred invoices are validated
+            normalized_status = invoice.status
+            if invoice.status == InvoiceStatus.TRANSFERRED:
+                normalized_status = InvoiceStatus.VALIDATED
+
             unified_invoices.append({
                 "id": invoice.id,
-                "source": invoice.source,  # "manual" or "automation"
+                "source": "manual",  # Always "manual" — automation source is hidden
                 "invoice_number": invoice.external_id,
                 "invoice_type": invoice.invoice_type,
                 "invoice_date": invoice.invoice_date,
                 "buyer_business_name": invoice.buyer_business_name,
                 "seller_business_name": invoice.seller_business_name,
                 "total_amount": total_amount,
-                "status": invoice.status,
+                "status": normalized_status,
                 "created_at": invoice.created_at,
-                "transferred_at": invoice.transferred_at,  # Shows when automation invoice was transferred
                 "environment": invoice.environment if invoice.environment else None,
-                "income_tax": invoice.income_tax if invoice.income_tax else "236G",  # For local filtering only, not sent to FBR
+                "income_tax": invoice.income_tax if invoice.income_tax else "236G",
                 "scheduled_date": None,
                 "scheduled_time": None
             })
 
-        logger.info(f"Retrieved {len(unified_invoices)} invoices for user {user_id} (total: {total}, source: {source or 'all'})")
+        logger.info(f"Retrieved {len(unified_invoices)} invoices for user {user_id} (total: {total})")
 
         return unified_invoices, total

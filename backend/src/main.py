@@ -13,14 +13,12 @@ from src.api.v1.fbr_integration import router as fbr_integration_router
 from src.api.v1.auth import router as auth_router
 from src.api.v1.masterdata import router as masterdata_router
 from src.api.v1.fbr_reference import router as fbr_reference_router
-from src.api.v1.password_reset import router as password_reset_router
 from src.api.v1.admin_users import router as admin_users_router
 from src.api.v1.admin_sync import router as admin_sync_router
 from src.api.v1.notifications import router as notifications_router
 from src.api.v1.saved_products import router as saved_products_router
 from src.api.v1.user_profile import router as user_profile_router
 from src.api.v1.dashboard import router as dashboard_router
-from src.api.v1.automation import router as automation_router
 
 # Import middleware
 from src.api.middleware.auth_middleware import AuthMiddleware
@@ -120,14 +118,12 @@ app.include_router(fbr_integration_router, prefix="/api/v1/fbr", tags=["fbr-inte
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(masterdata_router, prefix="/api/v1/masterdata", tags=["masterdata"])
 app.include_router(fbr_reference_router, prefix="/api/v1/fbr-reference", tags=["fbr-reference"])
-app.include_router(password_reset_router, prefix="/api/v1/password-reset", tags=["password-reset"])
 app.include_router(admin_users_router, prefix="/api/v1/admin", tags=["admin"])
 app.include_router(admin_sync_router, prefix="/api/v1/admin", tags=["admin-sync"])
 app.include_router(notifications_router, prefix="/api/v1/notifications", tags=["notifications"])
 app.include_router(saved_products_router, prefix="/api/v1/profile", tags=["saved-products"])
 app.include_router(user_profile_router, prefix="/api/v1", tags=["user-profile"])
 app.include_router(dashboard_router, prefix="/api/v1/dashboard", tags=["dashboard"])
-app.include_router(automation_router, prefix="/api/v1", tags=["automation"])
 
 @app.get("/")
 def read_root():

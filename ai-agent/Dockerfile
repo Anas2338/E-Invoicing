@@ -1,67 +1,77 @@
-# Multi-stage build for AI Agent
-# Build context: project root (E-Invoicing/)
-# Build command: docker build -f ai-agent/Dockerfile -t e-invoicing-ai-agent:v1 .
+# Multi-stage build for AI-Agent Automation Service
+# Build command: docker build -t e-invoicing-ai-agent:v1 .
 
 # Stage 1: Builder - Install dependencies
 FROM python:3.11-alpine AS builder
 
-# Install build dependencies and uv
-RUN apk add --no-cache gcc musl-dev libffi-dev postgresql-dev
+WORKDIR /app
+
+# Install build dependencies
+RUN apk add --no-cache \
+    gcc \
+    musl-dev \
+    postgresql-dev \
+    libffi-dev \
+    openssl-dev \
+    cargo \
+    rust
+
+# Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Set working directory
-WORKDIR /build
+# Copy dependency files
+COPY pyproject.toml uv.lock ./
 
-# Copy ai-agent dependency files
-COPY ai-agent/pyproject.toml ai-agent/uv.lock ./
+# Install dependencies with uv (no cache, no dev dependencies)
+RUN uv sync --no-cache --no-dev --no-install-project
 
-# Install dependencies to a virtual environment
-RUN uv sync --frozen --no-dev --no-install-project
+# Cleanup
+RUN find /app/.venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
+    find /app/.venv -type f -name "*.pyc" -delete 2>/dev/null || true && \
+    find /app/.venv -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
+    find /app/.venv -type d -name "test" -exec rm -rf {} + 2>/dev/null || true && \
+    find /app/.venv -type f -name "*.md" -delete 2>/dev/null || true && \
+    find /app/.venv -type d -name "docs" -exec rm -rf {} + 2>/dev/null || true
 
 # Stage 2: Runtime - Minimal production image
 FROM python:3.11-alpine
 
+WORKDIR /app
+
 # Install runtime dependencies only
-RUN apk add --no-cache libpq libstdc++ && \
+RUN apk add --no-cache \
+    libpq \
+    libffi \
+    openssl \
+    libmagic && \
     rm -rf /var/cache/apk/*
 
 # Create non-root user
-RUN addgroup -g 1000 agent && \
-    adduser -D -u 1000 -G agent agent
-
-# Set working directory to match expected structure
-WORKDIR /app
-
-# Copy uv binary for runtime execution
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
-# Copy virtual environment from builder
-COPY --from=builder --chown=agent:agent /build/.venv /app/ai-agent/.venv
-
-# Copy backend src directory (required for imports)
-COPY --chown=agent:agent backend/src /app/backend/src
-
-# Copy ai-agent application code
-COPY --chown=agent:agent ai-agent/*.py /app/ai-agent/
-COPY --chown=agent:agent ai-agent/skills /app/ai-agent/skills
-
-# Create logs directory
-RUN mkdir -p /app/ai-agent/logs && chown -R agent:agent /app/ai-agent
-
-# Switch to non-root user
-USER agent
-
-# Set working directory to ai-agent
-WORKDIR /app/ai-agent
+RUN adduser -D -u 1000 appuser
 
 # Environment variables
-ENV PATH="/app/ai-agent/.venv/bin:$PATH" \
+ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONOPTIMIZE=2
 
-# Health check - verify agent heartbeat file is recent
-HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
-    CMD python -c "from pathlib import Path; import sys; from datetime import datetime, timedelta; heartbeat = Path('/tmp/agent_heartbeat.txt'); sys.exit(0 if heartbeat.exists() and (datetime.now() - datetime.fromtimestamp(heartbeat.stat().st_mtime)) < timedelta(minutes=10) else 1)"
+# Copy virtual environment from builder
+COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
 
-# Run the agent with uv
-CMD ["uv", "run", "python", "main.py"]
+# Copy application code and migration files
+COPY --chown=appuser:appuser src/ ./src/
+COPY --chown=appuser:appuser alembic/ ./alembic/
+COPY --chown=appuser:appuser assets/ ./assets/
+
+# Switch to non-root user
+USER appuser
+
+# Expose port
+EXPOSE 7860
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:7860/api/v1/docs')" || exit 1
+
+# Run the application
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "7860"]

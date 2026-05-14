@@ -13,7 +13,6 @@ class Settings(BaseSettings):
 
     # Database settings
     database_url: str = Field(default="postgresql://localhost/fbr_invoices", validation_alias="DATABASE_URL")
-    automation_database_url: str = Field(default="postgresql://localhost/fbr_automation", validation_alias="AUTOMATION_DATABASE_URL")
 
     # Authentication settings
     auth_jwt_secret: str = Field(validation_alias="AUTH_JWT_SECRET")
@@ -60,21 +59,21 @@ class Settings(BaseSettings):
         """Validate encryption key strength - required for encrypting sensitive data."""
         if not v:
             raise ValueError(
-                "ENCRYPTION_KEY not set. Generate with: openssl rand -base64 44"
+                "ENCRYPTION_KEY not set. Generate with: openssl rand -base64 32"
             )
 
         # Ensure sufficient length for AES-256 encryption
         if len(v) < 32:
             raise ValueError(
                 "ENCRYPTION_KEY must be at least 32 characters. "
-                "Generate with: openssl rand -base64 44"
+                "Generate with: openssl rand -base64 32"
             )
 
         # Additional entropy check
         if len(set(v)) < 10:
             raise ValueError(
                 "ENCRYPTION_KEY has insufficient entropy. "
-                "Generate a cryptographically secure key with: openssl rand -base64 44"
+                "Generate a cryptographically secure key with: openssl rand -base64 32"
             )
 
         return v
@@ -85,20 +84,7 @@ class Settings(BaseSettings):
     fbr_api_key: str = Field(default="", validation_alias="FBR_API_KEY")
     fbr_client_id: str = Field(default="", validation_alias="FBR_CLIENT_ID")
 
-    # AI Agent settings
-    anthropic_api_key: str = Field(default="", validation_alias="ANTHROPIC_API_KEY")
-
-    # Transfer Configuration (Pakistan Time - PKT is UTC+5)
-    transfer_schedule_hour: int = Field(default=18, validation_alias="TRANSFER_SCHEDULE_HOUR")
-    transfer_schedule_minute: int = Field(default=0, validation_alias="TRANSFER_SCHEDULE_MINUTE")
-
-    # Cleanup Configuration
-    cleanup_schedule_hour: int = Field(default=2, validation_alias="CLEANUP_SCHEDULE_HOUR")
-    cleanup_schedule_minute: int = Field(default=0, validation_alias="CLEANUP_SCHEDULE_MINUTE")
-    cleanup_retention_days: int = Field(default=2, validation_alias="CLEANUP_RETENTION_DAYS")
-    automation_log_retention_days: int = Field(default=90, validation_alias="AUTOMATION_LOG_RETENTION_DAYS")
-
-    # Additional application settings
+    # Application settings
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
     max_invoice_size: int = Field(default=1048576, validation_alias="MAX_INVOICE_SIZE")  # 1MB in bytes
 
@@ -110,12 +96,6 @@ class Settings(BaseSettings):
 
     # CORS settings - accepts JSON array, comma-separated string, or single URL
     allowed_origins: Union[List[str], str] = Field(default="http://localhost:3000", validation_alias="ALLOWED_ORIGINS")
-
-    # Email settings (Resend)
-    resend_api_key: str = Field(default="", validation_alias="RESEND_API_KEY")
-    email_from_address: str = Field(default="noreply@yourdomain.com", validation_alias="EMAIL_FROM_ADDRESS")
-    email_from_name: str = Field(default="E-Invoicing Portal", validation_alias="EMAIL_FROM_NAME")
-    frontend_url: str = Field(default="http://localhost:3000", validation_alias="FRONTEND_URL")
 
     @field_validator('allowed_origins', mode='before')
     @classmethod

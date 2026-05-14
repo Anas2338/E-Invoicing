@@ -12,7 +12,6 @@ from pydantic import BaseModel
 from src.database.session import get_db
 from src.models.user import User
 from src.middleware.rbac import require_admin
-from src.utils.email_utils import send_approval_email, send_rejection_email
 
 
 logger = logging.getLogger(__name__)
@@ -142,12 +141,6 @@ def approve_user(
         db.commit()
         db.refresh(user)
 
-        # Send approval email to user
-        try:
-            send_approval_email(user.email, user.name or "User")
-        except Exception as e:
-            print(f"Failed to send approval email: {str(e)}")
-
         return {
             "success": True,
             "message": f"User {user.email} has been approved",
@@ -209,12 +202,6 @@ def reject_user(
         db.add(user)
         db.commit()
         db.refresh(user)
-
-        # Send rejection email to user
-        try:
-            send_rejection_email(user.email, user.name or "User", reason)
-        except Exception as e:
-            print(f"Failed to send rejection email: {str(e)}")
 
         return {
             "success": True,
@@ -400,10 +387,19 @@ def update_user_fbr_tokens(
             if credentials.fbr_production_token and credentials.fbr_production_token.strip():
                 # Encrypt the token before storing
                 user.fbr_production_token = encryption_service.encrypt(credentials.fbr_production_token.strip())
+                # Grant production access when a production token is set
+                if not user.approval_flags:
+                    user.approval_flags = {}
+                user.approval_flags["has_production_access"] = True
+                user.approval_flags["can_post_to_production"] = True
                 logger.info(f"Admin updated encrypted production token for user {user.email}")
             else:
                 # Empty string means delete the token
                 user.fbr_production_token = None
+                # Revoke production access when the production token is removed
+                if user.approval_flags:
+                    user.approval_flags["has_production_access"] = False
+                    user.approval_flags["can_post_to_production"] = False
                 logger.info(f"Admin cleared production token for user {user.email}")
 
         db.add(user)

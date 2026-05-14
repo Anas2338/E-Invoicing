@@ -1,17 +1,69 @@
 [project]
-name = "ai-agent"
+name = "fbr-ai-agent-automation"
 version = "0.1.0"
-description = "AI Agent for autonomous invoice processing"
+description = "AI-Agent standalone service for FBR Invoice Automation (future-date Excel uploads)"
+readme = "README.md"
 requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "Development Team", email = "dev@example.com" }
+]
+keywords = ["fbr", "invoice", "automation", "fastapi", "sqlmodel"]
+
 dependencies = [
-    "anthropic>=0.18.0",
-    "apscheduler>=3.10.0",
+    "fastapi[standard]>=0.115.0",
     "sqlmodel>=0.0.23",
+    "uvicorn>=0.32.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.6.0",
     "httpx>=0.28.0",
     "psycopg2-binary>=2.9.10",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "alembic>=1.15.0",
     "python-dotenv>=1.0.0",
-    "google-genai>=0.2.0",
-    "pydantic-settings>=2.0.0",
-    "fastapi>=0.115.0",
-    "uvicorn>=0.32.0",
+    "pandas>=2.2.0",
+    "openpyxl>=3.1.0",
+    "apscheduler>=3.10.0",
+    "slowapi>=0.1.9",
+    "anthropic>=0.18.0",
+    "reportlab>=4.0.0",
+    "qrcode>=7.4.2",
+    "pillow>=10.0.0",
+    "cryptography>=46.0.4",
+    "python-magic>=0.4.27",
+    "python-magic-bin>=0.4.14; sys_platform == 'win32'",
+    "fastapi-csrf-protect>=0.3.4",
+    "pytz>=2024.1",
+    "psutil>=7.2.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "httpx>=0.25.2",
+]
+test = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "httpx>=0.25.2",
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "pytest-cov>=7.1.0",
+    "pytest-mock>=3.15.1",
+    "httpx>=0.28.1",
 ]

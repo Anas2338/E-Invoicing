@@ -3,6 +3,9 @@ TransferService: Transfers validated automation invoices to the main database.
 
 Handles data transformation from AutomationInvoice (JSON-based) to the
 structured Invoice model, duplicate detection, and error classification.
+
+All automation traces are hidden — transferred invoices appear identical
+to manually created invoices (source="manual", normal status flow).
 """
 import logging
 from typing import Any
@@ -24,8 +27,11 @@ class TransferService:
         """
         Transform an AutomationInvoice into a main Invoice model.
 
-        The automation invoice stores all FBR fields in a JSON `invoice_data` column.
-        This method maps that flat dict to the structured Invoice ORM model.
+        Automation traces are hidden:
+        - source set to "manual" (indistinguishable from manual invoices)
+        - status set to VALIDATED (already validated before transfer)
+        - automation_invoice_id stored for duplicate detection but hidden from API
+        - transferred_at left as None
         """
         data: dict[str, Any] = automation_invoice.invoice_data or {}
 
@@ -49,10 +55,11 @@ class TransferService:
             income_tax=data.get("income_tax", "236G"),
             items=data.get("items", []),
             environment=Environment(data.get("environment", "SANDBOX")),
-            status=InvoiceStatus.TRANSFERRED,
-            source="automation",
-            automation_invoice_id=automation_invoice.id,
-            transferred_at=datetime.utcnow(),
+            status=InvoiceStatus.VALIDATED,
+            validated_at=datetime.utcnow(),
+            source="manual",
+            automation_invoice_id=automation_invoice.id,  # Stored for duplicate detection, hidden from API
+            transferred_at=None,
         )
         return invoice
 

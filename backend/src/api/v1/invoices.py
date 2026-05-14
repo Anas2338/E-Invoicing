@@ -8,12 +8,12 @@ import logging
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from src.database.session import get_db, get_automation_db
+from src.database.session import get_db
 from src.services.invoice_service import InvoiceService
 from src.services.fbr_service import fbr_service
 from src.services.auto_posting_service import AutoPostingService
 from src.services.pdf_service import PDFService
-from src.services.excel_service import ExcelService
+from src.utils.manual_excel_helper import generate_manual_excel_template, parse_excel_for_manual_invoice
 from src.schemas.invoice import (
     InvoiceCreate, InvoiceResponse, InvoiceUpdate, InvoiceListResponse,
     InvoiceFilter, UnifiedInvoiceListResponse
@@ -82,15 +82,11 @@ def create_invoice(
         posted_at=db_invoice.posted_at,
         fbr_reference_number=db_invoice.fbr_reference_number,
         validation_errors=db_invoice.validation_errors,
-        source=db_invoice.source,
-        transferred_at=db_invoice.transferred_at,
-        automation_invoice_id=db_invoice.automation_invoice_id
     )
 
 
 @router.get("/excel/template/download")
 def download_manual_excel_template(
-    db = Depends(get_automation_db),
     user_id: str = Depends(require_authentication)
 ):
     """
@@ -98,8 +94,7 @@ def download_manual_excel_template(
     Template includes income_tax column (236G/236H).
     Does NOT include scheduled_date/scheduled_time (those are automation-only).
     """
-    excel_service = ExcelService(db)
-    template_file = excel_service.generate_manual_excel_template()
+    template_file = generate_manual_excel_template()
 
     return StreamingResponse(
         template_file,
@@ -116,7 +111,6 @@ async def upload_manual_excel(
     request: Request,
     file: Annotated[UploadFile, File(...)],
     db = Depends(get_database_session),
-    automation_db = Depends(get_automation_db),
     user_id: str = Depends(require_authentication)
 ):
     """
@@ -157,9 +151,8 @@ async def upload_manual_excel(
     file_bytes.seek(0)
 
     # Parse Excel file for manual invoices
-    excel_service = ExcelService(automation_db)
     try:
-        invoice_data_list = excel_service.parse_excel_for_manual_invoice(file_bytes, user_uuid, db)
+        invoice_data_list = parse_excel_for_manual_invoice(file_bytes, user_uuid, db)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -436,6 +429,11 @@ def get_invoice(
             detail="Invoice not found"
         )
 
+    # Normalize TRANSFERRED to VALIDATED (transferred invoices are validated)
+    display_status = db_invoice.status
+    if display_status == InvoiceStatus.TRANSFERRED:
+        display_status = InvoiceStatus.VALIDATED
+
     # Convert to response model
     return InvoiceResponse(
         id=db_invoice.id,
@@ -457,16 +455,14 @@ def get_invoice(
         scenario_id=db_invoice.scenario_id,
         items=db_invoice.items,
         environment=db_invoice.environment,
-        status=db_invoice.status,
+        status=display_status,
         created_at=db_invoice.created_at,
         updated_at=db_invoice.updated_at,
         validated_at=db_invoice.validated_at,
         posted_at=db_invoice.posted_at,
         fbr_reference_number=db_invoice.fbr_reference_number,
         validation_errors=db_invoice.validation_errors,
-        source=db_invoice.source,
-        transferred_at=db_invoice.transferred_at,
-        automation_invoice_id=db_invoice.automation_invoice_id
+        # Automation source fields omitted
     )
 
 
@@ -493,7 +489,7 @@ def list_invoices(
     # Calculate pagination info
     total_pages = (total_count + filters.size - 1) // filters.size
 
-    # Convert to response models
+    # Convert to response models (normalizing TRANSFERRED to VALIDATED)
     invoice_responses = [
         InvoiceResponse(
             id=inv.id,
@@ -515,16 +511,14 @@ def list_invoices(
             scenario_id=inv.scenario_id,
             items=inv.items,
             environment=inv.environment,
-            status=inv.status,
+            status=InvoiceStatus.VALIDATED if inv.status == InvoiceStatus.TRANSFERRED else inv.status,
             created_at=inv.created_at,
             updated_at=inv.updated_at,
             validated_at=inv.validated_at,
             posted_at=inv.posted_at,
             fbr_reference_number=inv.fbr_reference_number,
             validation_errors=inv.validation_errors,
-            source=inv.source,
-            transferred_at=inv.transferred_at,
-            automation_invoice_id=inv.automation_invoice_id
+            # Automation source fields omitted
         )
         for inv in invoices
     ]
@@ -598,9 +592,7 @@ async def update_invoice(
         posted_at=updated_invoice.posted_at,
         fbr_reference_number=updated_invoice.fbr_reference_number,
         validation_errors=updated_invoice.validation_errors,
-        source=updated_invoice.source,
-        transferred_at=updated_invoice.transferred_at,
-        automation_invoice_id=updated_invoice.automation_invoice_id
+        # Automation source fields omitted
     )
 
 
@@ -728,9 +720,7 @@ def update_invoice_status(
         posted_at=updated_invoice.posted_at,
         fbr_reference_number=updated_invoice.fbr_reference_number,
         validation_errors=updated_invoice.validation_errors,
-        source=updated_invoice.source,
-        transferred_at=updated_invoice.transferred_at,
-        automation_invoice_id=updated_invoice.automation_invoice_id
+        # Automation source fields omitted
     )
 
 
@@ -861,9 +851,7 @@ async def validate_invoice_with_fbr(
                     posted_at=updated_invoice.posted_at,
                     fbr_reference_number=updated_invoice.fbr_reference_number,
                     validation_errors=updated_invoice.validation_errors,
-                    source=updated_invoice.source,
-                    transferred_at=updated_invoice.transferred_at,
-                    automation_invoice_id=updated_invoice.automation_invoice_id
+                    # Automation source fields omitted
                 ),
                 "fbr_response": fbr_response
             }
@@ -1023,9 +1011,7 @@ async def post_invoice_to_fbr(
                     posted_at=invoice.posted_at,
                     fbr_reference_number=invoice.fbr_reference_number,
                     validation_errors=invoice.validation_errors,
-                    source=invoice.source,
-                    transferred_at=invoice.transferred_at,
-                    automation_invoice_id=invoice.automation_invoice_id
+                    # Automation source fields omitted
                 ),
                 "fbr_response": fbr_response
             }
@@ -1079,11 +1065,11 @@ async def manual_post_to_fbr(
             detail="Invoice not found"
         )
 
-    # Check if invoice is in TRANSFERRED status
-    if invoice.status != InvoiceStatus.TRANSFERRED:
+    # Check if invoice is in VALIDATED status
+    if invoice.status != InvoiceStatus.VALIDATED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invoice must be in TRANSFERRED status to post. Current status: {invoice.status}"
+            detail=f"Invoice must be in VALIDATED status to post. Current status: {invoice.status}"
         )
 
     # Get user

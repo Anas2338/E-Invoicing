@@ -13,7 +13,6 @@ import { toast } from 'react-toastify';
 
 interface Invoice {
   id: string;
-  source: 'manual' | 'automated';
   invoiceNumber: string;
   date: string;
   buyerName: string;
@@ -66,9 +65,11 @@ export default function InvoiceHistoryPage() {
     { value: 'all', label: 'All' },
     { value: 'DRAFT', label: 'Draft' },
     { value: 'VALIDATED', label: 'Validated' },
+    { value: 'TRANSFERRED', label: 'Transferred' },
     { value: 'POSTED', label: 'Posted' },
     { value: 'FAILED', label: 'Failed' },
   ];
+
 
   const incomeTaxOptions = [
     { value: 'all', label: 'All' },
@@ -100,7 +101,6 @@ export default function InvoiceHistoryPage() {
       const transformedInvoices: Invoice[] = response.invoices
         .map((invoice: any) => ({
           id: invoice.id,
-          source: invoice.source,
           invoiceNumber: invoice.invoice_number || 'N/A',
           date: invoice.invoice_date || new Date(invoice.created_at).toISOString().split('T')[0],
           buyerName: invoice.buyer_business_name || 'N/A',

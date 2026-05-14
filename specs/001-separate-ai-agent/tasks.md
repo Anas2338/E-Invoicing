@@ -23,12 +23,12 @@ Two backend services (`backend/` + `ai-agent/`) + one frontend (`frontend/`) per
 
 **Purpose**: Initialize the ai-agent/ directory structure, package configuration, and environment templates
 
-- [ ] T001 Create ai-agent/ top-level directory structure with all subdirectories: `ai-agent/src/`, `ai-agent/src/config/`, `ai-agent/src/database/`, `ai-agent/src/models/`, `ai-agent/src/schemas/`, `ai-agent/src/services/`, `ai-agent/src/api/v1/automation/`, `ai-agent/src/api/middleware/`, `ai-agent/src/middleware/`, `ai-agent/src/utils/`, `ai-agent/assets/`, `ai-agent/alembic/versions/`
-- [ ] T002 [P] Create `ai-agent/pyproject.toml` with uv-managed dependencies: fastapi, sqlmodel, sqlalchemy, pydantic-settings, uvicorn, httpx, psycopg2-binary, python-jose[cryptography], passlib[bcrypt], alembic, python-dotenv, pandas, openpyxl, apscheduler, slowapi, anthropic, reportlab, qrcode, pillow, cryptography, python-magic, python-magic-bin, fastapi-csrf-protect, pytz, psutil
-- [ ] T003 [P] Create `ai-agent/.env.example` with all required environment variables per quickstart.md (DATABASE_URL, AUTH_JWT_SECRET, ENCRYPTION_KEY, FBR_*, ANTHROPIC_API_KEY, ALLOWED_ORIGINS, CSRF_SECRET, schedule parameters)
-- [ ] T004 [P] Create `ai-agent/.gitignore` with Python/uv patterns (__pycache__, .venv, .env, *.pyc, uv.lock exception if committed)
-- [ ] T005 [P] Create `ai-agent/Dockerfile` with multi-stage build using uv for dependency installation and uvicorn runner
-- [ ] T006 [P] Create `ai-agent/alembic.ini` and `ai-agent/alembic/env.py` configured for the automation database
+- [x] T001 Create ai-agent/ top-level directory structure with all subdirectories: `ai-agent/src/`, `ai-agent/src/config/`, `ai-agent/src/database/`, `ai-agent/src/models/`, `ai-agent/src/schemas/`, `ai-agent/src/services/`, `ai-agent/src/api/v1/automation/`, `ai-agent/src/api/middleware/`, `ai-agent/src/middleware/`, `ai-agent/src/utils/`, `ai-agent/assets/`, `ai-agent/alembic/versions/`
+- [x] T002 [P] Create `ai-agent/pyproject.toml` with uv-managed dependencies: fastapi, sqlmodel, sqlalchemy, pydantic-settings, uvicorn, httpx, psycopg2-binary, python-jose[cryptography], passlib[bcrypt], alembic, python-dotenv, pandas, openpyxl, apscheduler, slowapi, anthropic, reportlab, qrcode, pillow, cryptography, python-magic, python-magic-bin, fastapi-csrf-protect, pytz, psutil
+- [x] T003 [P] Create `ai-agent/.env.example` with all required environment variables per quickstart.md (DATABASE_URL, AUTH_JWT_SECRET, ENCRYPTION_KEY, FBR_*, ANTHROPIC_API_KEY, ALLOWED_ORIGINS, CSRF_SECRET, schedule parameters)
+- [x] T004 [P] Create `ai-agent/.gitignore` with Python/uv patterns (__pycache__, .venv, .env, *.pyc, uv.lock exception if committed)
+- [x] T005 [P] Create `ai-agent/Dockerfile` with multi-stage build using uv for dependency installation and uvicorn runner
+- [x] T006 [P] Create `ai-agent/alembic.ini` and `ai-agent/alembic/env.py` configured for the automation database
 
 **Checkpoint**: ai-agent/ directory skeleton ready, dependencies installable via `uv sync`
 
@@ -40,17 +40,17 @@ Two backend services (`backend/` + `ai-agent/`) + one frontend (`frontend/`) per
 
 **⚠️ CRITICAL**: No user story work for US2/US3 can begin until this phase is complete
 
-- [ ] T007 Create `ai-agent/src/config/__init__.py` and `ai-agent/src/config/settings.py` — automation-specific Settings class using pydantic-settings with: automation_database_url, auth_jwt_secret (same secret as main backend), encryption_key, fbr_sandbox_base_url, fbr_production_base_url, fbr_api_key, fbr_client_id, anthropic_api_key, allowed_origins, csrf_secret, transfer_schedule_hour/minute, cleanup_schedule_hour/minute, cleanup_retention_days, automation_log_retention_days, dry_run, log_level, db_echo
-- [ ] T008 Create `ai-agent/src/database/__init__.py` and `ai-agent/src/database/session.py` — automation DB engine only: create SQLAlchemy engine from settings.automation_database_url with pool_pre_ping=True, pool_size=5, max_overflow=10, pool_recycle=300, pool_timeout=30, connect_timeout=60; import all automation models; create automation_metadata tables on startup; provide get_automation_db_session() context manager and get_automation_db() FastAPI dependency
-- [ ] T009 [P] Create `ai-agent/src/api/deps.py` — FastAPI dependencies: get_database_session() yielding automation DB session, get_pagination_params(skip=0, limit=100), get_current_user() placeholder
-- [ ] T010 [P] Copy `backend/src/api/middleware/auth_middleware.py` to `ai-agent/src/api/middleware/auth_middleware.py` — update all internal imports to use `ai-agent.src.*` paths; identical JWT validation logic using settings.auth_jwt_secret
-- [ ] T011 [P] Copy `backend/src/middleware/rbac.py` to `ai-agent/src/middleware/rbac.py` — update imports for ai-agent paths; keep require_automation_access dependency
-- [ ] T012 Copy `backend/src/middleware/csrf_middleware.py` to `ai-agent/src/middleware/csrf_middleware.py` (if separate file) or ensure CSRF configuration is included in ai-agent main.py middleware stack
-- [ ] T013 [P] Copy `backend/src/utils/secure_file_validator.py` to `ai-agent/src/utils/secure_file_validator.py` — update imports for ai-agent paths
-- [ ] T014 [P] Copy required utilities from `backend/src/utils/helpers.py` to `ai-agent/src/utils/helpers.py` — calculate_hash, validate_fbr_invoice_structure, and any other functions used by automation services
-- [ ] T015 Copy `backend/src/utils/error_handlers.py` to `ai-agent/src/utils/error_handlers.py` — update imports for ai-agent paths; StarletteHTTPException, RequestValidationError, generic Exception handlers
-- [ ] T016 [P] Copy `backend/src/utils/rate_limits.py` to `ai-agent/src/utils/rate_limits.py` — update imports for ai-agent paths; rate limit definitions used by automation endpoints
-- [ ] T017 Create `ai-agent/src/main.py` — FastAPI app with: title "FBR AI Agent - Invoice Automation Service", version "1.0.0", docs at /api/v1/docs; middleware stack (CORSMiddleware, SecurityHeadersMiddleware, RequestSizeLimitMiddleware, SessionTimeoutMiddleware, CSRFMiddleware, AuthMiddleware); include automation_router under prefix /api/v1 with tags ["automation"]; lifecycle events (on_startup: create automation DB tables, start automation scheduler; on_shutdown: stop scheduler); root / health endpoint returning service-specific status; CORS configured from settings.allowed_origins
+- [x] T007 Create `ai-agent/src/config/__init__.py` and `ai-agent/src/config/settings.py` — automation-specific Settings class using pydantic-settings with: automation_database_url, auth_jwt_secret (same secret as main backend), encryption_key, fbr_sandbox_base_url, fbr_production_base_url, fbr_api_key, fbr_client_id, anthropic_api_key, allowed_origins, csrf_secret, transfer_schedule_hour/minute, cleanup_schedule_hour/minute, cleanup_retention_days, automation_log_retention_days, dry_run, log_level, db_echo
+- [x] T008 Create `ai-agent/src/database/__init__.py` and `ai-agent/src/database/session.py` — automation DB engine only: create SQLAlchemy engine from settings.automation_database_url with pool_pre_ping=True, pool_size=5, max_overflow=10, pool_recycle=300, pool_timeout=30, connect_timeout=60; import all automation models; create automation_metadata tables on startup; provide get_automation_db_session() context manager and get_automation_db() FastAPI dependency
+- [x] T009 [P] Create `ai-agent/src/api/deps.py` — FastAPI dependencies: get_database_session() yielding automation DB session, get_pagination_params(skip=0, limit=100), get_current_user() placeholder
+- [x] T010 [P] Copy `backend/src/api/middleware/auth_middleware.py` to `ai-agent/src/api/middleware/auth_middleware.py` — update all internal imports to use `ai-agent.src.*` paths; identical JWT validation logic using settings.auth_jwt_secret
+- [x] T011 [P] Copy `backend/src/middleware/rbac.py` to `ai-agent/src/middleware/rbac.py` — update imports for ai-agent paths; keep require_automation_access dependency
+- [x] T012 Copy `backend/src/middleware/csrf_middleware.py` to `ai-agent/src/middleware/csrf_middleware.py` (if separate file) or ensure CSRF configuration is included in ai-agent main.py middleware stack
+- [x] T013 [P] Copy `backend/src/utils/secure_file_validator.py` to `ai-agent/src/utils/secure_file_validator.py` — update imports for ai-agent paths
+- [x] T014 [P] Copy required utilities from `backend/src/utils/helpers.py` to `ai-agent/src/utils/helpers.py` — calculate_hash, validate_fbr_invoice_structure, and any other functions used by automation services
+- [x] T015 Copy `backend/src/utils/error_handlers.py` to `ai-agent/src/utils/error_handlers.py` — update imports for ai-agent paths; StarletteHTTPException, RequestValidationError, generic Exception handlers
+- [x] T016 [P] Copy `backend/src/utils/rate_limits.py` to `ai-agent/src/utils/rate_limits.py` — update imports for ai-agent paths; rate limit definitions used by automation endpoints
+- [x] T017 Create `ai-agent/src/main.py` — FastAPI app with: title "FBR AI Agent - Invoice Automation Service", version "1.0.0", docs at /api/v1/docs; middleware stack (CORSMiddleware, SecurityHeadersMiddleware, RequestSizeLimitMiddleware, SessionTimeoutMiddleware, CSRFMiddleware, AuthMiddleware); include automation_router under prefix /api/v1 with tags ["automation"]; lifecycle events (on_startup: create automation DB tables, start automation scheduler; on_shutdown: stop scheduler); root / health endpoint returning service-specific status; CORS configured from settings.allowed_origins
 
 **Checkpoint**: AI-agent starts on port 8002 with `uv run uvicorn src.main:app --port 8002`, health endpoint responds, middleware active
 
@@ -64,20 +64,20 @@ Two backend services (`backend/` + `ai-agent/`) + one frontend (`frontend/`) per
 
 ### Implementation for User Story 1
 
-- [ ] T018 [US1] Remove `from src.api.v1.automation import router as automation_router` and `app.include_router(automation_router, ...)` from `backend/src/main.py`
-- [ ] T019 [P] [US1] Remove automation engine creation (automation_engine) from `backend/src/database/session.py`: delete lines creating automation_engine from settings.automation_database_url, delete automation model imports (AutomationInvoice, AutomationLog, ExcelUploadSession, AIAgentHealthCheck), delete automation_metadata import, delete automation_metadata.create_all() call, delete get_automation_db_session() function, delete get_automation_db() function
-- [ ] T020 [P] [US1] Delete the entire `backend/src/api/v1/automation/` directory (all 7 route files: `__init__.py`, excel.py, dashboard.py, retry.py, health.py, agent_status.py, file_management.py, pdf.py)
-- [ ] T021 [P] [US1] Delete 5 automation model files from `backend/src/models/`: automation_base.py, automation_invoice.py, automation_log.py, ai_agent_health_check.py, excel_upload_session.py
-- [ ] T022 [P] [US1] Delete 4 automation schema files from `backend/src/schemas/`: automation.py, agent.py, excel.py, file_management.py
-- [ ] T023 [P] [US1] Delete 4 automation service files from `backend/src/services/`: automation_service.py, excel_service.py, file_management_service.py, background_validation_service.py
-- [ ] T024 [P] [US1] Delete `backend/src/utils/excel_validator.py` (moves to ai-agent/)
-- [ ] T025 [P] [US1] Remove automation-related settings from `backend/src/config/settings.py`: automation_database_url, transfer_schedule_hour, transfer_schedule_minute, cleanup_schedule_hour, cleanup_schedule_minute, cleanup_retention_days, automation_log_retention_days, anthropic_api_key (if only used by automation)
-- [ ] T026 [US1] Fix manual Excel upload in `backend/src/api/v1/invoices.py`: remove `from src.database.session import get_automation_db` import; extract manual-only Excel methods into `backend/src/utils/manual_excel_helper.py` containing `generate_manual_excel_template()` (creates Excel with manual columns, no scheduled_date/time) and `parse_excel_for_manual_invoice()` (parses Excel rows, validates dates are past/today, auto-populates from saved items); update the `/excel/template/download` endpoint to use ManualExcelHelper instead of ExcelService(automation_db); update `/excel/upload` endpoint to remove automation_db dependency, use ManualExcelHelper for parsing
-- [ ] T027 [US1] Audit `backend/src/api/v1/invoices.py` for remaining automation references: verify `automation_invoice_id` is properly nullable in InvoiceResponse (already nullable in model), verify unified-history endpoint returns only manual invoices (no automation DB join), verify no other imports from automation modules remain
-- [ ] T028 [US1] Remove automation-related alembic migration files from `backend/alembic/versions/`: a1b2c3d4e5f6_*, 5a391983efbf_*, ac863f48f1f9_*, c942623196b2_*, eb8c6704d50a_*, f038b6c5a63d_*, 20260424_002816_*
-- [ ] T029 [US1] Verify `backend/src/models/__init__.py` — confirm no automation models in __all__ (already excluded per current code), no changes needed
-- [ ] T030 [US1] Verify `backend/src/models/user.py` — confirm `automation_enabled` column remains (flag controls frontend UI access, not automation logic); this is a user attribute, not automation code
-- [ ] T031 [US1] Run backend startup validation: `cd backend && uv run uvicorn src.main:app --port 8001` — confirm app starts without import errors, all non-automation routers load, scheduler starts
+- [x] T018 [US1] Remove `from src.api.v1.automation import router as automation_router` and `app.include_router(automation_router, ...)` from `backend/src/main.py`
+- [x] T019 [P] [US1] Remove automation engine creation (automation_engine) from `backend/src/database/session.py`: delete lines creating automation_engine from settings.automation_database_url, delete automation model imports (AutomationInvoice, AutomationLog, ExcelUploadSession, AIAgentHealthCheck), delete automation_metadata import, delete automation_metadata.create_all() call, delete get_automation_db_session() function, delete get_automation_db() function
+- [x] T020 [P] [US1] Delete the entire `backend/src/api/v1/automation/` directory (all 7 route files: `__init__.py`, excel.py, dashboard.py, retry.py, health.py, agent_status.py, file_management.py, pdf.py)
+- [x] T021 [P] [US1] Delete 5 automation model files from `backend/src/models/`: automation_base.py, automation_invoice.py, automation_log.py, ai_agent_health_check.py, excel_upload_session.py
+- [x] T022 [P] [US1] Delete 4 automation schema files from `backend/src/schemas/`: automation.py, agent.py, excel.py, file_management.py
+- [x] T023 [P] [US1] Delete 4 automation service files from `backend/src/services/`: automation_service.py, excel_service.py, file_management_service.py, background_validation_service.py
+- [x] T024 [P] [US1] Delete `backend/src/utils/excel_validator.py` (moves to ai-agent/)
+- [x] T025 [P] [US1] Remove automation-related settings from `backend/src/config/settings.py`: automation_database_url, transfer_schedule_hour, transfer_schedule_minute, cleanup_schedule_hour, cleanup_schedule_minute, cleanup_retention_days, automation_log_retention_days, anthropic_api_key (if only used by automation)
+- [x] T026 [US1] Fix manual Excel upload in `backend/src/api/v1/invoices.py`: remove `from src.database.session import get_automation_db` import; extract manual-only Excel methods into `backend/src/utils/manual_excel_helper.py` containing `generate_manual_excel_template()` (creates Excel with manual columns, no scheduled_date/time) and `parse_excel_for_manual_invoice()` (parses Excel rows, validates dates are past/today, auto-populates from saved items); update the `/excel/template/download` endpoint to use ManualExcelHelper instead of ExcelService(automation_db); update `/excel/upload` endpoint to remove automation_db dependency, use ManualExcelHelper for parsing
+- [x] T027 [US1] Audit `backend/src/api/v1/invoices.py` for remaining automation references: verify `automation_invoice_id` is properly nullable in InvoiceResponse (already nullable in model), verify unified-history endpoint returns only manual invoices (no automation DB join), verify no other imports from automation modules remain
+- [x] T028 [US1] Remove automation-related alembic migration files from `backend/alembic/versions/`: a1b2c3d4e5f6_*, 5a391983efbf_*, ac863f48f1f9_*, c942623196b2_*, eb8c6704d50a_*, f038b6c5a63d_*, 20260424_002816_*
+- [x] T029 [US1] Verify `backend/src/models/__init__.py` — confirm no automation models in __all__ (already excluded per current code), no changes needed
+- [x] T030 [US1] Verify `backend/src/models/user.py` — confirm `automation_enabled` column remains (flag controls frontend UI access, not automation logic); this is a user attribute, not automation code
+- [x] T031 [US1] Run backend startup validation: `cd backend && uv run uvicorn src.main:app --port 8001` — confirm app starts without import errors, all non-automation routers load, scheduler starts
 
 **Checkpoint**: Main backend runs clean — zero automation files present, all manual invoice operations functional
 
@@ -93,51 +93,51 @@ Two backend services (`backend/` + `ai-agent/`) + one frontend (`frontend/`) per
 
 **Models (MOVED from backend)**:
 
-- [ ] T032 [P] [US2] Copy `backend/src/models/automation_base.py` → `ai-agent/src/models/automation_base.py` — update imports to `ai-agent.src.*` paths; defines automation_metadata (separate SQLAlchemy MetaData instance)
-- [ ] T033 [P] [US2] Copy `backend/src/models/automation_invoice.py` → `ai-agent/src/models/automation_invoice.py` — update imports; AutomationInvoice model with all fields per data-model.md, AutomationInvoiceStatus enum (PENDING, EXPIRED, VALIDATED, TRANSFERRED, TRANSFER_FAILED, FAILED, BLOCKED, PAUSED)
-- [ ] T034 [P] [US2] Copy `backend/src/models/automation_log.py` → `ai-agent/src/models/automation_log.py` — update imports; AutomationLog model, AutomationLogAction enum (VALIDATE, SUBMIT, RETRY, BLOCK, UNBLOCK, PAUSE, RESUME, DELETE, TRANSFER), AutomationLogStatus enum (SUCCESS, FAILURE, IN_PROGRESS)
-- [ ] T035 [P] [US2] Copy `backend/src/models/excel_upload_session.py` → `ai-agent/src/models/excel_upload_session.py` — update imports; ExcelUploadSession model, ExcelUploadProcessingStatus enum
-- [ ] T036 [P] [US2] Create `ai-agent/src/models/__init__.py` — export all 4 automation models
+- [x] T032 [P] [US2] Copy `backend/src/models/automation_base.py` → `ai-agent/src/models/automation_base.py` — update imports to `ai-agent.src.*` paths; defines automation_metadata (separate SQLAlchemy MetaData instance)
+- [x] T033 [P] [US2] Copy `backend/src/models/automation_invoice.py` → `ai-agent/src/models/automation_invoice.py` — update imports; AutomationInvoice model with all fields per data-model.md, AutomationInvoiceStatus enum (PENDING, EXPIRED, VALIDATED, TRANSFERRED, TRANSFER_FAILED, FAILED, BLOCKED, PAUSED)
+- [x] T034 [P] [US2] Copy `backend/src/models/automation_log.py` → `ai-agent/src/models/automation_log.py` — update imports; AutomationLog model, AutomationLogAction enum (VALIDATE, SUBMIT, RETRY, BLOCK, UNBLOCK, PAUSE, RESUME, DELETE, TRANSFER), AutomationLogStatus enum (SUCCESS, FAILURE, IN_PROGRESS)
+- [x] T035 [P] [US2] Copy `backend/src/models/excel_upload_session.py` → `ai-agent/src/models/excel_upload_session.py` — update imports; ExcelUploadSession model, ExcelUploadProcessingStatus enum
+- [x] T036 [P] [US2] Create `ai-agent/src/models/__init__.py` — export all 4 automation models
 
 **Schemas (MOVED from backend)**:
 
-- [ ] T037 [P] [US2] Copy `backend/src/schemas/automation.py` → `ai-agent/src/schemas/automation.py` — update imports; DashboardStatsResponse, InvoiceListResponse, InvoiceDetailResponse, BatchPdfRequest, etc.
-- [ ] T038 [P] [US2] Copy `backend/src/schemas/excel.py` → `ai-agent/src/schemas/excel.py` — update imports; ExcelUploadResponse, ExcelUploadStatusResponse
-- [ ] T039 [P] [US2] Copy `backend/src/schemas/file_management.py` → `ai-agent/src/schemas/file_management.py` — update imports; UploadSessionListResponse, BlockInvoiceRequest, BulkBlockRequest, BulkDeleteRequest, BulkRetryRequest, etc.
-- [ ] T040 [P] [US2] Create `ai-agent/src/schemas/__init__.py`
+- [x] T037 [P] [US2] Copy `backend/src/schemas/automation.py` → `ai-agent/src/schemas/automation.py` — update imports; DashboardStatsResponse, InvoiceListResponse, InvoiceDetailResponse, BatchPdfRequest, etc.
+- [x] T038 [P] [US2] Copy `backend/src/schemas/excel.py` → `ai-agent/src/schemas/excel.py` — update imports; ExcelUploadResponse, ExcelUploadStatusResponse
+- [x] T039 [P] [US2] Copy `backend/src/schemas/file_management.py` → `ai-agent/src/schemas/file_management.py` — update imports; UploadSessionListResponse, BlockInvoiceRequest, BulkBlockRequest, BulkDeleteRequest, BulkRetryRequest, etc.
+- [x] T040 [P] [US2] Create `ai-agent/src/schemas/__init__.py`
 
 **Shared Services (COPIED from backend)**:
 
-- [ ] T041 [P] [US2] Copy `backend/src/services/validation_service.py` → `ai-agent/src/services/validation_service.py` — update all imports to `ai-agent.src.*` paths; no logic changes (FBR-spec validation rules are identical)
-- [ ] T042 [P] [US2] Copy `backend/src/services/fbr_client.py` → `ai-agent/src/services/fbr_client.py` — update imports; FBR API HTTP client for sandbox/production
-- [ ] T043 [P] [US2] Copy `backend/src/services/fbr_service.py` → `ai-agent/src/services/fbr_service.py` — update imports; FBR service wrapper used by automation validation
+- [x] T041 [P] [US2] Copy `backend/src/services/validation_service.py` → `ai-agent/src/services/validation_service.py` — update all imports to `ai-agent.src.*` paths; no logic changes (FBR-spec validation rules are identical)
+- [x] T042 [P] [US2] Copy `backend/src/services/fbr_client.py` → `ai-agent/src/services/fbr_client.py` — update imports; FBR API HTTP client for sandbox/production
+- [x] T043 [P] [US2] Copy `backend/src/services/fbr_service.py` → `ai-agent/src/services/fbr_service.py` — update imports; FBR service wrapper used by automation validation
 
 **Automation Services (MOVED from backend)**:
 
-- [ ] T044 [P] [US2] Copy `backend/src/services/automation_service.py` → `ai-agent/src/services/automation_service.py` — update all imports to `ai-agent.src.*` paths; core automation business logic (get_invoice_by_id, get_dashboard_stats, get_invoice_list, get_invoice_detail with logs, retry_invoice, pause/resume/block/unblock, bulk operations, delete)
-- [ ] T045 [P] [US2] Copy `backend/src/services/excel_service.py` → `ai-agent/src/services/excel_service.py` — update imports; full Excel processing (generate automation template with scheduled_date/scheduled_time, parse Excel, validate future dates, create automation invoices)
-- [ ] T046 [P] [US2] Copy `backend/src/services/file_management_service.py` → `ai-agent/src/services/file_management_service.py` — update imports; upload session management, Excel file deletion
-- [ ] T047 [P] [US2] Copy `backend/src/services/background_validation_service.py` → `ai-agent/src/services/background_validation_service.py` — update imports; background validation worker for Excel upload sessions
-- [ ] T048 [P] [US2] Copy `backend/src/utils/excel_validator.py` → `ai-agent/src/utils/excel_validator.py` — update imports; REQUIRED_COLUMNS (18 automation columns including scheduled_date/scheduled_time), validation methods
+- [x] T044 [P] [US2] Copy `backend/src/services/automation_service.py` → `ai-agent/src/services/automation_service.py` — update all imports to `ai-agent.src.*` paths; core automation business logic (get_invoice_by_id, get_dashboard_stats, get_invoice_list, get_invoice_detail with logs, retry_invoice, pause/resume/block/unblock, bulk operations, delete)
+- [x] T045 [P] [US2] Copy `backend/src/services/excel_service.py` → `ai-agent/src/services/excel_service.py` — update imports; full Excel processing (generate automation template with scheduled_date/scheduled_time, parse Excel, validate future dates, create automation invoices)
+- [x] T046 [P] [US2] Copy `backend/src/services/file_management_service.py` → `ai-agent/src/services/file_management_service.py` — update imports; upload session management, Excel file deletion
+- [x] T047 [P] [US2] Copy `backend/src/services/background_validation_service.py` → `ai-agent/src/services/background_validation_service.py` — update imports; background validation worker for Excel upload sessions
+- [x] T048 [P] [US2] Copy `backend/src/utils/excel_validator.py` → `ai-agent/src/utils/excel_validator.py` — update imports; REQUIRED_COLUMNS (18 automation columns including scheduled_date/scheduled_time), validation methods
 
 **PDF Service (NEW for AI-agent)**:
 
-- [ ] T049 [US2] Create `ai-agent/src/services/pdf_service.py` — dedicated automation PDF generation: reads from AutomationInvoice.invoice_data JSON (not structured Invoice model), generates FBR-compliant PDF with logo and QR code, uses same reportlab/qrcode/Pillow stack; copy `backend/src/assets/fbr_logo.png` and `backend/src/assets/NotoSansArabic-Regular.ttf` to `ai-agent/assets/`; supports single and batch PDF generation
-- [ ] T050 [US2] Copy `backend/src/assets/fbr_logo.png` → `ai-agent/assets/fbr_logo.png`
-- [ ] T051 [US2] Copy `backend/src/assets/NotoSansArabic-Regular.ttf` → `ai-agent/assets/NotoSansArabic-Regular.ttf` (if exists)
+- [x] T049 [US2] Create `ai-agent/src/services/pdf_service.py` — dedicated automation PDF generation: reads from AutomationInvoice.invoice_data JSON (not structured Invoice model), generates FBR-compliant PDF with logo and QR code, uses same reportlab/qrcode/Pillow stack; copy `backend/src/assets/fbr_logo.png` and `backend/src/assets/NotoSansArabic-Regular.ttf` to `ai-agent/assets/`; supports single and batch PDF generation
+- [x] T050 [US2] Copy `backend/src/assets/fbr_logo.png` → `ai-agent/assets/fbr_logo.png`
+- [x] T051 [US2] Copy `backend/src/assets/NotoSansArabic-Regular.ttf` → `ai-agent/assets/NotoSansArabic-Regular.ttf` (if exists)
 
 **API Routes (MOVED from backend)**:
 
-- [ ] T052 [P] [US2] Copy `backend/src/api/v1/automation/excel.py` → `ai-agent/src/api/v1/automation/excel.py` — update ALL imports to `ai-agent.src.*` paths; endpoints: GET /automation/template/download, POST /automation/excel/upload, GET /automation/excel/status/{session_id}
-- [ ] T053 [P] [US2] Copy `backend/src/api/v1/automation/dashboard.py` → `ai-agent/src/api/v1/automation/dashboard.py` — update ALL imports; endpoints: GET /automation/dashboard/stats, GET /automation/dashboard/invoices, GET /automation/dashboard/invoice/{id}, GET /automation/dashboard/download/{session_id}
-- [ ] T054 [P] [US2] Copy `backend/src/api/v1/automation/retry.py` → `ai-agent/src/api/v1/automation/retry.py` — update ALL imports; endpoints: POST /automation/invoice/{id}/retry
-- [ ] T055 [P] [US2] Copy `backend/src/api/v1/automation/file_management.py` → `ai-agent/src/api/v1/automation/file_management.py` — update ALL imports; endpoints: GET /automation/upload-sessions, DELETE /automation/upload-session/{id}, DELETE /automation/upload-session/{id}/file, POST /automation/invoice/{id}/block, POST /automation/invoice/{id}/unblock, DELETE /automation/invoice/{id}, POST /automation/invoices/bulk-block, POST /automation/invoices/bulk-delete, POST /automation/invoices/bulk-retry, POST /automation/invoice/{id}/pause, POST /automation/invoice/{id}/resume, POST /automation/invoices/bulk-pause, POST /automation/invoices/bulk-resume
-- [ ] T056 [P] [US2] Copy `backend/src/api/v1/automation/pdf.py` → `ai-agent/src/api/v1/automation/pdf.py` — update ALL imports (use ai-agent's pdf_service, not backend's); simplify to handle AutomationInvoice only (remove manual Invoice handling branches); endpoints: GET /automation/invoices/{id}/pdf, POST /automation/invoices/batch-pdf
-- [ ] T057 Create `ai-agent/src/api/v1/automation/__init__.py` — APIRouter with prefix="/automation"; include sub-routers from excel, dashboard, retry, health, agent_status, file_management, pdf modules
-- [ ] T058 [P] [US2] Create `ai-agent/src/services/__init__.py` — empty service package init
-- [ ] T059 [P] [US2] Create `ai-agent/src/utils/__init__.py` — empty utils package init
-- [ ] T060 [US2] Create `ai-agent/src/api/__init__.py` and `ai-agent/src/api/v1/__init__.py` — empty API package init files
-- [ ] T061 [US2] Run AI-agent startup validation: `cd ai-agent && uv run uvicorn src.main:app --port 8002` — confirm app starts, automation router loads, all 24 endpoints registered, no import errors
+- [x] T052 [P] [US2] Copy `backend/src/api/v1/automation/excel.py` → `ai-agent/src/api/v1/automation/excel.py` — update ALL imports to `ai-agent.src.*` paths; endpoints: GET /automation/template/download, POST /automation/excel/upload, GET /automation/excel/status/{session_id}
+- [x] T053 [P] [US2] Copy `backend/src/api/v1/automation/dashboard.py` → `ai-agent/src/api/v1/automation/dashboard.py` — update ALL imports; endpoints: GET /automation/dashboard/stats, GET /automation/dashboard/invoices, GET /automation/dashboard/invoice/{id}, GET /automation/dashboard/download/{session_id}
+- [x] T054 [P] [US2] Copy `backend/src/api/v1/automation/retry.py` → `ai-agent/src/api/v1/automation/retry.py` — update ALL imports; endpoints: POST /automation/invoice/{id}/retry
+- [x] T055 [P] [US2] Copy `backend/src/api/v1/automation/file_management.py` → `ai-agent/src/api/v1/automation/file_management.py` — update ALL imports; endpoints: GET /automation/upload-sessions, DELETE /automation/upload-session/{id}, DELETE /automation/upload-session/{id}/file, POST /automation/invoice/{id}/block, POST /automation/invoice/{id}/unblock, DELETE /automation/invoice/{id}, POST /automation/invoices/bulk-block, POST /automation/invoices/bulk-delete, POST /automation/invoices/bulk-retry, POST /automation/invoice/{id}/pause, POST /automation/invoice/{id}/resume, POST /automation/invoices/bulk-pause, POST /automation/invoices/bulk-resume
+- [x] T056 [P] [US2] Copy `backend/src/api/v1/automation/pdf.py` → `ai-agent/src/api/v1/automation/pdf.py` — update ALL imports (use ai-agent's pdf_service, not backend's); simplify to handle AutomationInvoice only (remove manual Invoice handling branches); endpoints: GET /automation/invoices/{id}/pdf, POST /automation/invoices/batch-pdf
+- [x] T057 Create `ai-agent/src/api/v1/automation/__init__.py` — APIRouter with prefix="/automation"; include sub-routers from excel, dashboard, retry, health, agent_status, file_management, pdf modules
+- [x] T058 [P] [US2] Create `ai-agent/src/services/__init__.py` — empty service package init
+- [x] T059 [P] [US2] Create `ai-agent/src/utils/__init__.py` — empty utils package init
+- [x] T060 [US2] Create `ai-agent/src/api/__init__.py` and `ai-agent/src/api/v1/__init__.py` — empty API package init files
+- [x] T061 [US2] Run AI-agent startup validation: `cd ai-agent && uv run uvicorn src.main:app --port 8002` — confirm app starts, automation router loads, all 24 endpoints registered, no import errors
 
 **Checkpoint**: AI-agent serves all automation endpoints. Upload Excel, monitor progress, manage invoices, print PDFs — all work independently.
 
@@ -151,13 +151,13 @@ Two backend services (`backend/` + `ai-agent/`) + one frontend (`frontend/`) per
 
 ### Implementation for User Story 3
 
-- [ ] T062 [US3] Copy `backend/src/api/v1/automation/health.py` → `ai-agent/src/api/v1/automation/health.py` — update ALL imports to `ai-agent.src.*` paths; endpoint: GET /automation/health returns DB connectivity, FBR API reachability, overall status
-- [ ] T063 [US3] Copy `backend/src/api/v1/automation/agent_status.py` → `ai-agent/src/api/v1/automation/agent_status.py` — update ALL imports; endpoint: GET /automation/agent/status returns detailed health metrics per contracts/automation-api.md section 24
-- [ ] T064 [P] [US3] Copy `backend/src/models/ai_agent_health_check.py` → `ai-agent/src/models/ai_agent_health_check.py` — update imports; AIAgentHealthCheck model with all fields per data-model.md
-- [ ] T065 [P] [US3] Copy `backend/src/schemas/agent.py` → `ai-agent/src/schemas/agent.py` — update imports; AIAgentHealthCheckResponse, AIAgentDecisionListResponse, AIAgentDecisionLog, AIAgentStatusSummary
-- [ ] T066 [US3] Update `ai-agent/src/models/__init__.py` — add AIAgentHealthCheck to exports
-- [ ] T067 [US3] Update `ai-agent/src/api/v1/automation/__init__.py` — ensure health and agent_status sub-routers are included (if not already from T057)
-- [ ] T068 [US3] Verify independence: stop AI-agent, confirm `backend/` on port 8001 still starts and serves manual invoice endpoints without errors; main backend `/health` endpoint reports only main backend status (not AI-agent)
+- [x] T062 [US3] Copy `backend/src/api/v1/automation/health.py` → `ai-agent/src/api/v1/automation/health.py` — update ALL imports to `ai-agent.src.*` paths; endpoint: GET /automation/health returns DB connectivity, FBR API reachability, overall status
+- [x] T063 [US3] Copy `backend/src/api/v1/automation/agent_status.py` → `ai-agent/src/api/v1/automation/agent_status.py` — update ALL imports; endpoint: GET /automation/agent/status returns detailed health metrics per contracts/automation-api.md section 24
+- [x] T064 [P] [US3] Copy `backend/src/models/ai_agent_health_check.py` → `ai-agent/src/models/ai_agent_health_check.py` — update imports; AIAgentHealthCheck model with all fields per data-model.md
+- [x] T065 [P] [US3] Copy `backend/src/schemas/agent.py` → `ai-agent/src/schemas/agent.py` — update imports; AIAgentHealthCheckResponse, AIAgentDecisionListResponse, AIAgentDecisionLog, AIAgentStatusSummary
+- [x] T066 [US3] Update `ai-agent/src/models/__init__.py` — add AIAgentHealthCheck to exports
+- [x] T067 [US3] Update `ai-agent/src/api/v1/automation/__init__.py` — ensure health and agent_status sub-routers are included (if not already from T057)
+- [x] T068 [US3] Verify independence: stop AI-agent, confirm `backend/` on port 8001 still starts and serves manual invoice endpoints without errors; main backend `/health` endpoint reports only main backend status (not AI-agent)
 
 **Checkpoint**: AI-agent health monitoring functional. Main backend independence verified.
 
@@ -171,13 +171,13 @@ Two backend services (`backend/` + `ai-agent/`) + one frontend (`frontend/`) per
 
 ### Implementation for User Story 4
 
-- [ ] T069 [US4] Update `frontend/src/services/automationApi.ts` — change `API_BASE_URL` from `NEXT_PUBLIC_API_BASE_URL` to `NEXT_PUBLIC_AI_AGENT_API_URL` with fallback `http://localhost:8002/api/v1`; update CSRF token retrieval to use AI-agent-specific cookie/storage key (scope per backend URL)
-- [ ] T070 [US4] Update `frontend/src/lib/api.ts` — add per-backend CSRF token management: store separate CSRF tokens for main backend and AI-agent; update `fetchWithAuth()` to attach correct CSRF token based on request destination
-- [ ] T071 [US4] Update `frontend/src/contexts/UploadSessionContext.tsx` — ensure polling calls `automationApi.getUploadStatus()` which now points to AI-agent URL (no code change needed if T069 is correct, but verify)
-- [ ] T072 [US4] Update `frontend/.env.local` — add `NEXT_PUBLIC_AI_AGENT_API_URL=http://localhost:8002/api/v1` alongside existing `NEXT_PUBLIC_API_BASE_URL` and `NEXT_PUBLIC_BACKEND_URL`
-- [ ] T073 [US4] Update `frontend/next.config.js` — add proxy rewrite rule for AI-agent if needed (or ensure direct CORS access from browser to AI-agent works); verify CSP `connect-src` includes AI-agent URL
-- [ ] T074 [US4] Update `frontend/src/app/(protected)/automation/dashboard/page.tsx` — if unified invoice history is shown, implement frontend merge: fetch manual invoices from main backend, automation invoices from AI-agent, merge and sort by date for display
-- [ ] T075 [US4] Run frontend validation: `cd frontend && npm run dev` — confirm app starts on port 3000 without errors; all pages load; no console errors about API connectivity
+- [x] T069 [US4] Update `frontend/src/services/automationApi.ts` — change `API_BASE_URL` from `NEXT_PUBLIC_API_BASE_URL` to `NEXT_PUBLIC_AI_AGENT_API_URL` with fallback `http://localhost:8002/api/v1`; update CSRF token retrieval to use AI-agent-specific cookie/storage key (scope per backend URL)
+- [x] T070 [US4] Update `frontend/src/lib/api.ts` — add per-backend CSRF token management: store separate CSRF tokens for main backend and AI-agent; update `fetchWithAuth()` to attach correct CSRF token based on request destination
+- [x] T071 [US4] Update `frontend/src/contexts/UploadSessionContext.tsx` — ensure polling calls `automationApi.getUploadStatus()` which now points to AI-agent URL (no code change needed if T069 is correct, but verify)
+- [x] T072 [US4] Update `frontend/.env.local` — add `NEXT_PUBLIC_AI_AGENT_API_URL=http://localhost:8002/api/v1` alongside existing `NEXT_PUBLIC_API_BASE_URL` and `NEXT_PUBLIC_BACKEND_URL`
+- [x] T073 [US4] Update `frontend/next.config.js` — add proxy rewrite rule for AI-agent if needed (or ensure direct CORS access from browser to AI-agent works); verify CSP `connect-src` includes AI-agent URL
+- [x] T074 [US4] Update `frontend/src/app/(protected)/automation/dashboard/page.tsx` — if unified invoice history is shown, implement frontend merge: fetch manual invoices from main backend, automation invoices from AI-agent, merge and sort by date for display
+- [x] T075 [US4] Run frontend validation: `cd frontend && npm run dev` — confirm app starts on port 3000 without errors; all pages load; no console errors about API connectivity
 
 **Checkpoint**: Frontend routes correctly — manual operations to main backend, automation to AI-agent. Unified experience preserved.
 
@@ -187,12 +187,12 @@ Two backend services (`backend/` + `ai-agent/`) + one frontend (`frontend/`) per
 
 **Purpose**: Final validation, cleanup, and documentation
 
-- [ ] T076 [P] Run full quickstart.md validation checklist: start both backends + frontend, execute all verification items (login, manual invoice CRUD, manual Excel upload, automation Excel upload, automation dashboard, PDF generation, health checks, independence test)
-- [ ] T077 Verify zero cross-imports: `grep -r "from backend" ai-agent/src/` returns no results; `grep -r "from ai-agent" backend/src/` returns no results (SC-007)
-- [ ] T078 Verify no automation files remain in backend: `ls backend/src/api/v1/automation/ 2>/dev/null` returns "No such file"; `ls backend/src/models/automation_* 2>/dev/null` returns "No such file" (SC-001)
-- [ ] T079 [P] Update any remaining import paths in ai-agent/ that reference `src.` to use `ai-agent.src.` — run `grep -r "from src\." ai-agent/src/` and fix any occurrences
-- [ ] T080 [P] Run backend test suite: `cd backend && uv run pytest` — confirm all existing tests pass with automation code removed
-- [ ] T081 Run `uv sync` in both backend/ and ai-agent/ to generate uv.lock files
+- [x] T076 [P] Run full quickstart.md validation checklist: start both backends + frontend, execute all verification items (login, manual invoice CRUD, manual Excel upload, automation Excel upload, automation dashboard, PDF generation, health checks, independence test)
+- [x] T077 Verify zero cross-imports: `grep -r "from backend" ai-agent/src/` returns no results; `grep -r "from ai-agent" backend/src/` returns no results (SC-007)
+- [x] T078 Verify no automation files remain in backend: `ls backend/src/api/v1/automation/ 2>/dev/null` returns "No such file"; `ls backend/src/models/automation_* 2>/dev/null` returns "No such file" (SC-001)
+- [x] T079 [P] Update any remaining import paths in ai-agent/ that reference `src.` to use `ai-agent.src.` — run `grep -r "from src\." ai-agent/src/` and fix any occurrences
+- [x] T080 [P] Run backend test suite: `cd backend && uv run pytest` — confirm all existing tests pass with automation code removed
+- [x] T081 Run `uv sync` in both backend/ and ai-agent/ to generate uv.lock files
 
 **Checkpoint**: All success criteria from spec verified. Services ready for independent deployment.
 

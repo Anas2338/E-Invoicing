@@ -6,6 +6,7 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL,
     NEXT_PUBLIC_BACKEND_URL: process.env.NEXT_PUBLIC_BACKEND_URL,
+    NEXT_PUBLIC_AI_AGENT_API_URL: process.env.NEXT_PUBLIC_AI_AGENT_API_URL,
   },
   images: {
     remotePatterns: [
@@ -22,7 +23,12 @@ const nextConfig = {
   // Proxy API requests to backend to avoid CORS and cookie issues
   async rewrites() {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8001';
+    const aiAgentUrl = process.env.NEXT_PUBLIC_AI_AGENT_API_URL || 'http://localhost:8002/api/v1';
     return [
+      {
+        source: '/api/v1/automation/:path*',
+        destination: `${aiAgentUrl}/automation/:path*`,
+      },
       {
         source: '/api/v1/:path*',
         destination: `${backendUrl}/api/v1/:path*`,
@@ -42,7 +48,7 @@ const nextConfig = {
       "img-src 'self' data: https:",
       "font-src 'self' data:",
       "media-src 'self' data:", // Allow audio/video data URIs
-      `connect-src 'self' https://localhost:8001 http://localhost:8001 ${backendUrl}`, // API connections to main backend only
+      `connect-src 'self' https://localhost:8001 http://localhost:8001 https://localhost:8002 http://localhost:8002 ${backendUrl} ${process.env.NEXT_PUBLIC_AI_AGENT_API_URL || 'http://localhost:8002/api/v1'}`, // API connections to both backends
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

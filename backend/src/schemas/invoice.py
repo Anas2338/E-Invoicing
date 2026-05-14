@@ -121,6 +121,8 @@ class InvoiceUpdate(BaseModel):
 class InvoiceResponse(InvoiceBase):
     """
     Schema for invoice response.
+
+    Automation source is hidden — all invoices appear as manual.
     """
     id: uuid.UUID
     user_id: uuid.UUID
@@ -133,8 +135,8 @@ class InvoiceResponse(InvoiceBase):
     validation_errors: Optional[dict] = None
     fbr_response: Optional[FBRValidationResponse] = None
 
-    # Transfer tracking fields
-    source: str = "manual"  # "manual" or "automation"
+    # Source is always "manual" externally (automation origin is hidden)
+    source: str = "manual"
     transferred_at: Optional[datetime] = None
     automation_invoice_id: Optional[uuid.UUID] = None
 

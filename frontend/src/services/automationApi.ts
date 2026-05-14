@@ -1,10 +1,9 @@
 /**
  * Automation API client for Excel upload and dashboard endpoints.
- * All automation endpoints are on the main backend, not the AI agent.
- * The AI agent is a background service that processes scheduled invoices.
+ * Routes directly to the AI-agent backend (separate service, CORS-protected).
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8001/api/v1';
+const API_BASE_URL = process.env.NEXT_PUBLIC_AI_AGENT_API_URL || 'http://localhost:8002/api/v1';
 
 // Helper function to get cookie value by name
 function getCookie(name: string): string | null {
@@ -124,6 +123,14 @@ class AutomationApiClient {
     } else {
       // Log warning if CSRF token is missing (helps debug cross-origin issues)
       console.warn('CSRF token not found in cookie or sessionStorage. This may cause request failures.');
+    }
+
+    // Add access token as Authorization header for cross-origin requests
+    // The httpOnly cookie from the main backend (port 8001) cannot be sent to
+    // the AI-agent service (port 8002), so we pass the token explicitly
+    const accessToken = getCookie('access_token') || (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('access_token') : null);
+    if (accessToken) {
+      headers['Authorization'] = `Bearer ${accessToken}`;
     }
 
     if (includeContentType) {

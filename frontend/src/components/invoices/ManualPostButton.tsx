@@ -46,8 +46,8 @@ export default function ManualPostButton({
     }
   };
 
-  // Only show button for TRANSFERRED status
-  if (invoiceStatus !== 'TRANSFERRED') {
+  // Only show button for VALIDATED status
+  if (invoiceStatus !== 'VALIDATED') {
     return null;
   }
 

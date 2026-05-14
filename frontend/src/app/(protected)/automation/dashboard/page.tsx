@@ -172,7 +172,11 @@ export default function DashboardPage() {
   const handleBulkDelete = async (invoiceIds: string[]) => {
     try {
       const response = await automationApi.bulkDeleteInvoices(invoiceIds);
-      toast.success(`Successfully deleted ${response.deleted_count} invoice(s)`);
+      if (response.deleted_count > 0) {
+        toast.success(`Successfully deleted ${response.deleted_count} invoice(s)`);
+      } else {
+        toast.error('No invoices were deleted.');
+      }
       loadInvoices();
     } catch (error: any) {
       toast.error(error.message || 'Failed to delete invoices');

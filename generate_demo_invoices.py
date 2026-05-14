@@ -45,8 +45,8 @@ fixed_notified_values = value_sales.copy()
 # Further tax: 0 for all
 further_tax = [0] * num_invoices
 
-# Scheduled date: 5/8/2026 for all
-scheduled_date = [datetime(2026, 5, 8)] * num_invoices
+# Scheduled date: 5/13/2026 for all
+scheduled_date = [datetime(2026, 5, 13)] * num_invoices
 
 # Scheduled time: between 13:30 and 14:00 (30 minutes range)
 def random_time_between(start_hour, start_min, end_hour, end_min):
@@ -57,7 +57,7 @@ def random_time_between(start_hour, start_min, end_hour, end_min):
     minutes = random_minutes % 60
     return time(hours, minutes)
 
-scheduled_times = [random_time_between(17, 25, 18, 0) for _ in range(num_invoices)]
+scheduled_times = [time(1, 10)] * num_invoices
 
 # Status and reason: NaN
 status = [np.nan] * num_invoices

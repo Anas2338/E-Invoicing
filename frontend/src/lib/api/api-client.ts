@@ -347,7 +347,7 @@ export class UserService extends ApiClient {
 
   // Profile Management
   async getUserProfile(): Promise<any> {
-    return this.request('/profile');
+    return this.request('/auth/profile');
   }
 
   async updateUserProfile(data: {

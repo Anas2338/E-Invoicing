@@ -6,7 +6,6 @@ import { PrintInvoiceButton } from '@/components/invoices/PrintInvoiceButton';
 
 interface Invoice {
   id: string;
-  source: 'manual' | 'automated';
   invoiceNumber: string;
   date: string;
   buyerName: string;
@@ -51,6 +50,7 @@ export function InvoiceTable({
       case 'PENDING':
         return 'bg-[#fef3c7] text-[#92400e] border-[#fde68a] dark:bg-[#451a03]/30 dark:text-[#fbbf24] dark:border-[#451a03]';
       case 'VALIDATED':
+      case 'TRANSFERRED':
         return 'bg-[#dbeafe] text-[#1e40af] border-[#bfdbfe] dark:bg-[#1e3a8a]/30 dark:text-[#60a5fa] dark:border-[#1e3a8a]';
       case 'POSTED':
       case 'SUBMITTED':
@@ -81,7 +81,7 @@ export function InvoiceTable({
       // Select all deletable invoices (DRAFT, VALIDATED, or FAILED)
       const deletableIds = new Set(
         invoices
-          .filter(inv => inv.status === 'DRAFT' || inv.status === 'VALIDATED' || inv.status === 'FAILED')
+          .filter(inv => inv.status === 'DRAFT' || inv.status === 'VALIDATED' || inv.status === 'FAILED' || inv.status === 'TRANSFERRED')
           .map(inv => inv.id)
       );
       onSelectionChange(deletableIds);
@@ -102,7 +102,7 @@ export function InvoiceTable({
     onSelectionChange(newSelection);
   };
 
-  const deletableInvoices = invoices.filter(inv => inv.status === 'DRAFT' || inv.status === 'VALIDATED' || inv.status === 'FAILED');
+  const deletableInvoices = invoices.filter(inv => inv.status === 'DRAFT' || inv.status === 'VALIDATED' || inv.status === 'FAILED' || inv.status === 'TRANSFERRED');
   const allDeletableSelected = deletableInvoices.length > 0 &&
     deletableInvoices.every(inv => selectedInvoices.has(inv.id));
   const someDeletableSelected = deletableInvoices.some(inv => selectedInvoices.has(inv.id));
@@ -136,7 +136,7 @@ export function InvoiceTable({
       {/* Mobile Card View */}
       <div className="block lg:hidden space-y-4">
         {invoices.map((invoice) => {
-          const isDeletable = invoice.status === 'DRAFT' || invoice.status === 'VALIDATED' || invoice.status === 'FAILED';
+          const isDeletable = invoice.status === 'DRAFT' || invoice.status === 'VALIDATED' || invoice.status === 'FAILED' || invoice.status === 'TRANSFERRED';
           const isSelected = selectedInvoices.has(invoice.id);
 
           return (
@@ -221,7 +221,7 @@ export function InvoiceTable({
                     View
                   </Button>
                 )}
-                {onEdit && (invoice.status === 'DRAFT' || invoice.status === 'VALIDATED' || invoice.status === 'FAILED') && (
+                {onEdit && (invoice.status === 'DRAFT' || invoice.status === 'VALIDATED' || invoice.status === 'FAILED' || invoice.status === 'TRANSFERRED') && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -264,7 +264,7 @@ export function InvoiceTable({
                     {validatingInvoiceId === invoice.id ? 'Retrying...' : 'Retry'}
                   </Button>
                 )}
-                {onPost && invoice.status === 'VALIDATED' && (
+                {onPost && (invoice.status === 'VALIDATED' || invoice.status === 'TRANSFERRED') && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -348,7 +348,7 @@ export function InvoiceTable({
         </thead>
         <tbody className="bg-white dark:bg-[#1a1a1a] divide-y divide-[#e1e3e5] dark:divide-[#2e2e2e]">
           {invoices.map((invoice) => {
-            const isDeletable = invoice.status === 'DRAFT' || invoice.status === 'VALIDATED' || invoice.status === 'FAILED';
+            const isDeletable = invoice.status === 'DRAFT' || invoice.status === 'VALIDATED' || invoice.status === 'FAILED' || invoice.status === 'TRANSFERRED';
             const isSelected = selectedInvoices.has(invoice.id);
 
             return (
@@ -414,7 +414,7 @@ export function InvoiceTable({
                   )}
 
                   {/* Edit Button - For DRAFT, VALIDATED, and FAILED */}
-                  {onEdit && (invoice.status === 'DRAFT' || invoice.status === 'VALIDATED' || invoice.status === 'FAILED') && (
+                  {onEdit && (invoice.status === 'DRAFT' || invoice.status === 'VALIDATED' || invoice.status === 'FAILED' || invoice.status === 'TRANSFERRED') && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -463,7 +463,7 @@ export function InvoiceTable({
                   )}
 
                   {/* Post Button - Only for VALIDATED */}
-                  {onPost && invoice.status === 'VALIDATED' && (
+                  {onPost && (invoice.status === 'VALIDATED' || invoice.status === 'TRANSFERRED') && (
                     <Button
                       variant="outline"
                       size="sm"

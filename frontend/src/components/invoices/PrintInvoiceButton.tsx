@@ -38,25 +38,39 @@ export function PrintInvoiceButton({
       }
 
       const pdfBlob = await response.blob();
-
-      // Create download link
       const url = window.URL.createObjectURL(pdfBlob);
-      const link = document.createElement('a');
-      link.href = url;
-
-      // Generate filename: invoice_<invoice_number>.pdf
       const sanitizedNumber = invoiceNumber.replace(/\//g, '_');
-      link.download = `invoice_${sanitizedNumber}.pdf`;
+      const filename = `invoice_${sanitizedNumber}.pdf`;
 
-      // Trigger download
-      document.body.appendChild(link);
-      link.click();
+      // Detect mobile: iOS Safari ignores the download attribute on anchor clicks
+      const isMobile = /Android|iPhone|iPad|iPod|webOS/i.test(navigator.userAgent);
 
-      // Cleanup
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(link);
+      if (isMobile) {
+        // On mobile, open PDF in a new tab — the native PDF viewer provides
+        // share/save options so the user can download or print
+        const newWindow = window.open(url, '_blank');
+        if (!newWindow) {
+          toast.error('Please allow pop-ups to view the invoice PDF');
+        } else {
+          toast.success('Invoice PDF opened — use share/save to download');
+        }
+      } else {
+        // On desktop, trigger a direct download
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast.success('Invoice PDF downloaded successfully');
+      }
 
-      toast.success('Invoice PDF downloaded successfully');
+      // Cleanup blob URL after a delay (new tab needs it still alive)
+      if (isMobile) {
+        setTimeout(() => window.URL.revokeObjectURL(url), 3000);
+      } else {
+        window.URL.revokeObjectURL(url);
+      }
     } catch (error) {
       console.error('PDF generation failed:', error);
 

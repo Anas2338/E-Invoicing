@@ -147,6 +147,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         sessionStorage.setItem('csrf_token', data.csrf_token);
       }
 
+      // SECURITY: Store access token in sessionStorage for cross-origin API calls
+      // The httpOnly cookie can't be sent to other ports (AI-agent on 8002),
+      // so we include the token in Authorization header for cross-service requests
+      if (data.access_token) {
+        sessionStorage.setItem('access_token', data.access_token);
+      }
+
       await new Promise(resolve => setTimeout(resolve, 100));
 
       window.location.href = '/dashboard';
@@ -233,8 +240,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearCookie('refresh_token');
       clearCookie('csrf_token');
 
-      // Clear CSRF token from sessionStorage
+      // Clear CSRF token and access token from sessionStorage
       sessionStorage.removeItem('csrf_token');
+      sessionStorage.removeItem('access_token');
 
     } catch (error) {
       // Continue with logout even if backend call fails

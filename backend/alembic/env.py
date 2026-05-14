@@ -27,17 +27,9 @@ from src.models.fbr_master_data import (
     FBRSyncLog
 )  # noqa
 
-# Import automation metadata (separate metadata for automation database tables)
-from src.models.automation_base import automation_metadata  # noqa
-from src.models.automation_invoice import AutomationInvoice  # noqa
-from src.models.automation_log import AutomationLog  # noqa
-from src.models.excel_upload_session import ExcelUploadSession  # noqa
-from src.models.ai_agent_health_check import AIAgentHealthCheck  # noqa
-
 from src.config.settings import settings
 
 # Combine metadata from Base and FBRBase for main database
-# AutomationBase is kept separate for automation database
 from sqlalchemy import MetaData
 combined_metadata = MetaData()
 
@@ -52,20 +44,11 @@ for table in FBRBase.metadata.tables.values():
 config = context.config
 
 # Interpret the config file for Python logging.
-# This line sets up loggers basically.
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Determine which database we're migrating based on config file
-is_automation_db = config.config_file_name and 'alembic_automation.ini' in config.config_file_name
-
-# Set the database URL from settings
-if is_automation_db:
-    config.set_main_option('sqlalchemy.url', settings.automation_database_url)
-    target_metadata = automation_metadata  # Use automation metadata for automation database
-else:
-    config.set_main_option('sqlalchemy.url', settings.database_url)
-    target_metadata = combined_metadata  # Use combined metadata for main database
+config.set_main_option('sqlalchemy.url', settings.database_url)
+target_metadata = combined_metadata
 
 
 def run_migrations_offline() -> None:

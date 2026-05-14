@@ -344,11 +344,11 @@ class AIAgent:
 
                 # Process each eligible user
                 for user in eligible_users:
-                    # Get eligible invoices (TRANSFERRED status)
+                    # Get eligible invoices (VALIDATED status — including those transferred from automation)
                     statement = select(Invoice).where(
                         and_(
                             Invoice.user_id == user.id,
-                            Invoice.status == InvoiceStatus.TRANSFERRED,
+                            Invoice.status == InvoiceStatus.VALIDATED,
                             Invoice.is_deleted == False
                         )
                     ).order_by(Invoice.created_at).limit(10)
