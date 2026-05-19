@@ -1,17 +1,16 @@
-# Multi-stage build for FastAPI backend using Alpine
-FROM python:3.11-alpine AS builder
+# Multi-stage build for FastAPI backend using Debian Slim
+# Debian/glibc uses pre-compiled wheels — no Rust/C compilation needed
+FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
-# Install build dependencies
-RUN apk add --no-cache \
+# Minimal build deps (no rust/cargo needed — wheels are pre-built for glibc)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
-    musl-dev \
-    postgresql-dev \
+    libpq-dev \
     libffi-dev \
-    openssl-dev \
-    cargo \
-    rust
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
@@ -19,7 +18,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 # Copy dependency files
 COPY pyproject.toml ./
 
-# Install dependencies (remove stale lock, numpy<2 works on old CPUs)
+# Install dependencies
 RUN rm -f uv.lock && uv sync --no-cache --no-dev --no-install-project
 
 # Cleanup
@@ -54,18 +53,18 @@ RUN find /app/.venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null ||
     rm -rf /app/.venv/bin/pip* /app/.venv/bin/wheel /app/.venv/bin/easy_install* 2>/dev/null || true
 
 # Production stage
-FROM python:3.11-alpine
+FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN apk add --no-cache \
-    libpq \
-    libffi \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    libffi8 \
+    libmagic1 \
     openssl \
-    libmagic && \
-    rm -rf /var/cache/apk/*
+    && rm -rf /var/lib/apt/lists/*
 
-RUN adduser -D -u 1000 appuser
+RUN useradd -m -u 1000 appuser
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
