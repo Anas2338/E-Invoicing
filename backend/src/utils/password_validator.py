@@ -2,7 +2,7 @@
 Password strength validation utility.
 
 Enforces strong password policies:
-- Minimum 12 characters
+- Minimum 8 characters
 - At least one uppercase letter
 - At least one lowercase letter
 - At least one digit
@@ -42,8 +42,8 @@ def validate_password_strength(password: str) -> Tuple[bool, str]:
         return False, "Password cannot be empty"
 
     # Check minimum length
-    if len(password) < 12:
-        return False, "Password must be at least 12 characters long"
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters long"
 
     # Check for uppercase letter
     if not re.search(r'[A-Z]', password):
@@ -91,7 +91,7 @@ def get_password_requirements() -> str:
     """
     return (
         "Password must meet the following requirements:\n"
-        "- At least 12 characters long\n"
+        "- At least 8 characters long\n"
         "- At least one uppercase letter (A-Z)\n"
         "- At least one lowercase letter (a-z)\n"
         "- At least one digit (0-9)\n"

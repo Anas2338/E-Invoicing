@@ -1,0 +1,74 @@
+name: Deploy to Namecheap VPS
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Copy files to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          source: "backend,frontend,nginx,docker-compose.yml,deploy-cicd.sh"
+          target: ~/e-invoicing/
+          rm: false
+
+      - name: Deploy on VPS
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          script: |
+            set -e
+            cd ~/e-invoicing
+
+            echo "=== Updating nginx config ==="
+            if [ -f nginx/e-invoicing.conf ]; then
+              cp nginx/e-invoicing.conf /etc/nginx/conf.d/e-invoicing.conf
+              nginx -t && nginx -s reload || echo "Nginx reload skipped"
+            fi
+
+            echo "=== Cleaning up stale containers ==="
+            docker compose down --remove-orphans 2>/dev/null || true
+            docker container prune -f
+
+            echo "=== Building Docker images ==="
+            docker compose build --no-cache
+
+            echo "=== Restarting containers ==="
+            docker compose up -d --force-recreate
+
+            echo "=== Waiting for backend ==="
+            for i in $(seq 1 15); do
+              if curl -sf http://127.0.0.1:7860/health > /dev/null 2>&1; then
+                echo "Backend is ready."
+                break
+              fi
+              echo "  Waiting... ($i/15)"
+              sleep 2
+            done
+
+            echo "=== Running migrations ==="
+            docker compose exec -T backend /app/.venv/bin/python -m alembic upgrade head || echo "Already up to date"
+
+            echo "=== Status ==="
+            docker compose ps
+            curl -sf http://127.0.0.1:7860/health && echo "Backend: healthy" || echo "WARNING: Backend unreachable"
+
+            echo "=== Cleaning old images ==="
+            docker system prune -f
+            df -h / | grep -v Filesystem
+
+            echo "=== Deploy complete ==="

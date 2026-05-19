@@ -1,0 +1,29 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fbr-backend
+    env_file:
+      - ./backend/.env.production
+    network_mode: host
+    volumes:
+      - /var/run/postgresql:/var/run/postgresql
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: /api/v1
+        NEXT_PUBLIC_BACKEND_URL: http://taxntec.com
+        NEXT_PUBLIC_AI_AGENT_API_URL: https://anus211-e-invoicing-agent.hf.space/api/v1
+    container_name: fbr-frontend
+    network_mode: host
+    environment:
+      HOSTNAME: 0.0.0.0
+      PORT: 3001
+    restart: unless-stopped
+    depends_on:
+      - backend
