@@ -40,6 +40,11 @@ def validate_database_url_security(url: str) -> None:
 
     # Check for PostgreSQL SSL mode
     if url_lower.startswith('postgresql://') or url_lower.startswith('postgres://'):
+        # Skip SSL check for local Unix socket connections (inherently secure)
+        if 'host=' in url_lower and ('/var/run/postgresql' in url_lower or '/tmp/' in url_lower or '/run/' in url_lower):
+            logger.info("Database connection uses local Unix socket — SSL not required")
+            return
+
         if 'sslmode=' not in url_lower:
             raise ValueError(
                 "SECURITY ERROR: Database connection must use SSL/TLS encryption. "
