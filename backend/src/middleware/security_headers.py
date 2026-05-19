@@ -33,6 +33,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         """
         response = await call_next(request)
 
+        # Prevent Cloudflare/CDN caching of API responses
+        if request.url.path.startswith('/api/'):
+            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+
         # Prevent clickjacking attacks
         # DENY: Page cannot be displayed in a frame, regardless of the site attempting to do so
         response.headers["X-Frame-Options"] = "DENY"
