@@ -56,7 +56,7 @@ jobs:
             docker container prune -f
 
             echo "=== Building Docker images ==="
-            docker compose build --no-cache
+            docker compose build
 
             echo "=== Restarting containers ==="
             docker compose up -d --force-recreate
