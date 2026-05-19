@@ -71,24 +71,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const checkAuthStatus = async () => {
       try {
-        console.log('[Auth] Checking auth status...');
         const response = await fetch(`${API_BASE_URL}/auth/profile`, {
           method: 'GET',
           credentials: 'include',
         });
 
-        console.log('[Auth] Profile response status:', response.status);
         if (response.ok) {
           const userData = await response.json();
-          console.log('[Auth] Profile OK, user:', userData.email);
           setUser(userData);
         } else {
-          const text = await response.text();
-          console.log('[Auth] Profile failed:', response.status, text);
           setUser(null);
         }
       } catch (error) {
-        console.log('[Auth] Profile error:', error);
         setUser(null);
       } finally {
         setLoading(false);
