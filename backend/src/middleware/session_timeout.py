@@ -87,12 +87,16 @@ class SessionTimeoutMiddleware(BaseHTTPMiddleware):
 
         # Update last activity timestamp for authenticated requests
         if access_token and response.status_code < 400:
-            # Set last activity cookie
+            # Detect HTTPS for cookie secure flag
+            is_https = (
+                request.url.scheme == "https" or
+                request.headers.get("X-Forwarded-Proto") == "https"
+            )
             response.set_cookie(
                 key="last_activity",
                 value=datetime.utcnow().isoformat(),
                 httponly=True,
-                secure=True,
+                secure=is_https,
                 samesite="lax",
                 max_age=self.timeout_seconds,
                 path="/"

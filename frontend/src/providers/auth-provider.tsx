@@ -71,41 +71,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const checkAuthStatus = async () => {
       try {
-        // Check if user just logged out (prevent immediate re-authentication)
-        const logoutTimestamp = sessionStorage.getItem('logout_timestamp');
-        if (logoutTimestamp) {
-          const logoutTime = parseInt(logoutTimestamp);
-          const now = Date.now();
-          // If logout was within last 30 seconds, don't attempt to authenticate
-          // This gives time for token_version to propagate and cookies to clear
-          if (now - logoutTime < 30000) {
-            sessionStorage.removeItem('logout_timestamp');
-            setUser(null);
-            setLoading(false);
-            return;
-          }
-          // Clear old timestamp
-          sessionStorage.removeItem('logout_timestamp');
-        }
-
-        // With httpOnly cookies, we can't check the token directly
-        // Instead, try to fetch user profile from the API
-        // The cookie will be sent automatically
+        console.log('[Auth] Checking auth status...');
         const response = await fetch(`${API_BASE_URL}/auth/profile`, {
           method: 'GET',
-          credentials: 'include', // Important: send cookies with request
+          credentials: 'include',
         });
 
+        console.log('[Auth] Profile response status:', response.status);
         if (response.ok) {
           const userData = await response.json();
+          console.log('[Auth] Profile OK, user:', userData.email);
           setUser(userData);
-          // SECURITY: Don't store user data in localStorage (XSS vulnerability)
-          // Keep it only in React state (memory)
         } else {
-          // Not authenticated or token expired
+          const text = await response.text();
+          console.log('[Auth] Profile failed:', response.status, text);
           setUser(null);
         }
       } catch (error) {
+        console.log('[Auth] Profile error:', error);
         setUser(null);
       } finally {
         setLoading(false);
