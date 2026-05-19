@@ -34,6 +34,20 @@ jobs:
             set -e
             cd ~/e-invoicing
 
+            echo "=== Configuring Docker DNS ==="
+            if [ ! -f /etc/docker/daemon.json ]; then
+              echo '{"dns": ["8.8.8.8", "1.1.1.1"]}' | tee /etc/docker/daemon.json
+              systemctl restart docker
+            elif ! grep -q '"dns"' /etc/docker/daemon.json; then
+              if grep -q '{}' /etc/docker/daemon.json; then
+                echo '{"dns": ["8.8.8.8", "1.1.1.1"]}' | tee /etc/docker/daemon.json
+              else
+                sed -i 's/^{/{\n  "dns": ["8.8.8.8", "1.1.1.1"],/' /etc/docker/daemon.json
+              fi
+              systemctl restart docker
+            fi
+            echo "Docker DNS configured."
+
             echo "=== Updating nginx config ==="
             if [ -f nginx/e-invoicing.conf ]; then
               cp nginx/e-invoicing.conf /etc/nginx/conf.d/e-invoicing.conf
