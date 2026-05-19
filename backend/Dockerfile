@@ -21,6 +21,9 @@ COPY pyproject.toml ./
 # Install dependencies
 RUN rm -f uv.lock && uv sync --no-cache --no-dev --no-install-project
 
+# Rebuild numpy from source for the target CPU (pre-built wheel assumes SSE4.2+)
+RUN uv pip install --no-binary numpy --reinstall numpy
+
 # Cleanup
 RUN find /app/.venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
     find /app/.venv -type f -name "*.pyc" -delete && \
