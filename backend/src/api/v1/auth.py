@@ -195,16 +195,18 @@ def login_user(request: Request, user_login: UserLogin, db: Session = Depends(ge
             "csrf_token": csrf_token,
         })
 
-        # SECURITY: Use secure cookies with SameSite=None for cross-origin support
-        # Required for Vercel frontend + Hugging Face backend deployment
-        is_production = settings.app_env.lower() == "production"
+        # SECURITY: Detect HTTPS (direct or behind nginx proxy)
+        is_https = (
+            request.url.scheme == "https" or
+            request.headers.get("X-Forwarded-Proto") == "https"
+        )
 
         response.set_cookie(
             key="access_token",
             value=access_token,
             httponly=True,  # Prevents JavaScript access (XSS protection)
-            secure=True,  # Required for SameSite=None, always use HTTPS
-            samesite="none",  # Allow cross-origin requests
+            secure=is_https,
+            samesite="lax",  # Lax works for same-origin; none needed for cross-origin
             max_age=7200,  # 2 hours in seconds
             path="/",
             domain=None  # Let browser set domain automatically
@@ -215,21 +217,20 @@ def login_user(request: Request, user_login: UserLogin, db: Session = Depends(ge
             key="refresh_token",
             value=refresh_token,
             httponly=True,
-            secure=True,  # Required for SameSite=None
-            samesite="none",  # Allow cross-origin requests
+            secure=is_https,
+            samesite="lax",
             max_age=604800,  # 7 days in seconds
             path="/",
             domain=None
         )
 
         # SECURITY: Set CSRF token cookie for subsequent requests
-        # Use SameSite=None for cross-origin support (Vercel frontend + HF backend)
         response.set_cookie(
             key="csrf_token",
             value=csrf_token,
             httponly=False,  # Must be readable by JavaScript
-            secure=True,  # Required for SameSite=None, always use HTTPS
-            samesite="none",  # Allow cross-origin requests
+            secure=is_https,
+            samesite="lax",
             max_age=7200,  # Same as access token (2 hours)
             path="/",
             domain=None
@@ -283,10 +284,14 @@ def logout_user(request: Request, db: Session = Depends(get_db)):
 
     # Clear cookies by setting them to expire immediately
     # Use max_age=0 instead of delete_cookie for better cross-origin support
+    is_https = (
+        request.url.scheme == "https" or
+        request.headers.get("X-Forwarded-Proto") == "https"
+    )
     cookie_params = {
         "path": "/",
-        "secure": True,
-        "samesite": "none",
+        "secure": is_https,
+        "samesite": "lax",
         "httponly": True,
         "max_age": 0,  # Expire immediately
         "domain": None
@@ -569,14 +574,18 @@ def refresh_token(request: Request, db: Session = Depends(get_db)):
         # Create response
         response = JSONResponse(content={"message": "Token refreshed successfully"})
 
-        # SECURITY: Use SameSite=None for cross-origin support (consistent with login)
-        # Required for Vercel frontend + Hugging Face backend deployment
+        # Detect HTTPS (direct or behind nginx proxy)
+        is_https = (
+            request.url.scheme == "https" or
+            request.headers.get("X-Forwarded-Proto") == "https"
+        )
+
         response.set_cookie(
             key="access_token",
             value=new_access_token,
             httponly=True,
-            secure=True,
-            samesite="none",  # Changed from "lax" to "none" for cross-origin consistency
+            secure=is_https,
+            samesite="lax",
             max_age=7200,  # 2 hours
             path="/",
             domain=None
@@ -587,8 +596,8 @@ def refresh_token(request: Request, db: Session = Depends(get_db)):
             key="refresh_token",
             value=new_refresh_token,
             httponly=True,
-            secure=True,
-            samesite="none",  # Changed from "lax" to "none" for cross-origin consistency
+            secure=is_https,
+            samesite="lax",
             max_age=604800,  # 7 days
             path="/",
             domain=None
@@ -600,8 +609,8 @@ def refresh_token(request: Request, db: Session = Depends(get_db)):
             key="csrf_token",
             value=csrf_token,
             httponly=False,
-            secure=True,
-            samesite="none",  # Changed from "lax" to "none" for cross-origin consistency
+            secure=is_https,
+            samesite="lax",
             max_age=7200,
             path="/",
             domain=None
