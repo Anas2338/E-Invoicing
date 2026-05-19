@@ -5,9 +5,7 @@ FROM node:22-alpine AS deps
 WORKDIR /app
 
 # Install libc6-compat for compatibility with native modules on alpine
-RUN echo "nameserver 8.8.8.8" > /etc/resolv.conf && \
-    echo "nameserver 1.1.1.1" >> /etc/resolv.conf && \
-    apk add --no-cache libc6-compat
+RUN apk add --no-cache libc6-compat
 
 # Copy package files only so this layer is cached until deps change
 COPY package.json package-lock.json ./
