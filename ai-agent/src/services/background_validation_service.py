@@ -12,7 +12,6 @@ from src.models.automation_invoice import AutomationInvoice, AutomationInvoiceSt
 from src.models.excel_upload_session import ExcelUploadSession, ExcelUploadProcessingStatus
 from src.services.validation_service import ValidationService
 from src.services.fbr_client import FBRClient
-from src.schemas.fbr import FBREnvironment
 from src.config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -25,8 +24,7 @@ class BackgroundValidationService:
     async def validate_invoices_background(
         session_id: UUID,
         user_id: UUID,
-        fbr_token: str,
-        fbr_environment: str
+        fbr_token: str
     ):
         """
         Validate all invoices for a session in the background.
@@ -36,8 +34,7 @@ class BackgroundValidationService:
         Args:
             session_id: Upload session UUID
             user_id: User UUID
-            fbr_token: User's FBR token
-            fbr_environment: SANDBOX or PRODUCTION
+            fbr_token: User's FBR production token
         """
         logger.info(f"Starting background validation for session {session_id}")
 
@@ -118,10 +115,8 @@ class BackgroundValidationService:
                                         invoice.validation_errors = f"Validation failed: {str(validation_errors)}"
                                         failed_count += 1
                                     else:
-                                        # Step 2: FBR validation
+                                        # Step 2: FBR validation (Production)
                                         try:
-                                            environment = FBREnvironment.SANDBOX if fbr_environment == "SANDBOX" else FBREnvironment.PRODUCTION
-
                                             # DRY RUN MODE - Simulate FBR validation
                                             if settings.dry_run:
                                                 import random
@@ -129,7 +124,6 @@ class BackgroundValidationService:
 
                                                 logger.info(f"[DRY RUN] Simulating FBR validation for invoice {invoice.invoice_number}")
 
-                                                # Simulate 98% validation success rate
                                                 is_valid_fbr = random.random() < 0.98
 
                                                 if is_valid_fbr:
@@ -151,7 +145,6 @@ class BackgroundValidationService:
                                                     }
                                                     logger.info(f"[DRY RUN] Simulated validation SUCCESS for invoice {invoice.invoice_number}")
                                                 else:
-                                                    # Simulate random validation error
                                                     error_scenarios = [
                                                         {"code": "0052", "msg": "HS Code does not match with provided sale type"},
                                                         {"code": "0078", "msg": "Valid Item Sr. No. is mandatory where SRO/Schedule No. is provided"}
@@ -168,10 +161,9 @@ class BackgroundValidationService:
                                                     }
                                                     logger.warning(f"[DRY RUN] Simulated validation FAILURE for invoice {invoice.invoice_number}")
                                             else:
-                                                # REAL MODE - Actual FBR API call
+                                                # REAL MODE - Actual FBR API call (Production)
                                                 is_valid_fbr, fbr_response, reference_number = await fbr_client.validate_invoice_with_user_credentials(
                                                     invoice_data=invoice.invoice_data,
-                                                    environment=environment,
                                                     fbr_token=fbr_token
                                                 )
 

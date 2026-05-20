@@ -14,7 +14,7 @@ from src.database.session import get_automation_db, get_db
 from src.api.middleware.auth_middleware import require_authentication
 from src.models.automation_invoice import AutomationInvoice, AutomationInvoiceStatus
 from src.models.user import User
-from src.services.fbr_client import FBRClient, FBREnvironment
+from src.services.fbr_client import FBRClient
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -78,14 +78,11 @@ async def retry_failed_invoice(
     automation_db.add(invoice)
     automation_db.commit()
 
-    # Run actual FBR validation
+    # Run actual FBR validation (Production)
     fbr_client = FBRClient()
     try:
-        environment = FBREnvironment.SANDBOX if user.fbr_environment == "SANDBOX" else FBREnvironment.PRODUCTION
-
         is_valid, fbr_response, reference_number = await fbr_client.validate_invoice_with_user_credentials(
             invoice_data=invoice.invoice_data,
-            environment=environment,
             fbr_token=fbr_token
         )
 

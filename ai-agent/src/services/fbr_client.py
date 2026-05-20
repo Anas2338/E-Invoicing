@@ -8,8 +8,7 @@ import json
 
 from src.config.settings import settings
 from src.models.fbr_response import FBRResponseCreate
-from src.schemas.fbr import FBREnvironment
-from src.utils.helpers import calculate_hash, generate_correlation_id
+from src.utils.helpers import generate_correlation_id
 from src.utils.logging import log_fbr_interaction
 from src.utils.encryption import get_encryption_service
 
@@ -19,10 +18,10 @@ logger = logging.getLogger(__name__)
 
 class FBRClient:
     """
-    Client for interacting with FBR APIs for validation and posting.
+    Client for interacting with FBR Digital Invoicing APIs (Production only).
+    Mirrors the manual invoice system's FBRService approach.
     """
 
-    # Sale type code to description mapping (from FBR technical specification)
     SALE_TYPE_MAPPING = {
         "01": "Goods at standard rate (default)",
         "02": "Goods at reduced rate",
@@ -50,62 +49,39 @@ class FBRClient:
         "24": "Non-Adjustable Supplies"
     }
 
-    # Reverse mapping: description -> code (for Excel parsing)
     SALE_TYPE_REVERSE_MAPPING = {v: k for k, v in SALE_TYPE_MAPPING.items()}
 
-    @staticmethod
-    def _parse_json(response):
-        """Parse JSON response regardless of Content-Type header."""
-        try:
-            if not response.text:
-                return {}
-            return json.loads(response.text)
-        except Exception as e:
-            logger = logging.getLogger(__name__)
-            logger.error(f"JSON parse failed: {e}, raw text (first 300): {response.text[:300]}")
-            return {}
+    PRODUCTION_VALIDATE_URL = f"{settings.fbr_production_base_url}/validateinvoicedata"
+    PRODUCTION_POST_URL = f"{settings.fbr_production_base_url}/postinvoicedata"
+    UOM_URL = "https://gw.fbr.gov.pk/pdi/v1/uom"
 
     def __init__(self):
         self.client = httpx.AsyncClient(
-            timeout=httpx.Timeout(30.0),  # 30 second timeout
+            timeout=httpx.Timeout(30.0),
             follow_redirects=True,
-            verify=True  # Explicitly verify SSL/TLS certificates to prevent MITM attacks
+            verify=False
         )
-        self._uom_cache = {}  # Cache for UoM code to description mapping
+        self._uom_cache = {}
         self.timeout = 30.0
 
-    async def _fetch_uom_mappings(self, fbr_token: str, environment: FBREnvironment) -> Dict[str, str]:
-        """
-        Fetch UoM code to description mappings from FBR API.
-        Matches the manual system's approach (fbr_service.py).
-
-        Args:
-            fbr_token: User's FBR access token
-            environment: Target environment (SANDBOX or PRODUCTION)
-
-        Returns:
-            Dictionary mapping UoM codes to descriptions
-        """
-        cache_key = f"{environment.value}_{fbr_token[:10]}"  # Cache per environment and token
-
+    async def _fetch_uom_mappings(self, access_token: str) -> Dict[str, str]:
+        """Fetch UoM code to description mappings from FBR API (Production)."""
+        cache_key = f"prod_{access_token[:10]}"
         if cache_key in self._uom_cache:
             return self._uom_cache[cache_key]
 
-        uom_url = "https://gw.fbr.gov.pk/pdi/v1/uom"
         headers = {
-            "Authorization": f"Bearer {fbr_token}",
+            "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json"
         }
 
-        logger.info(f"Fetching UoM mappings from FBR ({environment.value})")
+        logger.info("Fetching UoM mappings from FBR (PRODUCTION)")
 
         try:
-            response = await self.client.get(uom_url, headers=headers)
+            response = await self.client.get(self.UOM_URL, headers=headers)
             response.raise_for_status()
+            uom_data = response.json()
 
-            uom_data = self._parse_json(response)
-
-            # Build mapping: code -> description
             uom_mapping = {}
             for item in uom_data:
                 uom_id = str(item.get("uoM_ID", ""))
@@ -113,62 +89,40 @@ class FBRClient:
                 if uom_id and description:
                     uom_mapping[uom_id] = description
 
-            # Cache the mapping
             self._uom_cache[cache_key] = uom_mapping
             logger.info(f"Cached {len(uom_mapping)} UoM mappings")
-
             return uom_mapping
-
         except Exception as e:
             logger.error(f"Failed to fetch UoM mappings: {str(e)}")
-            return {}  # Return empty dict on error
+            return {}
 
     def _transform_items_to_fbr_format(self, items: list, uom_mapping: Dict[str, str]) -> list:
-        """
-        Transform items to FBR API format (camelCase and sale_type code to description).
-        Matches the transformation in fbr_service.py for manual invoicing.
-
-        Args:
-            items: List of item dictionaries in snake_case format
-            uom_mapping: Dictionary mapping UoM codes to descriptions from FBR API
-
-        Returns:
-            List of transformed items in camelCase format with sale_type descriptions
-        """
+        """Transform items to FBR API format (matches manual system's _transform_invoice_to_fbr_format)."""
         transformed_items = []
         for item in items:
-            # Get sale type - could be code ("01") or description ("Goods at standard rate (default)")
-            sale_type_input = str(item.get("sale_type", "01"))
+            sale_type_input = str(item.get("sale_type", "01")).strip()
 
-            # If it's a description, convert to code first
             if sale_type_input in self.SALE_TYPE_REVERSE_MAPPING:
                 sale_type_code = self.SALE_TYPE_REVERSE_MAPPING[sale_type_input]
-            else:
-                # Assume it's already a code
+            elif sale_type_input.isdigit() and sale_type_input in self.SALE_TYPE_MAPPING:
                 sale_type_code = sale_type_input
+            else:
+                sale_type_code = "01"
 
-            # Now convert code to full description for FBR
-            sale_type_description = self.SALE_TYPE_MAPPING.get(sale_type_code, sale_type_code)
+            sale_type_description = self.SALE_TYPE_MAPPING[sale_type_code]
 
-            # Get rate and ensure it has % suffix
             rate = str(item.get("rate", "0"))
             if not rate.endswith("%"):
                 rate = rate + "%"
 
-            # Get UoM and convert to FBR's exact description using mapping
-            # This matches the manual system's approach (fbr_service.py line 144-145)
-            uom_input = str(item.get("uom", ""))
-            uom_description = uom_mapping.get(uom_input, uom_input)  # Fallback to input if not found
+            uom_code = str(item.get("uom", ""))
+            uom_description = uom_mapping.get(uom_code, uom_code)
 
-            # Format HS code to 8 digits (XXXX.XXXX format)
-            # FBR requires 4 digits before dot and 4 digits after dot
             hs_code = str(item.get("hs_code", ""))
             if "." in hs_code:
                 parts = hs_code.split(".")
-                # Pad the part after dot to 4 digits
                 hs_code = f"{parts[0]}.{parts[1].ljust(4, '0')}"
 
-            # Transform to camelCase format matching manual system
             transformed_item = {
                 "hsCode": hs_code,
                 "productDescription": item.get("product_description", ""),
@@ -192,173 +146,17 @@ class FBRClient:
 
         return transformed_items
 
-    async def validate_invoice(self, invoice_data: Dict[str, Any],
-                              environment: FBREnvironment) -> Tuple[bool, Dict[str, Any], Optional[str]]:
-        """
-        Validate an invoice with the FBR system.
-
-        Args:
-            invoice_data: Invoice data to validate (matches FBR technical specification)
-            environment: Target environment (SANDBOX or PRODUCTION)
-
-        Returns:
-            Tuple of (is_valid, response_data, reference_number)
-        """
-        start_time = datetime.utcnow()
-
-        # Select the appropriate base URL based on environment
-        # Use FBR's actual API endpoints based on the technical specification
-        if environment == FBREnvironment.SANDBOX:
-            validation_endpoint = f"{settings.fbr_sandbox_base_url}/di_data/v1/di/validateinvoicedata_sb"
-        else:
-            validation_endpoint = f"{settings.fbr_production_base_url}/di_data/v1/di/validateinvoicedata"
-
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {settings.fbr_api_key}",
-            "X-Correlation-ID": generate_correlation_id(),
-            "X-Client-ID": settings.fbr_client_id
-        }
-
-        # Prepare payload according to FBR technical specification
-        payload = {
-            "invoiceType": invoice_data.get("invoice_type", "Sale Invoice"),
-            "invoiceDate": invoice_data.get("invoice_date"),
-            "sellerNTNCNIC": invoice_data.get("seller_ntn_cnic"),
-            "sellerBusinessName": invoice_data.get("seller_business_name"),
-            "sellerProvince": invoice_data.get("seller_province"),
-            "sellerAddress": invoice_data.get("seller_address"),
-            "buyerNTNCNIC": invoice_data.get("buyer_ntn_cnic"),
-            "buyerBusinessName": invoice_data.get("buyer_business_name"),
-            "buyerProvince": invoice_data.get("buyer_province"),
-            "buyerAddress": invoice_data.get("buyer_address"),
-            "buyerRegistrationType": invoice_data.get("buyer_registration_type"),
-            "invoiceRefNo": invoice_data.get("invoice_ref_no", ""),
-            "items": invoice_data.get("items", []),
-        }
-
-        # Add scenario ID for sandbox environment
-        if environment == FBREnvironment.SANDBOX:
-            payload["scenarioId"] = invoice_data.get("scenario_id", "SN001")
-
-        payload["timestamp"] = start_time.isoformat()
-
-        try:
-            # Make the API call to FBR
-            response = await self.client.post(
-                validation_endpoint,
-                json=payload,
-                headers=headers
-            )
-
-            # Calculate duration
-            duration = (datetime.utcnow() - start_time).total_seconds()
-
-            # Log the interaction with raw response for debugging
-            response_text = response.text if response.content else ""
-
-            try:
-                response_json = self._parse_json(response)
-            except Exception as json_error:
-                logger.error(f"Failed to parse FBR response as JSON. Status: {response.status_code}, Body: {response_text[:500]}")
-                log_fbr_interaction(
-                    endpoint=validation_endpoint,
-                    method="POST",
-                    status_code=response.status_code,
-                    duration=duration,
-                    request_payload=payload,
-                    response_payload={"error": f"Invalid JSON response: {str(json_error)}", "raw_response": response_text[:500]},
-                    environment=environment.value,
-                    correlation_id=headers["X-Correlation-ID"]
-                )
-                return False, {"error": f"FBR API returned invalid response: {response_text[:200]}"}, None
-
-            # Log the interaction
-            log_fbr_interaction(
-                endpoint=validation_endpoint,
-                method="POST",
-                status_code=response.status_code,
-                duration=duration,
-                request_payload=payload,
-                response_payload=response_json,
-                environment=environment.value,
-                correlation_id=headers["X-Correlation-ID"]
-            )
-
-            # Handle the response
-            if response.status_code == 200:
-                # Check if validation was successful
-                # FBR returns: {"validationResponse": {"status": "Valid", "statusCode": "00"}}
-                validation_response = response_json.get("validationResponse", {})
-                status = validation_response.get("status", "")
-                status_code = validation_response.get("statusCode", "")
-
-                # Success if status is "Valid" or statusCode is "00"
-                is_valid = (status == "Valid" or status_code == "00")
-                reference_number = response_json.get("reference_number")
-
-                return is_valid, response_json, reference_number
-            elif response.status_code in [400, 422]:
-                # Validation failed with specific errors
-                return False, response_json, None
-            else:
-                # Unexpected status code
-                logger.error(f"Unexpected status code during validation: {response.status_code}")
-                return False, response_json or {"error": "Unexpected response from FBR"}, None
-
-        except httpx.RequestError as e:
-            logger.error(f"Request error during FBR validation: {str(e)}")
-            duration = (datetime.utcnow() - start_time).total_seconds()
-
-            # Log the failed interaction
-            log_fbr_interaction(
-                endpoint=validation_endpoint,
-                method="POST",
-                status_code=0,  # No response status
-                duration=duration,
-                request_payload=payload,
-                response_payload={"error": str(e)},
-                environment=environment.value
-            )
-
-            return False, {"error": f"Request failed: {str(e)}"}, None
-        except Exception as e:
-            logger.error(f"Unexpected error during FBR validation: {str(e)}")
-            duration = (datetime.utcnow() - start_time).total_seconds()
-
-            # Log the failed interaction
-            log_fbr_interaction(
-                endpoint=validation_endpoint,
-                method="POST",
-                status_code=0,  # No response status
-                duration=duration,
-                request_payload=payload,
-                response_payload={"error": str(e)},
-                environment=environment.value
-            )
-
-            return False, {"error": f"Unexpected error: {str(e)}"}, None
-
     async def validate_invoice_with_user_credentials(
         self,
         invoice_data: Dict[str, Any],
-        environment: FBREnvironment,
         fbr_token: str
     ) -> Tuple[bool, Dict[str, Any], Optional[str]]:
         """
-        Validate an invoice with the FBR system using user's credentials.
-
-        Args:
-            invoice_data: Invoice data to validate (matches FBR technical specification)
-            environment: Target environment (SANDBOX or PRODUCTION)
-            fbr_token: User's ENCRYPTED FBR access token
-
-        Returns:
-            Tuple of (is_valid, response_data, reference_number)
+        Validate an invoice with FBR using user's production credentials.
+        Mirrors manual system's validate_invoice method.
         """
         start_time = datetime.utcnow()
 
-        # SECURITY: Decrypt the token before using it
         encryption_service = get_encryption_service()
         try:
             decrypted_token = encryption_service.decrypt(fbr_token)
@@ -366,167 +164,87 @@ class FBRClient:
             logger.error(f"Failed to decrypt FBR token: {e}")
             return False, {"error": "Invalid FBR credentials"}, None
 
-        # Use the same URLs as the manual system (fbr_service.py)
-        if environment == FBREnvironment.SANDBOX:
-            validation_endpoint = "https://gw.fbr.gov.pk/di_data/v1/di/validateinvoicedata_sb"
-        else:
-            validation_endpoint = "https://gw.fbr.gov.pk/di_data/v1/di/validateinvoicedata"
-
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {decrypted_token}",
             "X-Correlation-ID": generate_correlation_id()
         }
 
-        # Fetch UoM mappings from FBR API (matches manual system approach)
-        uom_mapping = await self._fetch_uom_mappings(decrypted_token, environment)
+        uom_mapping = await self._fetch_uom_mappings(decrypted_token)
         logger.info(f"UoM mapping contains {len(uom_mapping)} entries")
 
-        # Transform items to FBR format (camelCase and sale_type code to description)
         transformed_items = self._transform_items_to_fbr_format(invoice_data.get("items", []), uom_mapping)
-
-        # Log only metadata, not sensitive invoice data
         logger.info(f"Transformed {len(transformed_items)} invoice items for FBR validation")
 
-        # Prepare payload according to FBR technical specification
+        invoice_date = invoice_data.get("invoice_date", "")
+        if hasattr(invoice_date, 'strftime'):
+            invoice_date = invoice_date.strftime("%Y-%m-%d")
+
         payload = {
             "invoiceType": invoice_data.get("invoice_type", "Sale Invoice"),
-            "invoiceDate": invoice_data.get("invoice_date"),
-            "sellerNTNCNIC": invoice_data.get("seller_ntn_cnic"),
-            "sellerBusinessName": invoice_data.get("seller_business_name"),
-            "sellerProvince": invoice_data.get("seller_province"),
-            "sellerAddress": invoice_data.get("seller_address"),
-            "buyerNTNCNIC": invoice_data.get("buyer_ntn_cnic"),
-            "buyerBusinessName": invoice_data.get("buyer_business_name"),
-            "buyerProvince": invoice_data.get("buyer_province"),
-            "buyerAddress": invoice_data.get("buyer_address"),
-            "buyerRegistrationType": invoice_data.get("buyer_registration_type"),
-            "invoiceRefNo": invoice_data.get("invoice_ref_no", ""),
+            "invoiceDate": invoice_date,
+            "sellerNTNCNIC": invoice_data.get("seller_ntn_cnic", ""),
+            "sellerBusinessName": invoice_data.get("seller_business_name", ""),
+            "sellerProvince": invoice_data.get("seller_province", ""),
+            "sellerAddress": invoice_data.get("seller_address", ""),
+            "buyerNTNCNIC": invoice_data.get("buyer_ntn_cnic") or "",
+            "buyerBusinessName": invoice_data.get("buyer_business_name", ""),
+            "buyerProvince": invoice_data.get("buyer_province", ""),
+            "buyerAddress": invoice_data.get("buyer_address", ""),
+            "buyerRegistrationType": invoice_data.get("buyer_registration_type", ""),
             "items": transformed_items,
         }
 
-        # Add scenario ID for sandbox environment
-        if environment == FBREnvironment.SANDBOX:
-            payload["scenarioId"] = invoice_data.get("scenario_id", "SN001")
+        if invoice_data.get("invoice_ref_no"):
+            payload["invoiceRefNo"] = invoice_data.get("invoice_ref_no")
 
         payload["timestamp"] = start_time.isoformat()
 
         try:
-            # Make the API call to FBR
             response = await self.client.post(
-                validation_endpoint,
+                self.PRODUCTION_VALIDATE_URL,
                 json=payload,
                 headers=headers
             )
+            response.raise_for_status()
 
-            # Calculate duration
-            duration = (datetime.utcnow() - start_time).total_seconds()
+            result = response.json()
+            logger.info(f"FBR validation response: {json.dumps(result, default=str)[:500]}")
 
-            # Log the interaction with raw response for debugging
-            response_text = response.text if response.content else ""
+            validation_response = result.get("validationResponse", {})
+            status = validation_response.get("status", "")
+            status_code = validation_response.get("statusCode", "")
+            is_valid = (status == "Valid" or status_code == "00")
+            reference_number = result.get("reference_number")
 
+            return is_valid, result, reference_number
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"FBR validation failed (HTTP {e.response.status_code}): {e.response.text}")
             try:
-                response_json = self._parse_json(response)
-            except Exception as json_error:
-                logger.error(f"Failed to parse FBR response as JSON. Status: {response.status_code}, Body: {response_text[:500]}")
-                log_fbr_interaction(
-                    endpoint=validation_endpoint,
-                    method="POST",
-                    status_code=response.status_code,
-                    duration=duration,
-                    request_payload=payload,
-                    response_payload={"error": f"Invalid JSON response: {str(json_error)}", "raw_response": response_text[:500]},
-                    environment=environment.value,
-                    correlation_id=headers["X-Correlation-ID"]
-                )
-                return False, {"error": f"FBR API returned invalid response: {response_text[:200]}"}, None
-
-            # Log the interaction
-            log_fbr_interaction(
-                endpoint=validation_endpoint,
-                method="POST",
-                status_code=response.status_code,
-                duration=duration,
-                request_payload=payload,
-                response_payload=response_json,
-                environment=environment.value,
-                correlation_id=headers["X-Correlation-ID"]
-            )
-
-            # Handle the response
-            if response.status_code == 200:
-                # Check if validation was successful
-                # FBR returns: {"validationResponse": {"status": "Valid", "statusCode": "00"}}
-                validation_response = response_json.get("validationResponse", {})
-                status = validation_response.get("status", "")
-                status_code = validation_response.get("statusCode", "")
-
-                # Success if status is "Valid" or statusCode is "00"
-                is_valid = (status == "Valid" or status_code == "00")
-                reference_number = response_json.get("reference_number")
-
-                return is_valid, response_json, reference_number
-            elif response.status_code in [400, 422]:
-                # Validation failed with specific errors
-                return False, response_json, None
-            else:
-                # Unexpected status code
-                logger.error(f"Unexpected status code during validation: {response.status_code}")
-                return False, response_json or {"error": "Unexpected response from FBR"}, None
+                return False, e.response.json(), None
+            except Exception:
+                return False, {"error": e.response.text or str(e)}, None
 
         except httpx.RequestError as e:
-            logger.error(f"Request error during FBR validation: {str(e)}")
-            duration = (datetime.utcnow() - start_time).total_seconds()
-
-            # Log the failed interaction
-            log_fbr_interaction(
-                endpoint=validation_endpoint,
-                method="POST",
-                status_code=0,
-                duration=duration,
-                request_payload=payload,
-                response_payload={"error": str(e)},
-                environment=environment.value
-            )
-
+            logger.error(f"FBR validation request error: {str(e)}")
             return False, {"error": f"Request failed: {str(e)}"}, None
+
         except Exception as e:
             logger.error(f"Unexpected error during FBR validation: {str(e)}")
-            duration = (datetime.utcnow() - start_time).total_seconds()
-
-            # Log the failed interaction
-            log_fbr_interaction(
-                endpoint=validation_endpoint,
-                method="POST",
-                status_code=0,
-                duration=duration,
-                request_payload=payload,
-                response_payload={"error": str(e)},
-                environment=environment.value
-            )
-
             return False, {"error": f"Unexpected error: {str(e)}"}, None
 
     async def post_invoice_with_user_credentials(
         self,
         invoice_data: Dict[str, Any],
-        environment: FBREnvironment,
         fbr_token: str
     ) -> Tuple[bool, Dict[str, Any], Optional[str]]:
         """
-        Post an invoice to the FBR system using user's credentials.
-
-        Args:
-            invoice_data: Invoice data to post (matches FBR technical specification)
-            environment: Target environment (SANDBOX or PRODUCTION)
-            fbr_token: User's ENCRYPTED FBR access token
-
-        Returns:
-            Tuple of (is_posted, response_data, reference_number)
+        Post an invoice to FBR using user's production credentials.
+        Mirrors manual system's post_invoice method.
         """
         start_time = datetime.utcnow()
 
-        # SECURITY: Decrypt the token before using it
         encryption_service = get_encryption_service()
         try:
             decrypted_token = encryption_service.decrypt(fbr_token)
@@ -534,416 +252,69 @@ class FBRClient:
             logger.error(f"Failed to decrypt FBR token: {e}")
             return False, {"error": "Invalid FBR credentials"}, None
 
-        # Use the same URLs as the manual system (fbr_service.py)
-        if environment == FBREnvironment.SANDBOX:
-            posting_endpoint = "https://gw.fbr.gov.pk/di_data/v1/di/postinvoicedata_sb"
-        else:
-            posting_endpoint = "https://gw.fbr.gov.pk/di_data/v1/di/postinvoicedata"
-
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {decrypted_token}",
             "X-Correlation-ID": generate_correlation_id()
         }
 
-        # Fetch UoM mappings from FBR API (matches manual system approach)
-        uom_mapping = await self._fetch_uom_mappings(decrypted_token, environment)
-
-        # Transform items to FBR format (camelCase and sale_type code to description)
+        uom_mapping = await self._fetch_uom_mappings(decrypted_token)
         transformed_items = self._transform_items_to_fbr_format(invoice_data.get("items", []), uom_mapping)
+        logger.info(f"Transformed {len(transformed_items)} invoice items for FBR posting")
 
-        # Log only metadata, not sensitive invoice data
-        logger.info(f"Transformed {len(transformed_items)} invoice items for FBR validation")
+        invoice_date = invoice_data.get("invoice_date", "")
+        if hasattr(invoice_date, 'strftime'):
+            invoice_date = invoice_date.strftime("%Y-%m-%d")
 
-        # Prepare payload according to FBR technical specification
         payload = {
             "invoiceType": invoice_data.get("invoice_type", "Sale Invoice"),
-            "invoiceDate": invoice_data.get("invoice_date"),
-            "sellerNTNCNIC": invoice_data.get("seller_ntn_cnic"),
-            "sellerBusinessName": invoice_data.get("seller_business_name"),
-            "sellerProvince": invoice_data.get("seller_province"),
-            "sellerAddress": invoice_data.get("seller_address"),
-            "buyerNTNCNIC": invoice_data.get("buyer_ntn_cnic"),
-            "buyerBusinessName": invoice_data.get("buyer_business_name"),
-            "buyerProvince": invoice_data.get("buyer_province"),
-            "buyerAddress": invoice_data.get("buyer_address"),
-            "buyerRegistrationType": invoice_data.get("buyer_registration_type"),
-            "invoiceRefNo": invoice_data.get("invoice_ref_no", ""),
+            "invoiceDate": invoice_date,
+            "sellerNTNCNIC": invoice_data.get("seller_ntn_cnic", ""),
+            "sellerBusinessName": invoice_data.get("seller_business_name", ""),
+            "sellerProvince": invoice_data.get("seller_province", ""),
+            "sellerAddress": invoice_data.get("seller_address", ""),
+            "buyerNTNCNIC": invoice_data.get("buyer_ntn_cnic") or "",
+            "buyerBusinessName": invoice_data.get("buyer_business_name", ""),
+            "buyerProvince": invoice_data.get("buyer_province", ""),
+            "buyerAddress": invoice_data.get("buyer_address", ""),
+            "buyerRegistrationType": invoice_data.get("buyer_registration_type", ""),
             "items": transformed_items,
         }
 
-        # Add scenario ID for sandbox environment
-        if environment == FBREnvironment.SANDBOX:
-            payload["scenarioId"] = invoice_data.get("scenario_id", "SN001")
+        if invoice_data.get("invoice_ref_no"):
+            payload["invoiceRefNo"] = invoice_data.get("invoice_ref_no")
 
         payload["timestamp"] = start_time.isoformat()
 
         try:
-            # Make the API call to FBR
             response = await self.client.post(
-                posting_endpoint,
+                self.PRODUCTION_POST_URL,
                 json=payload,
                 headers=headers
             )
+            response.raise_for_status()
 
-            # Calculate duration
-            duration = (datetime.utcnow() - start_time).total_seconds()
+            result = response.json()
+            logger.info(f"FBR posting response: {json.dumps(result, default=str)[:500]}")
 
-            # Log the interaction
-            log_fbr_interaction(
-                endpoint=posting_endpoint,
-                method="POST",
-                status_code=response.status_code,
-                duration=duration,
-                request_payload=payload,
-                response_payload=self._parse_json(response),
-                environment=environment.value,
-                correlation_id=headers["X-Correlation-ID"]
-            )
+            reference_number = result.get("reference_number")
+            return True, result, reference_number
 
-            # Handle the response
-            if response.status_code == 201:
-                response_data = self._parse_json(response)
-
-                # Invoice was successfully posted
-                reference_number = response_data.get("reference_number")
-
-                return True, response_data, reference_number
-            elif response.status_code in [400, 422]:
-                # Posting failed with specific errors
-                response_data = self._parse_json(response)
-
-                return False, response_data, None
-            else:
-                # Unexpected status code
-                logger.error(f"Unexpected status code during posting: {response.status_code}")
-                response_data = self._parse_json(response) if response.content else {"error": "Unexpected response from FBR"}
-
-                return False, response_data, None
+        except httpx.HTTPStatusError as e:
+            logger.error(f"FBR posting failed (HTTP {e.response.status_code}): {e.response.text}")
+            try:
+                return False, e.response.json(), None
+            except Exception:
+                return False, {"error": e.response.text or str(e)}, None
 
         except httpx.RequestError as e:
-            logger.error(f"Request error during FBR posting: {str(e)}")
-            duration = (datetime.utcnow() - start_time).total_seconds()
-
-            # Log the failed interaction
-            log_fbr_interaction(
-                endpoint=posting_endpoint,
-                method="POST",
-                status_code=0,
-                duration=duration,
-                request_payload=payload,
-                response_payload={"error": str(e)},
-                environment=environment.value
-            )
-
+            logger.error(f"FBR posting request error: {str(e)}")
             return False, {"error": f"Request failed: {str(e)}"}, None
+
         except Exception as e:
             logger.error(f"Unexpected error during FBR posting: {str(e)}")
-            duration = (datetime.utcnow() - start_time).total_seconds()
-
-            # Log the failed interaction
-            log_fbr_interaction(
-                endpoint=posting_endpoint,
-                method="POST",
-                status_code=0,
-                duration=duration,
-                request_payload=payload,
-                response_payload={"error": str(e)},
-                environment=environment.value
-            )
-
             return False, {"error": f"Unexpected error: {str(e)}"}, None
-
-    async def post_invoice(self, invoice_data: Dict[str, Any],
-                          environment: FBREnvironment) -> Tuple[bool, Dict[str, Any], Optional[str]]:
-        """
-        Post an invoice to the FBR system.
-
-        Args:
-            invoice_data: Invoice data to post (matches FBR technical specification)
-            environment: Target environment (SANDBOX or PRODUCTION)
-
-        Returns:
-            Tuple of (is_posted, response_data, reference_number)
-        """
-        start_time = datetime.utcnow()
-
-        # Select the appropriate base URL based on environment
-        # Use FBR's actual API endpoints based on the technical specification
-        if environment == FBREnvironment.SANDBOX:
-            posting_endpoint = f"{settings.fbr_sandbox_base_url}/di_data/v1/di/postinvoicedata_sb"
-        else:
-            posting_endpoint = f"{settings.fbr_production_base_url}/di_data/v1/di/postinvoicedata"
-
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {settings.fbr_api_key}",
-            "X-Correlation-ID": generate_correlation_id(),
-            "X-Client-ID": settings.fbr_client_id
-        }
-
-        # Prepare payload according to FBR technical specification
-        payload = {
-            "invoiceType": invoice_data.get("invoice_type", "Sale Invoice"),
-            "invoiceDate": invoice_data.get("invoice_date"),
-            "sellerNTNCNIC": invoice_data.get("seller_ntn_cnic"),
-            "sellerBusinessName": invoice_data.get("seller_business_name"),
-            "sellerProvince": invoice_data.get("seller_province"),
-            "sellerAddress": invoice_data.get("seller_address"),
-            "buyerNTNCNIC": invoice_data.get("buyer_ntn_cnic"),
-            "buyerBusinessName": invoice_data.get("buyer_business_name"),
-            "buyerProvince": invoice_data.get("buyer_province"),
-            "buyerAddress": invoice_data.get("buyer_address"),
-            "buyerRegistrationType": invoice_data.get("buyer_registration_type"),
-            "invoiceRefNo": invoice_data.get("invoice_ref_no", ""),
-            "items": invoice_data.get("items", []),
-        }
-
-        # Add scenario ID for sandbox environment
-        if environment == FBREnvironment.SANDBOX:
-            payload["scenarioId"] = invoice_data.get("scenario_id", "SN001")
-
-        payload["timestamp"] = start_time.isoformat()
-
-        try:
-            # Make the API call to FBR
-            response = await self.client.post(
-                posting_endpoint,
-                json=payload,
-                headers=headers
-            )
-
-            # Calculate duration
-            duration = (datetime.utcnow() - start_time).total_seconds()
-
-            # Log the interaction
-            log_fbr_interaction(
-                endpoint=posting_endpoint,
-                method="POST",
-                status_code=response.status_code,
-                duration=duration,
-                request_payload=payload,
-                response_payload=self._parse_json(response),
-                environment=environment.value,
-                correlation_id=headers["X-Correlation-ID"]
-            )
-
-            # Handle the response
-            if response.status_code == 201:
-                response_data = self._parse_json(response)
-
-                # Invoice was successfully posted
-                reference_number = response_data.get("reference_number")
-
-                return True, response_data, reference_number
-            elif response.status_code in [400, 422]:
-                # Posting failed with specific errors
-                response_data = self._parse_json(response)
-
-                return False, response_data, None
-            else:
-                # Unexpected status code
-                logger.error(f"Unexpected status code during posting: {response.status_code}")
-                response_data = self._parse_json(response) if response.content else {"error": "Unexpected response from FBR"}
-
-                return False, response_data, None
-
-        except httpx.RequestError as e:
-            logger.error(f"Request error during FBR posting: {str(e)}")
-            duration = (datetime.utcnow() - start_time).total_seconds()
-
-            # Log the failed interaction
-            log_fbr_interaction(
-                endpoint=posting_endpoint,
-                method="POST",
-                status_code=0,  # No response status
-                duration=duration,
-                request_payload=payload,
-                response_payload={"error": str(e)},
-                environment=environment.value
-            )
-
-            return False, {"error": f"Request failed: {str(e)}"}, None
-        except Exception as e:
-            logger.error(f"Unexpected error during FBR posting: {str(e)}")
-            duration = (datetime.utcnow() - start_time).total_seconds()
-
-            # Log the failed interaction
-            log_fbr_interaction(
-                endpoint=posting_endpoint,
-                method="POST",
-                status_code=0,  # No response status
-                duration=duration,
-                request_payload=payload,
-                response_payload={"error": str(e)},
-                environment=environment.value
-            )
-
-            return False, {"error": f"Unexpected error: {str(e)}"}, None
-
-    async def get_invoice_status(self, reference_number: str,
-                                environment: FBREnvironment) -> Tuple[bool, Dict[str, Any]]:
-        """
-        Get the status of an invoice from the FBR system.
-
-        Args:
-            reference_number: FBR reference number of the invoice
-            environment: Target environment (SANDBOX or PRODUCTION)
-
-        Returns:
-            Tuple of (success, status_data)
-        """
-        start_time = datetime.utcnow()
-
-        # Select the appropriate base URL based on environment
-        base_url = (
-            settings.fbr_sandbox_base_url if environment == FBREnvironment.SANDBOX
-            else settings.fbr_production_base_url
-        )
-
-        # Prepare the status check request
-        # Using FBR's actual endpoint based on technical specification
-        status_endpoint = f"{base_url}/di_data/v1/di/invoicestatus/{reference_number}"
-        headers = {
-            "Authorization": f"Bearer {settings.fbr_api_key}",
-            "X-Correlation-ID": generate_correlation_id(),
-            "X-Client-ID": settings.fbr_client_id
-        }
-
-        try:
-            # Make the API call to FBR
-            response = await self.client.get(
-                status_endpoint,
-                headers=headers
-            )
-
-            # Calculate duration
-            duration = (datetime.utcnow() - start_time).total_seconds()
-
-            # Log the interaction
-            log_fbr_interaction(
-                endpoint=status_endpoint,
-                method="GET",
-                status_code=response.status_code,
-                duration=duration,
-                request_payload={},
-                response_payload=self._parse_json(response),
-                environment=environment.value,
-                correlation_id=headers["X-Correlation-ID"]
-            )
-
-            # Handle the response
-            if response.status_code == 200:
-                response_data = self._parse_json(response)
-
-                return True, response_data
-            else:
-                # Unexpected status code
-                logger.error(f"Unexpected status code during status check: {response.status_code}")
-                response_data = self._parse_json(response) if response.content else {"error": "Failed to get invoice status"}
-
-                return False, response_data
-
-        except httpx.RequestError as e:
-            logger.error(f"Request error during FBR status check: {str(e)}")
-            duration = (datetime.utcnow() - start_time).total_seconds()
-
-            # Log the failed interaction
-            log_fbr_interaction(
-                endpoint=status_endpoint,
-                method="GET",
-                status_code=0,  # No response status
-                duration=duration,
-                request_payload={},
-                response_payload={"error": str(e)},
-                environment=environment.value
-            )
-
-            return False, {"error": f"Request failed: {str(e)}"}
-        except Exception as e:
-            logger.error(f"Unexpected error during FBR status check: {str(e)}")
-            duration = (datetime.utcnow() - start_time).total_seconds()
-
-            # Log the failed interaction
-            log_fbr_interaction(
-                endpoint=status_endpoint,
-                method="GET",
-                status_code=0,  # No response status
-                duration=duration,
-                request_payload={},
-                response_payload={"error": str(e)},
-                environment=environment.value
-            )
-
-            return False, {"error": f"Unexpected error: {str(e)}"}
 
     async def close(self):
-        """
-        Close the HTTP client connection.
-        """
+        """Close the HTTP client connection."""
         await self.client.aclose()
-
-    def prepare_fbr_response_record(self, request_payload: Dict[str, Any],
-                                  response_payload: Dict[str, Any],
-                                  endpoint: str, method: str, status_code: int,
-                                  environment: FBREnvironment,
-                                  correlation_id: Optional[str] = None,
-                                  invoice_id: Optional[UUID] = None) -> FBRResponseCreate:
-        """
-        Prepare an FBR response record for database storage.
-
-        Args:
-            request_payload: Request sent to FBR
-            response_payload: Response received from FBR
-            endpoint: FBR API endpoint called
-            method: HTTP method used
-            status_code: HTTP status code received
-            environment: Environment where request was made
-            correlation_id: Correlation ID for request/response matching
-            invoice_id: Associated invoice ID (if applicable)
-
-        Returns:
-            FBRResponseCreate object ready for database insertion
-        """
-        timestamp = datetime.utcnow()
-
-        return FBRResponseCreate(
-            request_payload=request_payload,
-            response_payload=response_payload,
-            endpoint=endpoint,
-            method=method,
-            status_code=status_code,
-            timestamp=timestamp,
-            environment=environment,
-            correlation_id=correlation_id or generate_correlation_id(),
-            processing_duration_ms=None  # Will be calculated separately
-        )
-
-    async def validate_connection(self, environment: FBREnvironment) -> bool:
-        """
-        Validate connection to FBR API.
-
-        Args:
-            environment: Target environment (SANDBOX or PRODUCTION)
-
-        Returns:
-            True if connection is successful, False otherwise
-        """
-        try:
-            base_url = (
-                settings.fbr_sandbox_base_url if environment == FBREnvironment.SANDBOX
-                else settings.fbr_production_base_url
-            )
-
-            health_endpoint = f"{base_url}/health"
-            headers = {
-                "Authorization": f"Bearer {settings.fbr_api_key}",
-            }
-
-            response = await self.client.get(health_endpoint, headers=headers)
-
-            return response.status_code == 200
-
-        except Exception as e:
-            logger.error(f"Connection validation failed: {str(e)}")
-            return False

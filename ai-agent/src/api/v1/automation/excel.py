@@ -164,21 +164,20 @@ async def upload_excel(
                 detail="User not found"
             )
 
-        # Check if user has FBR credentials configured
-        user_fbr_token = user.fbr_sandbox_token if user.fbr_environment == "SANDBOX" else user.fbr_production_token
+        # Get user's FBR production token
+        user_fbr_token = user.fbr_production_token
         if not user_fbr_token:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"FBR credentials not configured. Please configure your FBR {user.fbr_environment} credentials in settings."
             )
 
-        # Schedule background validation task
+        # Schedule background validation task (Production)
         background_tasks.add_task(
             BackgroundValidationService.validate_invoices_background,
             session_id=upload_session.id,
             user_id=user_uuid,
-            fbr_token=user_fbr_token,
-            fbr_environment=user.fbr_environment
+            fbr_token=user_fbr_token
         )
 
         logger.info(f"Excel upload successful for session {upload_session.id}. Background validation scheduled.")
