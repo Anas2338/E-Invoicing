@@ -77,12 +77,31 @@ export function InvoiceTable({
   const [localFilters, setLocalFilters] = useState(filters);
   const [selectedInvoices, setSelectedInvoices] = useState<string[]>([]);
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
+  const [selectAllLoading, setSelectAllLoading] = useState(false);
+  const [allSelected, setAllSelected] = useState(false);
 
-  const handleSelectAll = (checked: boolean) => {
+  const handleSelectAll = async (checked: boolean) => {
     if (checked) {
-      setSelectedInvoices(invoices.map(inv => inv.id));
+      setSelectAllLoading(true);
+      try {
+        const result = await automationApi.getAllInvoiceIds({
+          status: filters.status || undefined,
+          source: filters.source || undefined,
+          date_from: filters.date_from || undefined,
+          date_to: filters.date_to || undefined,
+        });
+        setSelectedInvoices(result.invoice_ids);
+        setAllSelected(true);
+      } catch {
+        // Fallback: select only visible invoices
+        setSelectedInvoices(invoices.map(inv => inv.id));
+        setAllSelected(false);
+      } finally {
+        setSelectAllLoading(false);
+      }
     } else {
       setSelectedInvoices([]);
+      setAllSelected(false);
     }
   };
 
@@ -91,6 +110,7 @@ export function InvoiceTable({
       setSelectedInvoices([...selectedInvoices, invoiceId]);
     } else {
       setSelectedInvoices(selectedInvoices.filter(id => id !== invoiceId));
+      setAllSelected(false);
     }
   };
 
@@ -105,6 +125,7 @@ export function InvoiceTable({
     try {
       await onBulkDelete(selectedInvoices);
       setSelectedInvoices([]);
+      setAllSelected(false);
     } finally {
       setBulkActionLoading(false);
     }
@@ -222,10 +243,12 @@ export function InvoiceTable({
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 flex items-center justify-between">
             <div className="flex items-center gap-4">
               <span className="text-sm font-semibold text-blue-900 dark:text-blue-100">
-                {selectedInvoices.length} invoice(s) selected
+                {allSelected && selectedInvoices.length === pagination.total
+                  ? `All ${selectedInvoices.length} invoice(s) selected`
+                  : `${selectedInvoices.length} invoice(s) selected`}
               </span>
               <button
-                onClick={() => setSelectedInvoices([])}
+                onClick={() => { setSelectedInvoices([]); setAllSelected(false); }}
                 className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 underline"
               >
                 Clear selection
@@ -382,12 +405,16 @@ export function InvoiceTable({
               <thead className="bg-[#f6f6f7] dark:bg-[#2e2e2e]">
                 <tr>
                   <th className="px-6 py-3 text-left">
-                    <input
-                      type="checkbox"
-                      checked={selectedInvoices.length === invoices.length && invoices.length > 0}
-                      onChange={(e) => handleSelectAll(e.target.checked)}
-                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                    />
+                    {selectAllLoading ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                    ) : (
+                      <input
+                        type="checkbox"
+                        checked={allSelected || (selectedInvoices.length === invoices.length && invoices.length > 0)}
+                        onChange={(e) => handleSelectAll(e.target.checked)}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                    )}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
                     Invoice Number

@@ -56,7 +56,7 @@ export default function AutomationPage() {
           <h2 className="text-xl font-semibold mb-4 text-[#202223] dark:text-[#e3e3e3]">Welcome to AI-Powered Invoice Automation</h2>
           <p className="text-[#6d7175] dark:text-[#8c9196] mb-4">
             Automate your invoice submissions with our intelligent AI Agent and Excel-based bulk upload system.
-            Schedule invoices to be automatically validated and submitted to FBR with 5-minute precision and smart error handling.
+            Schedule invoices to be automatically validated immediately after upload and transferred to the main system every 5 minutes.
           </p>
 
           <div className="grid md:grid-cols-2 gap-6 mt-8">
@@ -124,7 +124,7 @@ export default function AutomationPage() {
             </li>
             <li className="flex items-start">
               <span className="flex-shrink-0 w-6 h-6 bg-[#1e40af] dark:bg-[#60a5fa] text-white dark:text-[#1e3a8a] rounded-full flex items-center justify-center text-sm font-semibold mr-3">4</span>
-              <span>Our AI Agent automatically processes invoices at scheduled times with 5-minute precision</span>
+              <span>Our AI Agent validates invoices immediately and transfers them to the main system at their scheduled times</span>
             </li>
             <li className="flex items-start">
               <span className="flex-shrink-0 w-6 h-6 bg-[#1e40af] dark:bg-[#60a5fa] text-white dark:text-[#1e3a8a] rounded-full flex items-center justify-center text-sm font-semibold mr-3">5</span>

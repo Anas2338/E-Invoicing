@@ -70,10 +70,12 @@ class BackgroundValidationService:
                 validation_service = ValidationService()
                 fbr_client = FBRClient()
 
-                # Get current time for expiration check
-                now = datetime.utcnow()
-                current_date = now.date()
-                current_time = now.time()
+                # Get current time in Pakistan timezone for expiration check
+                from pytz import timezone
+                pkt = timezone("Asia/Karachi")
+                now_pkt = datetime.now(pkt)
+                current_date = now_pkt.date()
+                current_time = now_pkt.time()
 
                 validated_count = 0
                 failed_count = 0

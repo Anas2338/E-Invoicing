@@ -256,6 +256,38 @@ class AutomationApiClient {
   }
 
   /**
+   * Get ALL invoice IDs matching filters (no pagination).
+   * Used for "Select All" across all pages.
+   */
+  async getAllInvoiceIds(params: {
+    status?: string;
+    source?: string;
+    date_from?: string;
+    date_to?: string;
+  }): Promise<{ invoice_ids: string[]; total: number }> {
+    const queryParams = new URLSearchParams();
+    if (params.status) queryParams.append('status', params.status);
+    if (params.source) queryParams.append('source', params.source);
+    if (params.date_from) queryParams.append('date_from', params.date_from);
+    if (params.date_to) queryParams.append('date_to', params.date_to);
+
+    const response = await fetch(
+      `${this.baseUrl}/automation/dashboard/invoices/ids?${queryParams}`,
+      {
+        headers: this.getHeaders(),
+        credentials: 'include',
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to get invoice IDs');
+    }
+
+    return response.json();
+  }
+
+  /**
    * Get invoice details with logs.
    */
   async getInvoiceDetail(invoiceId: string): Promise<any> {

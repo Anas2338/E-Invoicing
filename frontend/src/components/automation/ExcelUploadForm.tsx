@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { automationApi } from '@/services/automationApi';
 import { useUploadSession } from '@/contexts/UploadSessionContext';
 
 export default function ExcelUploadForm() {
+  const router = useRouter();
   const { activeSessions, startSession } = useUploadSession();
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -19,6 +21,28 @@ export default function ExcelUploadForm() {
     if (!session) return null;
     return session;
   }, [activeSessions, currentSessionId]);
+
+  // Watch for completion/failure and handle redirect + cleanup
+  useEffect(() => {
+    if (!progress) return;
+
+    if (progress.status === 'completed') {
+      setSuccess(null);
+      setCurrentSessionId(null);
+      const timer = setTimeout(() => {
+        router.push('/automation');
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+
+    if (progress.status === 'failed') {
+      setSuccess(null);
+      setError(progress.errorMessage || 'Validation failed. Please try again.');
+      setCurrentSessionId(null);
+    }
+  }, [progress, router]);
+
+  const isProcessing = !!(currentSessionId && progress && progress.status === 'processing');
 
   const handleDownloadTemplate = async () => {
     try {
@@ -176,7 +200,9 @@ export default function ExcelUploadForm() {
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3]">
                   {progress.status === 'processing' ? 'Validating Invoices...' :
-                   progress.status === 'completed' ? 'Validation Complete!' :
+                   progress.status === 'completed' ? (progress.pendingCount > 0
+                     ? `Processed: ${progress.validatedCount} validated, ${progress.pendingCount} pending`
+                     : 'Validation Complete!') :
                    'Validation Failed'}
                 </h3>
                 <span className="text-sm font-medium text-[#008060] dark:text-[#00a876]">
@@ -222,7 +248,9 @@ export default function ExcelUploadForm() {
 
               {progress.status === 'completed' && (
                 <p className="text-xs text-[#065f46] dark:text-[#34d399] mt-2">
-                  Redirecting to dashboard...
+                  {progress.pendingCount > 0
+                    ? `Redirecting to dashboard... Check pending invoices there.`
+                    : 'Redirecting to dashboard...'}
                 </p>
               )}
 
@@ -237,7 +265,7 @@ export default function ExcelUploadForm() {
           {/* Upload Button */}
           <button
             type="submit"
-            disabled={!file || uploading || currentSessionId !== null}
+              disabled={!file || uploading || isProcessing}
             className="w-full inline-flex justify-center items-center h-12 px-4 py-2 bg-[#008060] text-white rounded-xl hover:bg-[#006e52] dark:bg-[#00a876] dark:hover:bg-[#008f64] transition-all duration-150 disabled:bg-[#c9cccf] disabled:cursor-not-allowed disabled:text-[#8c9196] shadow-sm hover:shadow-md font-semibold"
           >
             {uploading ? (
@@ -248,7 +276,7 @@ export default function ExcelUploadForm() {
                 </svg>
                 Uploading...
               </>
-            ) : currentSessionId ? (
+            ) : isProcessing ? (
               <>
                 <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>

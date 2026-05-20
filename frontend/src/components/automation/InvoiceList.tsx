@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { automationApi, AutomationInvoice, InvoiceListResponse } from '@/services/automationApi';
-import { Ban, CheckSquare, Square, Trash2, RefreshCw } from 'lucide-react';
+import { Ban, CheckSquare, Square, Trash2, RefreshCw, Loader2 } from 'lucide-react';
 
 interface InvoiceListProps {
   onInvoiceClick?: (invoice: AutomationInvoice) => void;
@@ -15,6 +15,8 @@ export default function InvoiceList({ onInvoiceClick }: InvoiceListProps) {
   const [selectedInvoices, setSelectedInvoices] = useState<Set<string>>(new Set());
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
   const [retryingInvoiceId, setRetryingInvoiceId] = useState<string | null>(null);
+  const [selectAllLoading, setSelectAllLoading] = useState(false);
+  const [allSelected, setAllSelected] = useState(false);
 
   // Filters
   const [status, setStatus] = useState<string>('');
@@ -40,7 +42,8 @@ export default function InvoiceList({ onInvoiceClick }: InvoiceListProps) {
         page_size: 20,
       });
       setData(response);
-      setSelectedInvoices(new Set()); // Clear selection on reload
+      setSelectedInvoices(new Set());
+      setAllSelected(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load invoices');
     } finally {
@@ -56,13 +59,30 @@ export default function InvoiceList({ onInvoiceClick }: InvoiceListProps) {
     setPage(1);
   };
 
-  const toggleSelectAll = () => {
+  const toggleSelectAll = async () => {
     if (!data) return;
 
-    if (selectedInvoices.size === data.invoices.length) {
+    if (allSelected || selectedInvoices.size === data.invoices.length) {
       setSelectedInvoices(new Set());
+      setAllSelected(false);
     } else {
-      setSelectedInvoices(new Set(data.invoices.map(inv => inv.id)));
+      setSelectAllLoading(true);
+      try {
+        const result = await automationApi.getAllInvoiceIds({
+          status: status || undefined,
+          source: source || undefined,
+          date_from: dateFrom || undefined,
+          date_to: dateTo || undefined,
+        });
+        setSelectedInvoices(new Set(result.invoice_ids));
+        setAllSelected(true);
+      } catch {
+        // Fallback: select only visible invoices
+        setSelectedInvoices(new Set(data.invoices.map(inv => inv.id)));
+        setAllSelected(false);
+      } finally {
+        setSelectAllLoading(false);
+      }
     }
   };
 
@@ -70,6 +90,7 @@ export default function InvoiceList({ onInvoiceClick }: InvoiceListProps) {
     const newSelected = new Set(selectedInvoices);
     if (newSelected.has(invoiceId)) {
       newSelected.delete(invoiceId);
+      setAllSelected(false);
     } else {
       newSelected.add(invoiceId);
     }
@@ -203,7 +224,9 @@ export default function InvoiceList({ onInvoiceClick }: InvoiceListProps) {
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4">
           <div className="flex items-center justify-between">
             <span className="text-sm text-blue-900 dark:text-blue-200">
-              {selectedInvoices.size} invoice(s) selected
+              {allSelected && data && selectedInvoices.size === data.total
+                ? `All ${selectedInvoices.size} invoice(s) selected`
+                : `${selectedInvoices.size} invoice(s) selected`}
             </span>
             <div className="flex gap-2">
               {canBulkBlock && (
@@ -217,7 +240,7 @@ export default function InvoiceList({ onInvoiceClick }: InvoiceListProps) {
                 </button>
               )}
               <button
-                onClick={() => setSelectedInvoices(new Set())}
+                onClick={() => { setSelectedInvoices(new Set()); setAllSelected(false); }}
                 className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 text-sm"
               >
                 Clear Selection
@@ -255,9 +278,12 @@ export default function InvoiceList({ onInvoiceClick }: InvoiceListProps) {
                   <th className="px-4 py-3 text-left">
                     <button
                       onClick={toggleSelectAll}
+                      disabled={selectAllLoading}
                       className="flex items-center justify-center"
                     >
-                      {selectedInvoices.size === data.invoices.length ? (
+                      {selectAllLoading ? (
+                        <Loader2 className="w-5 h-5 animate-spin text-[#008060] dark:text-[#00a876]" />
+                      ) : allSelected || selectedInvoices.size === data.invoices.length ? (
                         <CheckSquare className="w-5 h-5 text-[#008060] dark:text-[#00a876]" />
                       ) : (
                         <Square className="w-5 h-5 text-[#6d7175] dark:text-[#8c9196]" />

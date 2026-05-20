@@ -146,6 +146,12 @@ class InvoiceDetailResponse(BaseModel):
     logs: list[AutomationLogRead]
 
 
+class InvoiceIdsResponse(BaseModel):
+    """Schema for all invoice IDs matching filters (no pagination)."""
+    invoice_ids: list[UUID]
+    total: int
+
+
 class BatchPdfRequest(BaseModel):
     """Schema for batch PDF generation request."""
     invoice_ids: list[UUID] = Field(

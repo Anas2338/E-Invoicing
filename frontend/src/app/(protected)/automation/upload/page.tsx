@@ -83,13 +83,19 @@ export default function UploadPage() {
               <svg className="w-5 h-5 text-[#92400e] dark:text-[#fbbf24] mr-2 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
               </svg>
-              <span>Maximum file size: 10 MB, Maximum rows: 1,000</span>
+              <span>Maximum file size: 10 MB, Maximum rows: 20,000</span>
             </li>
             <li className="flex items-start">
               <svg className="w-5 h-5 text-[#92400e] dark:text-[#fbbf24] mr-2 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
               </svg>
-              <span>AI Agent processes invoices every 5 minutes with intelligent error handling and adaptive retry</span>
+              <span>Invoices are validated immediately after upload via FBR integration</span>
+            </li>
+            <li className="flex items-start">
+              <svg className="w-5 h-5 text-[#92400e] dark:text-[#fbbf24] mr-2 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+              </svg>
+              <span>Validated invoices are automatically transferred to the main system every 5 minutes</span>
             </li>
           </ul>
         </div>

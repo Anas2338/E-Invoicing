@@ -18,7 +18,8 @@ from src.services.excel_service import ExcelService
 from src.schemas.automation import (
     DashboardStatsResponse,
     InvoiceListResponse,
-    InvoiceDetailResponse
+    InvoiceDetailResponse,
+    InvoiceIdsResponse
 )
 from src.api.middleware.auth_middleware import require_authentication
 from src.middleware.rbac import require_automation_access
@@ -109,6 +110,45 @@ async def get_invoice_list(
         page_size=page_size,
         total_pages=(total + page_size - 1) // page_size
     )
+
+
+@router.get("/invoices/ids", response_model=InvoiceIdsResponse)
+async def get_all_invoice_ids(
+    request: Request,
+    user_id: str = Depends(require_automation_access),
+    status: Optional[AutomationInvoiceStatus] = Query(None, description="Filter by status"),
+    source: Optional[InvoiceSource] = Query(None, description="Filter by source"),
+    date_from: Optional[date] = Query(None, description="Filter by scheduled date from"),
+    date_to: Optional[date] = Query(None, description="Filter by scheduled date to"),
+    db: Session = Depends(get_automation_db)
+):
+    """
+    Get ALL invoice IDs matching the given filters (no pagination).
+
+    Returns a lightweight list of all invoice IDs that match the filter criteria.
+    Used by the frontend to implement "Select All" across all pages.
+    """
+    filters = [AutomationInvoice.user_id == UUID(user_id)]
+
+    if status:
+        filters.append(AutomationInvoice.status == status)
+
+    if source:
+        filters.append(AutomationInvoice.source == source)
+
+    if date_from:
+        filters.append(AutomationInvoice.scheduled_date >= date_from)
+
+    if date_to:
+        filters.append(AutomationInvoice.scheduled_date <= date_to)
+
+    count_query = select(func.count(AutomationInvoice.id)).where(and_(*filters))
+    total = db.exec(count_query).one()
+
+    ids_query = select(AutomationInvoice.id).where(and_(*filters))
+    invoice_ids = db.exec(ids_query).all()
+
+    return InvoiceIdsResponse(invoice_ids=invoice_ids, total=total)
 
 
 @router.get("/invoice/{invoice_id}", response_model=InvoiceDetailResponse)

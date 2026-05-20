@@ -382,8 +382,8 @@ class PDFService:
 
             if is_first:
                 self._draw_first_page_header(c, invoice, font)
-                # FBR logo at top-right
-                self._draw_fbr_logo(c, font)
+                # FBR logo and QR code at top-right
+                self._draw_fbr_logo_and_qr(c, usin, font)
 
             is_last = (page_num == total_pages)
 
@@ -397,10 +397,6 @@ class PDFService:
                 start_sr_no=sum(len(p) for p in pages[:page_num - 1]) + 1,
                 totals_data=totals_data
             )
-
-            # QR code on last page (only for posted invoices with USIN)
-            if is_last and usin:
-                self._draw_qr_code(c, usin, font)
 
             # Page number (bottom-right)
             self._draw_page_number(c, page_num, total_pages, font)
@@ -802,48 +798,56 @@ class PDFService:
 
     # ── FBR compliance elements ──────────────────────────────────────
 
-    def _draw_fbr_logo(self, c: canvas_module.Canvas, font: str) -> None:
-        """Draw FBR logo at top-right of the page, near the company name."""
+    def _draw_fbr_logo_and_qr(
+        self, c: canvas_module.Canvas, usin: str, font: str
+    ) -> None:
+        """Draw FBR logo and QR code side by side at top-right of the first page."""
         logo = self._load_fbr_logo()
-        if logo is None:
+        qr_img = self._generate_qr_code(usin) if usin else None
+
+        if logo is None and qr_img is None:
             return
-        try:
+
+        # Size constants
+        logo_max_w = 1.6 * inch
+        logo_max_h = 0.55 * inch
+        qr_size = 0.65 * inch
+        gap = 8  # gap between logo and QR
+
+        logo_display_w = logo_max_w
+        logo_display_h = logo_max_h
+
+        if logo is not None:
             lw, lh = logo.size
             aspect = lw / lh
-            display_w = 2.0 * inch
-            display_h = display_w / aspect
-            if display_h > 0.6 * inch:
-                display_h = 0.6 * inch
-                display_w = display_h * aspect
-            # Position at top-right, same level as company name
-            logo_x = TABLE_RIGHT - display_w
-            logo_y = PAGE_HEIGHT - COMPANY_NAME_Y - display_h + 4
-            c.drawInlineImage(logo, logo_x, logo_y,
-                              width=display_w, height=display_h,
-                              preserveAspectRatio=True)
+            logo_display_h = logo_max_w / aspect
+            if logo_display_h > logo_max_h:
+                logo_display_h = logo_max_h
+                logo_display_w = logo_display_h * aspect
+            else:
+                logo_display_w = logo_max_w
+
+        total_w = logo_display_w + (gap + qr_size if qr_img else 0)
+        start_x = TABLE_RIGHT - total_w
+
+        try:
+            if logo is not None:
+                logo_y = PAGE_HEIGHT - COMPANY_NAME_Y - logo_display_h + 4
+                c.drawInlineImage(logo, start_x, logo_y,
+                                  width=logo_display_w, height=logo_display_h,
+                                  preserveAspectRatio=True)
         except Exception as e:
             logger.warning(f"Could not draw FBR logo: {e}")
 
-    def _draw_qr_code(self, c: canvas_module.Canvas, usin: str, font: str) -> None:
-        """Draw QR code at bottom-right of the last page."""
-        qr_img = self._generate_qr_code(usin)
-        if qr_img is None:
-            return
-        try:
-            qr_size = 0.85 * inch
-            qr_x = TABLE_RIGHT - qr_size
-            qr_y = 50  # Fixed from bottom
-            c.drawInlineImage(qr_img, qr_x, qr_y,
-                              width=qr_size, height=qr_size,
-                              preserveAspectRatio=True)
-            # Label below QR
-            c.setFont(self._font(), 6)
-            c.setFillColor(BLACK)
-            c.drawCentredString(qr_x + qr_size / 2, qr_y - 10, "Scan to verify")
-            c.drawCentredString(qr_x + qr_size / 2, qr_y - 18,
-                                f"USIN: {usin[:30]}")
-        except Exception as e:
-            logger.warning(f"Could not draw QR code: {e}")
+        if qr_img is not None:
+            try:
+                qr_x = start_x + logo_display_w + gap
+                qr_y = PAGE_HEIGHT - COMPANY_NAME_Y - qr_size + 4
+                c.drawInlineImage(qr_img, qr_x, qr_y,
+                                  width=qr_size, height=qr_size,
+                                  preserveAspectRatio=True)
+            except Exception as e:
+                logger.warning(f"Could not draw QR code: {e}")
 
     # ── Page number ──────────────────────────────────────────────────
 
