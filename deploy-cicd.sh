@@ -26,7 +26,7 @@ echo -e "${GREEN}Done.${NC}"
 docker compose down --remove-orphans 2>/dev/null || true
 docker container prune -f
 echo -e "\n${YELLOW}[2/5] Building Docker images...${NC}"
-docker compose build
+DOCKER_BUILDKIT=0 docker compose build
 echo -e "${GREEN}Build complete.${NC}"
 
 # Restart with new images
