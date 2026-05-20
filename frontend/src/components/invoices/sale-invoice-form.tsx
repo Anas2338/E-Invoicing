@@ -582,20 +582,31 @@ export function SaleInvoiceForm({
     const selectedItem = savedItems.find(item => item.id.toString() === itemId);
     if (!selectedItem) return;
 
+    // Resolve transaction_type to code (supports both code and name storage)
+    const ttCode = selectedItem.transaction_type
+      ? (masterData?.transaction_types.find(t => t.code === selectedItem.transaction_type)?.code ||
+         masterData?.transaction_types.find(t => t.name === selectedItem.transaction_type)?.code ||
+         selectedItem.transaction_type)
+      : '';
+    const ttName = selectedItem.transaction_type
+      ? (masterData?.transaction_types.find(t => t.code === selectedItem.transaction_type)?.name ||
+         selectedItem.transaction_type)
+      : '';
+
     // If this is the first item (index 0), set the Transaction Type from the item
-    if (index === 0 && selectedItem.transaction_type) {
-      setTransactionTypeId(selectedItem.transaction_type);
+    if (index === 0 && ttCode) {
+      setTransactionTypeId(ttCode);
       setHasSelectedTransactionType(true);
 
-      // Auto-set Sale Type for all items directly from saved item's transaction_type
+      // Auto-set Sale Type for all items to the Transaction Type name
       setItems(prevItems =>
-        prevItems.map(item => ({ ...item, saleType: selectedItem.transaction_type }))
+        prevItems.map(item => ({ ...item, saleType: ttName }))
       );
     }
 
     // If this is NOT the first item, validate transaction type matches
-    if (index > 0 && selectedItem.transaction_type && transactionTypeId) {
-      if (selectedItem.transaction_type !== transactionTypeId) {
+    if (index > 0 && ttCode && transactionTypeId) {
+      if (ttCode !== transactionTypeId) {
         toast.error(`Cannot select this item. Transaction type mismatch. Please select an item with transaction type matching the first item.`);
         return; // Prevent selection
       }
@@ -614,9 +625,9 @@ export function SaleInvoiceForm({
     const uomObj = masterData?.uom.find(u => u.code === uomCode);
     updateItem(index, 'uoM', uomObj?.name || uomCode);
 
-    // Set sale type directly from saved item's transaction_type
-    if (selectedItem.transaction_type) {
-      updateItem(index, 'saleType', selectedItem.transaction_type);
+    // Set sale type to the resolved Transaction Type name
+    if (ttName) {
+      updateItem(index, 'saleType', ttName);
     }
 
     // Set SRO fields if available
@@ -1541,21 +1552,7 @@ export function SaleInvoiceForm({
           <CardTitle>Income Tax</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="max-w-md space-y-4">
-            <div>
-              <Label htmlFor="totalAmount">Total Amount</Label>
-              <Input
-                id="totalAmount"
-                type="number"
-                step="0.01"
-                value={items.reduce((sum, item) => sum + (Number(item.totalValues) || 0), 0).toFixed(2)}
-                readOnly
-                className="bg-gray-50 dark:bg-gray-800"
-              />
-              <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
-                Sum of total values (inc. tax) from all items
-              </p>
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label htmlFor="incomeTax">Income Tax Type *</Label>
               <Select value={incomeTax} onValueChange={(val) => setIncomeTax(val as '236G' | '236H')}>
@@ -1567,6 +1564,23 @@ export function SaleInvoiceForm({
                   <SelectItem value="236H">236H</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div>
+              <Label htmlFor="whtAmount">Withholding Tax Amount (Info)</Label>
+              <Input
+                id="whtAmount"
+                type="text"
+                value={`PKR ${(() => {
+                  const sumExclTax = items.reduce((sum, item) => sum + (Number(item.valueSalesExcludingST) || 0), 0);
+                  const rate = incomeTax === '236G' ? 0.001 : 0.005;
+                  return (sumExclTax * rate).toFixed(2);
+                })()}`}
+                readOnly
+                className="bg-gray-50 dark:bg-gray-800"
+              />
+              <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
+                {incomeTax === '236G' ? '0.1%' : '0.5%'} of sum of Value Excl. Sales Tax from all items
+              </p>
             </div>
           </div>
         </CardContent>

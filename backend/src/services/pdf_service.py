@@ -1,732 +1,857 @@
 """
 PDF generation service for FBR-compliant invoice printing.
 
-This service generates PDF documents for transferred invoices with:
-- Complete invoice data (header, line items, totals)
-- FBR Digital Invoicing System logo
-- QR code containing FBR-issued USIN for verification
+Generates PDFs matching the official FBR invoice template format EXACTLY:
+- Landscape wide-format (1080 x 841.68 pt)
+- Helvetica fonts throughout (matching sample template)
+- Three-column header: Seller | Buyer | Invoice Summary
+- Full 18-column line items table with gray grid lines
+- Auto-sized rows with text wrapping (top-aligned cell content)
+- Multi-page with page numbers, no header on continuation pages
+- Totals row with merged "Total:" label cell
 
-All PDFs are generated on-demand (no storage) and support Unicode characters.
+All measurements match sample.pdf precisely.
 """
 from io import BytesIO
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional, List, Tuple
 import logging
 
-from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas as canvas_module
 from reportlab.lib.units import inch
-from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
 from PIL import Image
 import qrcode
 
-from ..models.invoice import Invoice, InvoiceStatus
+from ..models.invoice import Invoice
 
 logger = logging.getLogger(__name__)
 
-# Asset paths
+# ═══════════════════════════════════════════════════════════════════════
+# PAGE DIMENSIONS (exact match to sample.pdf)
+# ═══════════════════════════════════════════════════════════════════════
+PAGE_WIDTH = 1080.0
+PAGE_HEIGHT = 841.68
+PAGE_SIZE = (PAGE_WIDTH, PAGE_HEIGHT)
+
+# ═══════════════════════════════════════════════════════════════════════
+# GRID COLORS (exact match to sample.pdf)
+# ═══════════════════════════════════════════════════════════════════════
+GRID_GRAY = colors.Color(0.827, 0.827, 0.827)  # RGB(211,211,211)
+BLACK = colors.Color(0, 0, 0)
+
+# ═══════════════════════════════════════════════════════════════════════
+# COLUMN DEFINITIONS (exact x-positions from sample.pdf)
+# ═══════════════════════════════════════════════════════════════════════
+COL_X = [
+    53.0,    # Sr. No.
+    86.2,    # HS Code
+    140.2,   # HS Code Description
+    235.4,   # Product Description
+    375.4,   # Sales Type
+    434.0,   # Quantity
+    474.9,   # UoM
+    523.5,   # Rate
+    559.5,   # Sales Value
+    611.2,   # Retail Price
+    668.1,   # Sales Tax
+    715.4,   # Extra Tax
+    759.0,   # Further Tax
+    814.0,   # FED
+    846.9,   # ST WHT
+    890.1,   # Discount
+    935.9,   # SRO / Schedule No.
+    1008.8,  # SRO Item Sr. No.
+    1051.7,  # Right edge of last column
+]
+
+N_COLS = len(COL_X) - 1  # 18 columns
+
+COL_WIDTHS = [COL_X[i + 1] - COL_X[i] for i in range(N_COLS)]
+
+TABLE_LEFT = COL_X[0]    # 53.0
+TABLE_RIGHT = COL_X[-1]  # 1051.7
+TABLE_WIDTH = TABLE_RIGHT - TABLE_LEFT  # 998.7
+
+# Column alignments: 'L'=left, 'R'=right, 'C'=center
+COL_ALIGN = [
+    'C',  # Sr. No.
+    'L',  # HS Code
+    'L',  # HS Code Description
+    'L',  # Product Description
+    'L',  # Sales Type
+    'C',  # Quantity
+    'C',  # UoM
+    'R',  # Rate
+    'R',  # Sales Value
+    'R',  # Retail Price
+    'R',  # Sales Tax
+    'R',  # Extra Tax
+    'R',  # Further Tax
+    'R',  # FED
+    'R',  # ST WHT
+    'R',  # Discount
+    'L',  # SRO / Schedule No.
+    'C',  # SRO Item Sr. No.
+]
+
+# ═══════════════════════════════════════════════════════════════════════
+# TABLE HEADERS (two rows for SRO columns, matching sample)
+# ═══════════════════════════════════════════════════════════════════════
+TABLE_HEADERS_ROW1 = [
+    'Sr. No.', 'HS Code', 'HS Code Description',
+    'Product Description', 'Sales Type', 'Quantity', 'UoM', 'Rate',
+    'Sales Value', 'Retail Price', 'Sales Tax', 'Extra Tax ',
+    'Further Tax', 'FED', 'ST WHT ', 'Discount',
+    'SRO / Schedule ', 'SRO Item ',
+]
+TABLE_HEADERS_ROW2 = [
+    '', '', '', '', '', '', '', '',
+    '', '', '', '', '', '', '', '',
+    'No.', 'Sr. No.',
+]
+
+# ═══════════════════════════════════════════════════════════════════════
+# FONT SIZES (exact match to sample.pdf)
+# ═══════════════════════════════════════════════════════════════════════
+COMPANY_NAME_SIZE = 16
+SECTION_HEADER_SIZE = 12
+FIELD_LABEL_SIZE = 10
+FIELD_VALUE_SIZE = 10
+TABLE_HEADER_SIZE = 8
+TABLE_DATA_SIZE = 8
+TOTALS_LABEL_SIZE = 10
+TOTALS_VALUE_SIZE = 8
+PAGE_NUM_SIZE = 10
+
+# Line spacing for wrapped cell text
+CELL_LINE_HEIGHT = 9  # 8pt font + 1pt leading
+CELL_PADDING_LEFT = 2
+CELL_PADDING_TOP = 2
+
+# ═══════════════════════════════════════════════════════════════════════
+# HEADER Y POSITIONS (exact match to sample.pdf)
+# ═══════════════════════════════════════════════════════════════════════
+COMPANY_NAME_Y = 69.0
+SECTION_HEADER_Y = 121.3   # "Seller Information" / "Buyer Information" / "Invoice Summary"
+FIELD_ROW1_Y = 140.5       # Business Name / FBR Invoice No.
+FIELD_ROW2_Y = 155.7       # Registration No. / Invoice Date
+FIELD_ROW3_Y = 171.7       # Province / Invoice Type
+FIELD_ROW4_Y = 188.9       # Tax Period (summary only)
+
+# Header column X positions
+SELLER_LABEL_X = 54.8
+SELLER_VALUE_X = 145.1
+BUYER_LABEL_X = 408.1
+BUYER_VALUE_X = 490.1
+SUMMARY_LABEL_X = 799.1
+SUMMARY_VALUE_X = 883.7
+
+# ═══════════════════════════════════════════════════════════════════════
+# CONTENT AREA BOUNDARIES
+# ═══════════════════════════════════════════════════════════════════════
+CONTENT_TOP = 211.3     # Table header top on first page
+PAGE_TOP = 34.5         # Table top on continuation pages
+PAGE_BOTTOM = 819.6     # Page number Y position
+BOTTOM_MARGIN = 55.0    # Space reserved at bottom for page numbers
+
+# ═══════════════════════════════════════════════════════════════════════
+# ASSETS
+# ═══════════════════════════════════════════════════════════════════════
 ASSETS_DIR = Path(__file__).parent.parent / "assets"
 FONT_PATH = ASSETS_DIR / "NotoSansArabic-Regular.ttf"
 LOGO_PATH = ASSETS_DIR / "fbr_logo.png"
 
 
 class PDFService:
-    """Service for generating FBR-compliant invoice PDFs."""
+    """Service for generating FBR-compliant invoice PDFs matching sample template."""
 
     def __init__(self):
-        """Initialize PDF service and register fonts."""
         self._fonts_registered = False
+        self._unicode_font: Optional[str] = None
+        self._measure_canvas: Optional[canvas_module.Canvas] = None
         self._logo_cache: Optional[Image.Image] = None
 
-    def generate_invoice_pdf(self, invoice: Invoice) -> bytes:
-        """
-        Generate PDF for a single invoice.
+    # ── Font helpers ───────────────────────────────────────────────────
 
-        Args:
-            invoice: Invoice object
-
-        Returns:
-            PDF bytes
-
-        Raises:
-            FileNotFoundError: If FBR logo or font file is missing
-            ValueError: If invoice data is invalid or USIN is missing
-        """
-        # Validate invoice has required data
-        if not invoice.items:
-            raise ValueError("Invoice must have at least one item")
-
-        # Extract invoice data from Invoice model
-        invoice_data = {
-            'invoiceRefNo': invoice.invoice_ref_no or invoice.external_id,
-            'invoiceDate': invoice.invoice_date if invoice.invoice_date else '',
-            'sellerBusinessName': invoice.seller_business_name or '',
-            'sellerNTNCNIC': invoice.seller_ntn_cnic or '',
-            'sellerProvince': invoice.seller_province or '',
-            'sellerAddress': invoice.seller_address or '',
-            'buyerBusinessName': invoice.buyer_business_name or '',
-            'buyerNTNCNIC': invoice.buyer_ntn_cnic or '',
-            'buyerProvince': invoice.buyer_province or '',
-            'buyerAddress': invoice.buyer_address or '',
-            'items': invoice.items,
-            'invoiceType': invoice.invoice_type or '',
-            'transactionTypeId': invoice.transaction_type_id or ''
-        }
-
-        # Extract USIN from fbr_reference_number (optional for non-posted invoices)
-        usin = invoice.fbr_reference_number  # Will be None for non-posted invoices
-        invoice_number = invoice.external_id
-
-        # Validate items array
-        items = invoice.items
-        if not isinstance(items, list) or len(items) == 0:
-            raise ValueError("Invoice must have at least one line item")
-
-        logger.info(
-            f"Generating PDF for invoice {invoice_number}"
-            f"{f' (USIN: {usin})' if usin else ' (no FBR data)'}"
-        )
-
-        try:
-            # Create PDF buffer
-            buffer = BytesIO()
-
-            # Create canvas (A4 size)
-            c = canvas.Canvas(buffer, pagesize=A4)
-            page_width, page_height = A4
-
-            # Define margins and working area
-            margin = 0.75 * inch
-            x = margin
-            y = page_height - margin
-            content_width = page_width - (2 * margin)
-
-            # Register fonts
-            self._register_fonts()
-
-            # Add FBR compliance elements (logo at top right, QR code at bottom right)
-            self._add_fbr_compliance_elements(c, usin, x, y)
-
-            # Render invoice header
-            y = self._render_invoice_header(c, invoice_data, x, y)
-
-            # Render line items table
-            y = self._render_line_items_table(c, items, x, y, content_width)
-
-            # Render totals
-            y = self._render_totals(c, invoice_data, x, y)
-
-            # Finalize PDF
-            c.showPage()
-            c.save()
-
-            # Get PDF bytes
-            pdf_bytes = buffer.getvalue()
-            buffer.close()
-
-            logger.info(
-                f"Successfully generated PDF for {invoice.source} "
-                f"invoice {invoice_number} ({len(pdf_bytes)} bytes)"
-            )
-
-            return pdf_bytes
-
-        except Exception as e:
-            logger.error(f"Failed to generate PDF for invoice {invoice_number}: {e}")
-            raise
-
-    def generate_batch_pdf(self, invoices: list[Invoice]) -> bytes:
-        """
-        Generate PDF for multiple invoices with page breaks.
-
-        Args:
-            invoices: List of Invoice objects in selection order
-
-        Returns:
-            PDF bytes containing all invoices
-
-        Raises:
-            FileNotFoundError: If FBR logo or font file is missing
-            ValueError: If any invoice data is invalid
-        """
-        if not invoices:
-            raise ValueError("No invoices provided for batch PDF generation")
-
-        if len(invoices) > 50:
-            raise ValueError(f"Batch size exceeds maximum limit of 50 invoices (got {len(invoices)})")
-
-        logger.info(f"Generating batch PDF for {len(invoices)} invoices")
-
-        try:
-            # Create PDF buffer
-            buffer = BytesIO()
-
-            # Create canvas (A4 size)
-            c = canvas.Canvas(buffer, pagesize=A4)
-            page_width, page_height = A4
-
-            # Define margins and working area
-            margin = 0.75 * inch
-            x = margin
-            content_width = page_width - (2 * margin)
-
-            # Register fonts once for all invoices
-            self._register_fonts()
-
-            # Generate each invoice on a separate page
-            for idx, invoice in enumerate(invoices):
-                # Extract invoice data
-                invoice_data = {
-                    'invoiceRefNo': invoice.invoice_ref_no or invoice.external_id,
-                    'invoiceDate': invoice.invoice_date if invoice.invoice_date else '',
-                    'sellerBusinessName': invoice.seller_business_name or '',
-                    'sellerNTNCNIC': invoice.seller_ntn_cnic or '',
-                    'sellerProvince': invoice.seller_province or '',
-                    'sellerAddress': invoice.seller_address or '',
-                    'buyerBusinessName': invoice.buyer_business_name or '',
-                    'buyerNTNCNIC': invoice.buyer_ntn_cnic or '',
-                    'buyerProvince': invoice.buyer_province or '',
-                    'buyerAddress': invoice.buyer_address or '',
-                    'items': invoice.items,
-                    'invoiceType': invoice.invoice_type or '',
-                    'transactionTypeId': invoice.transaction_type_id or ''
-                }
-
-                items = invoice.items
-
-                # Extract USIN from fbr_reference_number (optional for non-posted invoices)
-                usin = invoice.fbr_reference_number  # Will be None for non-posted invoices
-                invoice_number = invoice.external_id
-
-                if not items:
-                    raise ValueError(f"Invoice {invoice_number} has no line items")
-
-                logger.debug(
-                    f"Rendering invoice {idx + 1}/{len(invoices)}: "
-                    f"{invoice_number}{f' (USIN: {usin})' if usin else ' (no FBR data)'}"
-                )
-
-                # Reset Y coordinate for new page
-                y = page_height - margin
-
-                # Add FBR compliance elements (logo at top right, QR code at bottom right)
-                # Only add if USIN is available
-                if usin:
-                    self._add_fbr_compliance_elements(c, usin, x, y)
-
-                # Render invoice header
-                y = self._render_invoice_header(c, invoice_data, x, y)
-
-                # Render line items table
-                y = self._render_line_items_table(c, items, x, y, content_width)
-
-                # Render totals
-                y = self._render_totals(c, invoice_data, x, y)
-
-                # Add page break (except for last invoice)
-                if idx < len(invoices) - 1:
-                    c.showPage()
-
-            # Finalize PDF
-            c.save()
-
-            # Get PDF bytes
-            pdf_bytes = buffer.getvalue()
-            buffer.close()
-
-            logger.info(
-                f"Successfully generated batch PDF for {len(invoices)} invoices "
-                f"({len(pdf_bytes)} bytes)"
-            )
-
-            return pdf_bytes
-
-        except Exception as e:
-            logger.error(f"Failed to generate batch PDF: {e}")
-            raise
-
-    def _register_fonts(self) -> None:
-        """
-        Register Unicode fonts for PDF generation.
-
-        Registers Noto Sans Arabic for Urdu/Arabic character support.
-        Falls back to Helvetica if font file is missing.
-        """
-        if self._fonts_registered:
-            return
+    def _register_fonts(self) -> str:
+        """Register fonts; returns best available font name."""
+        if self._fonts_registered and self._unicode_font:
+            return self._unicode_font
 
         if FONT_PATH.exists():
             try:
                 pdfmetrics.registerFont(TTFont('NotoSansArabic', str(FONT_PATH)))
+                self._unicode_font = 'NotoSansArabic'
                 self._fonts_registered = True
-                logger.info(f"Registered Unicode font: {FONT_PATH}")
-            except Exception as e:
-                logger.warning(f"Failed to register font {FONT_PATH}: {e}. Falling back to Helvetica.")
-                self._fonts_registered = True  # Mark as registered to avoid retry
+            except Exception:
+                self._unicode_font = 'Helvetica'
+                self._fonts_registered = True
         else:
-            logger.warning(f"Font file not found at {FONT_PATH}. Using Helvetica (limited Unicode support).")
+            self._unicode_font = 'Helvetica'
             self._fonts_registered = True
 
-    def _load_fbr_logo(self) -> Image.Image:
-        """
-        Load FBR Digital Invoicing System logo.
+        return self._unicode_font
 
-        Returns:
-            PIL Image object
+    def _font(self, bold: bool = False) -> str:
+        font = self._register_fonts()
+        if bold and font == 'Helvetica':
+            return 'Helvetica-Bold'
+        return font
 
-        Raises:
-            FileNotFoundError: If logo file not found at expected path
-        """
-        # Return cached logo if already loaded
+    # ── FBR Assets ────────────────────────────────────────────────────
+
+    def _load_fbr_logo(self) -> Optional[Image.Image]:
+        """Load FBR logo with caching. Returns None if not found."""
         if self._logo_cache is not None:
             return self._logo_cache
-
-        if not LOGO_PATH.exists():
-            error_msg = (
-                f"FBR logo not found at {LOGO_PATH}. "
-                "Please add fbr_logo.png to backend/src/assets/ directory. "
-                "See fbr_logo_README.md for instructions."
-            )
-            logger.error(error_msg)
-            raise FileNotFoundError(error_msg)
-
-        try:
-            self._logo_cache = Image.open(LOGO_PATH)
-            logger.info(f"Loaded FBR logo from {LOGO_PATH}")
-            return self._logo_cache
-        except Exception as e:
-            error_msg = f"Failed to load FBR logo from {LOGO_PATH}: {e}"
-            logger.error(error_msg)
-            raise FileNotFoundError(error_msg)
-
-    def _generate_qr_code(self, usin: str) -> Image.Image:
-        """
-        Generate QR code for FBR USIN.
-
-        Generates QR Code Version 2.0 (25x25 modules) at 1.0x1.0 inch.
-
-        Args:
-            usin: FBR-issued Unique Sales Invoice Number
-
-        Returns:
-            PIL Image object containing QR code
-        """
-        if not usin:
-            raise ValueError("USIN is required for QR code generation")
-
-        # Create QR code with exact FBR specifications
-        qr = qrcode.QRCode(
-            version=2,  # Version 2.0 = 25x25 modules (FBR requirement)
-            error_correction=qrcode.constants.ERROR_CORRECT_L,
-            box_size=12,  # 12 pixels per module = 300 DPI quality (25 * 12 = 300 pixels = 1 inch at 300 DPI)
-            border=0,  # No border (we'll add spacing in layout)
-        )
-
-        qr.add_data(usin)
-        qr.make(fit=False)  # Don't auto-adjust version - keep Version 2.0
-
-        # Generate image
-        img = qr.make_image(fill_color="black", back_color="white")
-
-        logger.debug(f"Generated QR code for USIN: {usin}")
-        return img
-
-    def _render_invoice_header(
-        self,
-        c: canvas.Canvas,
-        invoice_data: dict,
-        x: float,
-        y: float
-    ) -> float:
-        """
-        Render invoice header section.
-
-        Args:
-            c: ReportLab canvas
-            invoice_data: Invoice data dictionary
-            x: X coordinate
-            y: Y coordinate (top of header)
-
-        Returns:
-            Y coordinate after header (for next section)
-        """
-        # Ensure fonts are registered
-        self._register_fonts()
-
-        # Use Unicode font if available, otherwise Helvetica
-        font_name = 'NotoSansArabic' if self._fonts_registered and FONT_PATH.exists() else 'Helvetica'
-
-        # Title
-        c.setFont(font_name + '-Bold' if font_name == 'Helvetica' else font_name, 16)
-        c.drawString(x, y, "INVOICE")
-        y -= 25
-
-        # Invoice number and date
-        c.setFont(font_name, 10)
-        invoice_number = invoice_data.get('invoiceRefNo', 'N/A')
-        invoice_date = invoice_data.get('invoiceDate', 'N/A')
-        c.drawString(x, y, f"Invoice #: {invoice_number}")
-        c.drawString(x + 250, y, f"Date: {invoice_date}")
-        y -= 30
-
-        # Seller details
-        c.setFont(font_name + '-Bold' if font_name == 'Helvetica' else font_name, 12)
-        c.drawString(x, y, "SELLER DETAILS")
-        y -= 15
-
-        c.setFont(font_name, 10)
-        seller_name = invoice_data.get('sellerBusinessName', 'N/A')
-        seller_ntn = invoice_data.get('sellerNTNCNIC', 'N/A')
-        seller_address = invoice_data.get('sellerAddress', 'N/A')
-        seller_province = invoice_data.get('sellerProvince', 'N/A')
-
-        c.drawString(x, y, f"Name: {seller_name}")
-        y -= 15
-        c.drawString(x, y, f"NTN/CNIC: {seller_ntn}")
-        y -= 15
-        c.drawString(x, y, f"Address: {seller_address}, {seller_province}")
-        y -= 30
-
-        # Buyer details
-        c.setFont(font_name + '-Bold' if font_name == 'Helvetica' else font_name, 12)
-        c.drawString(x, y, "BUYER DETAILS")
-        y -= 15
-
-        c.setFont(font_name, 10)
-        buyer_name = invoice_data.get('buyerBusinessName', 'N/A')
-        buyer_ntn = invoice_data.get('buyerNTNCNIC', 'N/A')
-        buyer_address = invoice_data.get('buyerAddress', 'N/A')
-        buyer_province = invoice_data.get('buyerProvince', 'N/A')
-        buyer_type = invoice_data.get('buyerRegistrationType', 'N/A')
-
-        c.drawString(x, y, f"Name: {buyer_name}")
-        y -= 15
-        c.drawString(x, y, f"NTN/CNIC: {buyer_ntn}")
-        y -= 15
-        c.drawString(x, y, f"Address: {buyer_address}, {buyer_province}")
-        y -= 15
-        c.drawString(x, y, f"Type: {buyer_type}")
-        y -= 30
-
-        return y
-
-    def _render_line_items_table(
-        self,
-        c: canvas.Canvas,
-        items: list[dict],
-        x: float,
-        y: float,
-        width: float
-    ) -> float:
-        """
-        Render line items table.
-
-        Args:
-            c: ReportLab canvas
-            items: List of invoice line items
-            x: X coordinate
-            y: Y coordinate (top of table)
-            width: Table width
-
-        Returns:
-            Y coordinate after table (for next section)
-        """
-        # Ensure fonts are registered
-        self._register_fonts()
-
-        # Use Unicode font if available, otherwise Helvetica
-        font_name = 'NotoSansArabic' if self._fonts_registered and FONT_PATH.exists() else 'Helvetica'
-
-        # Define table headers
-        headers = [
-            'HS Code',
-            'Product Description',
-            'Qty',
-            'UOM',
-            'Rate',
-            'Sales Tax',
-            'Total'
-        ]
-
-        # Build table data starting with headers
-        table_data = [headers]
-
-        # Add item rows with error handling for missing/invalid fields
-        for idx, item in enumerate(items):
+        if LOGO_PATH.exists():
             try:
-                # Truncate long product descriptions to prevent layout issues
-                product_desc = str(item.get('product_description', 'N/A'))
-                if len(product_desc) > 100:
-                    product_desc = product_desc[:97] + '...'
-                    logger.debug(f"Truncated long product description in item {idx + 1}")
+                self._logo_cache = Image.open(LOGO_PATH)
+                return self._logo_cache
+            except Exception as e:
+                logger.warning(f"Failed to load FBR logo: {e}")
+        return None
 
-                row = [
-                    str(item.get('hs_code', 'N/A'))[:20],  # Limit HS code length
-                    product_desc,
-                    str(item.get('quantity', 0)),
-                    str(item.get('uom', 'N/A'))[:10],  # Limit UOM length
-                    str(item.get('rate', 'N/A')),
-                    f"{float(item.get('sales_tax_applicable', 0)):.2f}",
-                    f"{float(item.get('total_values', 0)):.2f}"
-                ]
-                table_data.append(row)
-            except (ValueError, TypeError) as e:
-                logger.warning(f"Error processing item {idx + 1}: {e}. Using default values.")
-                # Add row with safe defaults
-                table_data.append([
-                    'N/A', 'Error processing item', '0', 'N/A', 'N/A', '0.00', '0.00'
-                ])
-
-        # Define column widths (proportional to content)
-        col_widths = [
-            width * 0.12,  # HS Code
-            width * 0.30,  # Product Description (wider for text)
-            width * 0.08,  # Qty
-            width * 0.10,  # UOM
-            width * 0.12,  # Rate
-            width * 0.13,  # Sales Tax
-            width * 0.15   # Total
-        ]
-
-        # Create table
-        table = Table(table_data, colWidths=col_widths)
-
-        # Apply table styling
-        table.setStyle(TableStyle([
-            # Header row styling
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-            ('TOPPADDING', (0, 0), (-1, 0), 8),
-
-            # Data rows styling
-            ('FONTNAME', (0, 1), (-1, -1), font_name),
-            ('FONTSIZE', (0, 1), (-1, -1), 9),
-            ('ALIGN', (0, 1), (0, -1), 'CENTER'),  # HS Code - center
-            ('ALIGN', (1, 1), (1, -1), 'LEFT'),    # Product Description - left
-            ('ALIGN', (2, 1), (2, -1), 'CENTER'),  # Qty - center
-            ('ALIGN', (3, 1), (3, -1), 'CENTER'),  # UOM - center
-            ('ALIGN', (4, 1), (4, -1), 'RIGHT'),   # Rate - right
-            ('ALIGN', (5, 1), (5, -1), 'RIGHT'),   # Sales Tax - right
-            ('ALIGN', (6, 1), (6, -1), 'RIGHT'),   # Total - right
-            ('TOPPADDING', (0, 1), (-1, -1), 6),
-            ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
-            ('LEFTPADDING', (0, 1), (-1, -1), 4),
-            ('RIGHTPADDING', (0, 1), (-1, -1), 4),
-
-            # Grid and borders
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
-            ('BOX', (0, 0), (-1, -1), 1, colors.black),
-
-            # Alternating row colors for readability
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.Color(0.95, 0.95, 0.95)])
-        ]))
-
-        # Calculate table height
-        table.wrapOn(c, width, 1000)  # Wrap to calculate dimensions
-        table_width, table_height = table.wrap(width, 1000)
-
-        # Draw table at position
-        table.drawOn(c, x, y - table_height)
-
-        # Return Y coordinate after table (with some spacing)
-        return y - table_height - 20
-
-    def _render_totals(
-        self,
-        c: canvas.Canvas,
-        invoice_data: dict,
-        x: float,
-        y: float
-    ) -> float:
-        """
-        Render invoice totals section.
-
-        Args:
-            c: ReportLab canvas
-            invoice_data: Invoice data dictionary
-            x: X coordinate
-            y: Y coordinate (top of totals)
-
-        Returns:
-            Y coordinate after totals (for next section)
-        """
-        # Ensure fonts are registered
-        self._register_fonts()
-
-        # Use Unicode font if available, otherwise Helvetica
-        font_name = 'NotoSansArabic' if self._fonts_registered and FONT_PATH.exists() else 'Helvetica'
-
-        # Calculate totals from items
-        items = invoice_data.get('items', [])
-
-        subtotal = sum(item.get('value_sales_excluding_st', 0) for item in items)
-        total_sales_tax = sum(item.get('sales_tax_applicable', 0) for item in items)
-        total_withheld = sum(item.get('sales_tax_withheld_at_source', 0) for item in items)
-        total_extra_tax = sum(item.get('extra_tax', 0) for item in items)
-        total_further_tax = sum(item.get('further_tax', 0) for item in items)
-        total_fed = sum(item.get('fed_payable', 0) for item in items)
-        total_discount = sum(item.get('discount', 0) for item in items)
-        grand_total = sum(item.get('total_values', 0) for item in items)
-
-        # Position totals on right side of page
-        label_x = x + 350
-        value_x = x + 500
-
-        # Draw totals section header
-        c.setFont(font_name + '-Bold' if font_name == 'Helvetica' else font_name, 12)
-        c.drawString(label_x, y, "TOTALS")
-        y -= 20
-
-        # Draw separator line
-        c.setLineWidth(0.5)
-        c.line(label_x, y, value_x + 50, y)
-        y -= 15
-
-        # Set font for totals
-        c.setFont(font_name, 10)
-
-        # Render each total line
-        totals_lines = [
-            ("Subtotal (excl. tax):", f"{subtotal:.2f}"),
-            ("Sales Tax:", f"{total_sales_tax:.2f}"),
-        ]
-
-        # Add optional totals only if non-zero
-        if total_withheld > 0:
-            totals_lines.append(("Tax Withheld:", f"{total_withheld:.2f}"))
-        if total_extra_tax > 0:
-            totals_lines.append(("Extra Tax:", f"{total_extra_tax:.2f}"))
-        if total_further_tax > 0:
-            totals_lines.append(("Further Tax:", f"{total_further_tax:.2f}"))
-        if total_fed > 0:
-            totals_lines.append(("FED Payable:", f"{total_fed:.2f}"))
-        if total_discount > 0:
-            totals_lines.append(("Discount:", f"-{total_discount:.2f}"))
-
-        # Draw each total line
-        for label, value in totals_lines:
-            c.drawString(label_x, y, label)
-            c.drawRightString(value_x + 50, y, value)
-            y -= 15
-
-        # Draw separator line before grand total
-        y -= 5
-        c.setLineWidth(1)
-        c.line(label_x, y, value_x + 50, y)
-        y -= 15
-
-        # Draw grand total (bold/larger)
-        c.setFont(font_name + '-Bold' if font_name == 'Helvetica' else font_name, 12)
-        c.drawString(label_x, y, "GRAND TOTAL:")
-        c.drawRightString(value_x + 50, y, f"{grand_total:.2f}")
-        y -= 20
-
-        return y
-
-    def _add_fbr_compliance_elements(
-        self,
-        c: canvas.Canvas,
-        usin: str,
-        x: float,
-        y: float
-    ) -> None:
-        """
-        Add FBR compliance elements (logo and QR code) to invoice.
-
-        Args:
-            c: ReportLab canvas
-            usin: FBR-issued USIN for QR code
-            x: X coordinate for compliance elements
-            y: Y coordinate for compliance elements
-        """
-        if not usin:
-            logger.warning("USIN not provided - skipping QR code generation")
-            return
-
-        # Load FBR logo
+    def _generate_qr_code(self, data: str) -> Optional[Image.Image]:
+        """Generate QR code for FBR invoice number (USIN)."""
+        if not data:
+            return None
         try:
-            logo_img = self._load_fbr_logo()
+            qr = qrcode.QRCode(
+                version=2,
+                error_correction=qrcode.constants.ERROR_CORRECT_L,
+                box_size=12,
+                border=0,
+            )
+            qr.add_data(data)
+            qr.make(fit=False)
+            return qr.make_image(fill_color="black", back_color="white")
+        except Exception as e:
+            logger.warning(f"Failed to generate QR code: {e}")
+            return None
 
-            # Calculate logo dimensions (maintain aspect ratio, max width 2 inches)
-            logo_max_width = 2 * inch
-            logo_max_height = 0.8 * inch
+    # ── Text helpers ───────────────────────────────────────────────────
 
-            # Get original logo dimensions
-            logo_width, logo_height = logo_img.size
-            aspect_ratio = logo_width / logo_height
+    def _get_measure_canvas(self) -> canvas_module.Canvas:
+        if self._measure_canvas is None:
+            self._measure_canvas = canvas_module.Canvas(BytesIO(), pagesize=PAGE_SIZE)
+        return self._measure_canvas
 
-            # Scale to fit within max dimensions
-            if logo_width > logo_max_width:
-                display_width = logo_max_width
-                display_height = display_width / aspect_ratio
+    def _string_width(self, text: str, font_name: str, font_size: int) -> float:
+        return self._get_measure_canvas().stringWidth(text, font_name, font_size)
+
+    def _wrap_text(self, text: str, max_width: float, font_name: str, font_size: int) -> List[str]:
+        """Wrap text to fit within max_width. Returns list of lines."""
+        if not text:
+            return ['']
+
+        c = self._get_measure_canvas()
+        c.setFont(font_name, font_size)
+
+        words = str(text).split(' ')
+        lines = []
+        current = ''
+
+        for word in words:
+            test = word if not current else current + ' ' + word
+            if c.stringWidth(test, font_name, font_size) <= max_width:
+                current = test
             else:
-                display_width = logo_width
-                display_height = logo_height
+                if current:
+                    lines.append(current)
+                if c.stringWidth(word, font_name, font_size) > max_width:
+                    # Character-wrap long word
+                    truncated = ''
+                    for ch in word:
+                        if c.stringWidth(truncated + ch, font_name, font_size) > max_width - 5:
+                            truncated += '...'
+                            break
+                        truncated += ch
+                    lines.append(truncated)
+                else:
+                    current = word
+        if current:
+            lines.append(current)
+        return lines if lines else ['']
 
-            # Ensure height doesn't exceed max
-            if display_height > logo_max_height:
-                display_height = logo_max_height
-                display_width = display_height * aspect_ratio
-
-            # Position logo at top right of page
-            logo_x = x + 400
-            logo_y = y
-
-            # Draw logo
-            c.drawInlineImage(
-                logo_img,
-                logo_x,
-                logo_y,
-                width=display_width,
-                height=display_height,
-                preserveAspectRatio=True
-            )
-
-            logger.debug(f"Drew FBR logo at ({logo_x}, {logo_y})")
-
-        except FileNotFoundError as e:
-            logger.warning(f"FBR logo not found - skipping logo: {e}")
-        except Exception as e:
-            logger.error(f"Failed to draw FBR logo: {e}")
-
-        # Generate and draw QR code
+    @staticmethod
+    def _fmt_num(value) -> str:
+        """Format a numeric value for display."""
+        if value is None or value == '':
+            return '0.00'
         try:
-            qr_img = self._generate_qr_code(usin)
+            v = float(value)
+            if v == int(v) and abs(v) < 1000:
+                return str(int(v))
+            return f"{v:,.2f}"
+        except (ValueError, TypeError):
+            return str(value)
 
-            # QR code dimensions: exactly 1.0 x 1.0 inch (FBR requirement)
-            qr_size = 1.0 * inch
+    # ═══════════════════════════════════════════════════════════════════
+    # PUBLIC API
+    # ═══════════════════════════════════════════════════════════════════
 
-            # Position QR code at bottom right
-            qr_x = x + 450
-            qr_y = 50  # Fixed position near bottom of page
+    def generate_invoice_pdf(self, invoice: Invoice) -> bytes:
+        """Generate PDF for a single invoice matching the FBR template."""
+        if not invoice.items:
+            raise ValueError("Invoice must have at least one item")
+        items = invoice.items
+        if not isinstance(items, list) or len(items) == 0:
+            raise ValueError("Invoice must have at least one line item")
 
-            # Draw QR code
-            c.drawInlineImage(
-                qr_img,
-                qr_x,
-                qr_y,
-                width=qr_size,
-                height=qr_size,
-                preserveAspectRatio=True
+        invoice_number = invoice.external_id
+        logger.info(f"Generating PDF for invoice {invoice_number}")
+
+        try:
+            buffer = BytesIO()
+            c = canvas_module.Canvas(buffer, pagesize=PAGE_SIZE)
+            font = self._register_fonts()
+
+            total_pages = self._render_all_pages(c, invoice, items, font)
+            c.save()
+
+            pdf_bytes = buffer.getvalue()
+            buffer.close()
+            logger.info(f"Generated PDF for {invoice_number}: {len(pdf_bytes)} bytes, {total_pages} pages")
+            return pdf_bytes
+        except Exception as e:
+            logger.error(f"Failed to generate PDF for invoice {invoice_number}: {e}")
+            raise
+
+    def generate_batch_pdf(self, invoices: List[Invoice]) -> bytes:
+        """Generate PDF for multiple invoices. Each starts on a new page."""
+        if not invoices:
+            raise ValueError("No invoices provided for batch PDF generation")
+        if len(invoices) > 50:
+            raise ValueError(f"Batch size exceeds maximum limit of 50 invoices")
+
+        logger.info(f"Generating batch PDF for {len(invoices)} invoices")
+
+        try:
+            buffer = BytesIO()
+            c = canvas_module.Canvas(buffer, pagesize=PAGE_SIZE)
+            font = self._register_fonts()
+
+            for idx, invoice in enumerate(invoices):
+                items = invoice.items
+                if not items:
+                    raise ValueError(f"Invoice {invoice.external_id} has no line items")
+                self._render_all_pages(c, invoice, items, font)
+                if idx < len(invoices) - 1:
+                    c.showPage()
+
+            c.save()
+            pdf_bytes = buffer.getvalue()
+            buffer.close()
+            logger.info(f"Generated batch PDF: {len(pdf_bytes)} bytes")
+            return pdf_bytes
+        except Exception as e:
+            logger.error(f"Failed to generate batch PDF: {e}")
+            raise
+
+    # ═══════════════════════════════════════════════════════════════════
+    # MULTI-PAGE RENDERING
+    # ═══════════════════════════════════════════════════════════════════
+
+    def _render_all_pages(
+        self,
+        c: canvas_module.Canvas,
+        invoice: Invoice,
+        items: list,
+        font: str
+    ) -> int:
+        """Render all pages. Returns total page count."""
+        usin = invoice.fbr_reference_number  # FBR invoice number for QR code
+
+        # Split items into pages
+        first_page_available = PAGE_HEIGHT - CONTENT_TOP - BOTTOM_MARGIN
+        cont_page_available = PAGE_HEIGHT - PAGE_TOP - BOTTOM_MARGIN
+
+        pages = self._paginate_items(items, font, first_page_available, cont_page_available)
+        total_pages = len(pages)
+
+        # Pre-compute totals from ALL items (not just page items)
+        totals_data = self._build_totals_row(items)
+
+        for page_num, page_items in enumerate(pages, 1):
+            is_first = (page_num == 1)
+            y_start = CONTENT_TOP if is_first else PAGE_TOP
+
+            if is_first:
+                self._draw_first_page_header(c, invoice, font)
+                # FBR logo at top-right
+                self._draw_fbr_logo(c, font)
+
+            is_last = (page_num == total_pages)
+
+            # Compute row heights for this page's items
+            row_heights = self._compute_row_heights(page_items, font)
+
+            # Draw table
+            self._draw_table_grid(
+                c, page_items, row_heights, font,
+                y_start=y_start, is_first=is_first, is_last=is_last,
+                start_sr_no=sum(len(p) for p in pages[:page_num - 1]) + 1,
+                totals_data=totals_data
             )
 
-            # Add label below QR code
-            self._register_fonts()
-            font_name = 'NotoSansArabic' if self._fonts_registered and FONT_PATH.exists() else 'Helvetica'
-            c.setFont(font_name, 8)
-            c.drawCentredString(qr_x + qr_size / 2, qr_y - 12, "Scan to verify")
-            c.setFont(font_name, 7)
-            c.drawCentredString(qr_x + qr_size / 2, qr_y - 22, f"USIN: {usin[:20]}...")
+            # QR code on last page (only for posted invoices with USIN)
+            if is_last and usin:
+                self._draw_qr_code(c, usin, font)
 
-            logger.debug(f"Drew QR code at ({qr_x}, {qr_y}) with USIN: {usin}")
+            # Page number (bottom-right)
+            self._draw_page_number(c, page_num, total_pages, font)
 
+            if not is_last:
+                c.showPage()
+
+        return total_pages
+
+    def _paginate_items(
+        self, items: list, font: str,
+        first_page_avail: float, cont_page_avail: float
+    ) -> List[list]:
+        """Split items into pages based on available vertical space."""
+        all_heights = self._compute_row_heights(items, font)
+        totals_h = self._calc_totals_height(items, font)
+
+        pages = []
+        remaining = list(items)
+        remaining_h = list(all_heights)
+        is_first = True
+
+        while remaining:
+            avail = first_page_avail if is_first else cont_page_avail
+            is_first = False
+
+            used = 0
+            count = 0
+            for i, h in enumerate(remaining_h):
+                needed = used + h
+                if i == len(remaining_h) - 1:
+                    needed += totals_h  # Last item needs room for totals
+                if needed <= avail:
+                    used += h
+                    count += 1
+                else:
+                    if count == 0:
+                        count = 1  # At least one item per page
+                    break
+
+            pages.append(remaining[:count])
+            remaining = remaining[count:]
+            remaining_h = remaining_h[count:]
+
+        return pages
+
+    # ═══════════════════════════════════════════════════════════════════
+    # FIRST PAGE HEADER
+    # ═══════════════════════════════════════════════════════════════════
+
+    def _draw_first_page_header(
+        self, c: canvas_module.Canvas, invoice: Invoice, font: str
+    ) -> None:
+        """Draw the company name and three-column header on the first page."""
+        bold = self._font(bold=True)
+        company = invoice.seller_business_name or ''
+
+        # Company name — left-aligned, bold 16pt
+        c.setFont(bold, COMPANY_NAME_SIZE)
+        c.setFillColor(BLACK)
+        c.drawString(SELLER_LABEL_X, PAGE_HEIGHT - COMPANY_NAME_Y, company)
+
+        # Section labels — bold 12pt
+        c.setFont(bold, SECTION_HEADER_SIZE)
+        c.drawString(SELLER_LABEL_X, PAGE_HEIGHT - SECTION_HEADER_Y, "Seller Information")
+        c.drawString(BUYER_LABEL_X, PAGE_HEIGHT - SECTION_HEADER_Y, "Buyer Information")
+        c.drawString(SUMMARY_LABEL_X, PAGE_HEIGHT - SECTION_HEADER_Y, "Invoice Summary")
+
+        # Field values — regular 10pt
+        c.setFont(font, FIELD_VALUE_SIZE)
+
+        # SELLER column
+        self._draw_header_field(c, font, SELLER_LABEL_X, SELLER_VALUE_X,
+                                FIELD_ROW1_Y, "Business Name:", company)
+        self._draw_header_field(c, font, SELLER_LABEL_X, SELLER_VALUE_X,
+                                FIELD_ROW2_Y, "Registration No.:",
+                                invoice.seller_ntn_cnic or '')
+        self._draw_header_field(c, font, SELLER_LABEL_X, SELLER_VALUE_X,
+                                FIELD_ROW3_Y, "Province:",
+                                invoice.seller_province or '')
+
+        # BUYER column
+        self._draw_header_field(c, font, BUYER_LABEL_X, BUYER_VALUE_X,
+                                FIELD_ROW1_Y, "Business Name:",
+                                invoice.buyer_business_name or '')
+        self._draw_header_field(c, font, BUYER_LABEL_X, BUYER_VALUE_X,
+                                FIELD_ROW2_Y, "Registration No.:",
+                                invoice.buyer_ntn_cnic or '')
+        self._draw_header_field(c, font, BUYER_LABEL_X, BUYER_VALUE_X,
+                                FIELD_ROW3_Y, "Province:",
+                                invoice.buyer_province or '')
+
+        # INVOICE SUMMARY column
+        tax_period = ''
+        if invoice.invoice_date:
+            parts = invoice.invoice_date.split('-')
+            if len(parts) >= 2:
+                tax_period = parts[0] + parts[1]
+
+        self._draw_header_field(c, font, SUMMARY_LABEL_X, SUMMARY_VALUE_X,
+                                FIELD_ROW1_Y, "FBR Invoice No.:",
+                                invoice.external_id or '')
+        self._draw_header_field(c, font, SUMMARY_LABEL_X, SUMMARY_VALUE_X,
+                                FIELD_ROW2_Y, "Invoice Date:",
+                                invoice.invoice_date or '')
+        self._draw_header_field(c, font, SUMMARY_LABEL_X, SUMMARY_VALUE_X,
+                                FIELD_ROW3_Y, "Invoice Type:",
+                                invoice.invoice_type or '')
+        self._draw_header_field(c, font, SUMMARY_LABEL_X, SUMMARY_VALUE_X,
+                                FIELD_ROW4_Y, "Tax Period:", tax_period)
+
+    def _draw_header_field(
+        self, c: canvas_module.Canvas, font: str,
+        label_x: float, value_x: float, y_from_top: float,
+        label: str, value: str
+    ) -> None:
+        """Draw a label:value pair in the header area."""
+        y = PAGE_HEIGHT - y_from_top
+        c.setFont(font, FIELD_LABEL_SIZE)
+        c.drawString(label_x, y, label)
+        c.setFont(font, FIELD_VALUE_SIZE)
+        c.drawString(value_x, y, value)
+
+    # ═══════════════════════════════════════════════════════════════════
+    # TABLE DRAWING
+    # ═══════════════════════════════════════════════════════════════════
+
+    def _draw_table_grid(
+        self,
+        c: canvas_module.Canvas,
+        items: list,
+        row_heights: List[float],
+        font: str,
+        y_start: float,
+        is_first: bool,
+        is_last: bool,
+        start_sr_no: int = 1,
+        totals_data: Optional[list] = None
+    ) -> None:
+        """Draw the complete table with grid lines, headers, data rows, and totals."""
+        bold = self._font(bold=True)
+        y_top = PAGE_HEIGHT - y_start  # Convert to canvas Y
+        current_y = y_top
+
+        # ── Table header row ──
+        header_h = 24.0
+        header_y_bottom = current_y - header_h
+
+        # Draw header grid
+        self._draw_grid_rect(c, TABLE_LEFT, current_y, TABLE_RIGHT, header_y_bottom,
+                             line_width=1.0, fill=False)
+        # Vertical lines in header
+        for x in COL_X[1:-1]:
+            self._draw_vline(c, x, current_y, header_y_bottom, line_width=1.0)
+
+        # Header text row 1 — main columns (0-15) at y=219.5
+        # SRO columns (16,17) have their own two-row header at y=215.0 / y=224.0
+        header_text_y1 = PAGE_HEIGHT - 219.5
+        c.setFont(bold, TABLE_HEADER_SIZE)
+        c.setFillColor(BLACK)
+        for i in range(16):  # Only columns 0-15 (Sr. No. through Discount)
+            header = TABLE_HEADERS_ROW1[i]
+            if not header:
+                continue
+            col_w = COL_WIDTHS[i]
+            self._draw_cell_str(c, header, COL_X[i], header_text_y1, col_w,
+                                bold, TABLE_HEADER_SIZE, 'C')
+
+        # SRO two-row header
+        sro_top_y = PAGE_HEIGHT - 215.0     # "SRO / Schedule " / "SRO Item "
+        sro_bottom_y = PAGE_HEIGHT - 224.0  # "No." / "Sr. No."
+        sro_labels_top = [('SRO / Schedule ', 16), ('SRO Item ', 17)]
+        sro_labels_bottom = [('No.', 16), ('Sr. No.', 17)]
+
+        for text, col_idx in sro_labels_top:
+            self._draw_cell_str(c, text, COL_X[col_idx], sro_top_y, COL_WIDTHS[col_idx],
+                                bold, TABLE_HEADER_SIZE, 'C')
+        for text, col_idx in sro_labels_bottom:
+            self._draw_cell_str(c, text, COL_X[col_idx], sro_bottom_y, COL_WIDTHS[col_idx],
+                                bold, TABLE_HEADER_SIZE, 'C')
+
+        current_y = header_y_bottom
+
+        # ── Data rows ──
+        for idx, (item, rh) in enumerate(zip(items, row_heights)):
+            row_bottom = current_y - rh
+            sr_no = start_sr_no + idx
+
+            # Row horizontal borders
+            self._draw_hline(c, TABLE_LEFT, TABLE_RIGHT, current_y, line_width=1.0)
+            self._draw_hline(c, TABLE_LEFT, TABLE_RIGHT, row_bottom, line_width=0.5)
+
+            # Vertical lines through row
+            for x in COL_X:
+                self._draw_vline(c, x, current_y, row_bottom, line_width=1.0)
+
+            # Cell content
+            row_data = self._build_item_row(item, sr_no)
+            c.setFont(font, TABLE_DATA_SIZE)
+            c.setFillColor(BLACK)
+
+            for col_idx, (cell_text, col_w) in enumerate(zip(row_data, COL_WIDTHS)):
+                align = COL_ALIGN[col_idx]
+                col_x = COL_X[col_idx]
+                text_w = max(col_w - CELL_PADDING_LEFT * 2, 10)
+
+                # Wrap text to column width
+                lines = self._wrap_text(str(cell_text), text_w, font, TABLE_DATA_SIZE)
+                # Draw each line top-aligned within the cell
+                line_y = current_y - CELL_PADDING_TOP - CELL_LINE_HEIGHT * 0.8
+                for line in lines:
+                    if line_y < row_bottom + CELL_PADDING_TOP:
+                        break  # Truncate if text exceeds row height
+                    self._draw_text_aligned(c, line, col_x, line_y, col_w,
+                                            font, TABLE_DATA_SIZE, align)
+                    line_y -= CELL_LINE_HEIGHT
+
+            current_y = row_bottom
+
+        # ── Totals row (only on last page) ──
+        if is_last and totals_data:
+            # Compute row height from the actual totals data being displayed
+            max_lines = 1
+            for col_idx in range(8, N_COLS):
+                cell_text = str(totals_data[col_idx])
+                text_w = max(COL_WIDTHS[col_idx] - CELL_PADDING_LEFT * 2, 10)
+                lines = self._wrap_text(cell_text, text_w, bold, TOTALS_VALUE_SIZE)
+                max_lines = max(max_lines, len(lines))
+            totals_rh = max_lines * CELL_LINE_HEIGHT + CELL_PADDING_TOP * 2 + 6
+            totals_bottom = current_y - totals_rh
+
+            # Top border of totals row (thicker to separate from data)
+            self._draw_hline(c, TABLE_LEFT, TABLE_RIGHT, current_y, line_width=1.5)
+            # Bottom border
+            self._draw_hline(c, TABLE_LEFT, TABLE_RIGHT, totals_bottom, line_width=0.5)
+
+            # Vertical lines for all columns in totals row
+            for x in COL_X:
+                self._draw_vline(c, x, current_y, totals_bottom, line_width=1.0)
+
+            # Merged cell: columns 0-7 (Sr. No. through Rate) show "Total:" right-aligned
+            merge_left = COL_X[0]
+            merge_right = COL_X[8]
+            self._draw_hline(c, merge_left, merge_right, current_y, line_width=1.5)
+            self._draw_hline(c, merge_left, merge_right, totals_bottom, line_width=0.5)
+
+            # Text position — use same offset as data rows for consistency
+            text_offset = CELL_PADDING_TOP + CELL_LINE_HEIGHT * 0.8
+            totals_label_y = current_y - text_offset
+            totals_val_y = current_y - text_offset
+
+            # "Total:" label
+            c.setFont(bold, TOTALS_LABEL_SIZE)
+            c.setFillColor(BLACK)
+            self._draw_text_aligned(c, "Total:", merge_left, totals_label_y,
+                                    merge_right - merge_left, bold, TOTALS_LABEL_SIZE, 'R')
+
+            # Numeric totals in columns 8-17
+            c.setFont(bold, TOTALS_VALUE_SIZE)
+            for col_idx in range(8, N_COLS):
+                cell_text = totals_data[col_idx]
+                col_x = COL_X[col_idx]
+                col_w = COL_WIDTHS[col_idx]
+                align = COL_ALIGN[col_idx]
+                text_w = max(col_w - CELL_PADDING_LEFT * 2, 10)
+
+                lines = self._wrap_text(str(cell_text), text_w, bold, TOTALS_VALUE_SIZE)
+                line_y = totals_val_y
+                for line in lines:
+                    if line_y < totals_bottom + 2:
+                        break
+                    self._draw_text_aligned(c, line, col_x, line_y, col_w,
+                                            bold, TOTALS_VALUE_SIZE, align)
+                    line_y -= CELL_LINE_HEIGHT
+
+            current_y = totals_bottom
+
+    # ── Grid drawing primitives ────────────────────────────────────────
+
+    def _draw_grid_rect(self, c, x1, y1, x2, y2, line_width=1.0, fill=False):
+        """Draw a rectangle with given stroke."""
+        c.setStrokeColor(GRID_GRAY)
+        c.setLineWidth(line_width)
+        if fill:
+            c.setFillColor(colors.white)
+            c.rect(x1, y2, x2 - x1, y1 - y2, fill=1, stroke=1)
+        else:
+            c.rect(x1, y2, x2 - x1, y1 - y2, fill=0, stroke=1)
+
+    def _draw_hline(self, c, x1, x2, y, line_width=0.5):
+        c.setStrokeColor(GRID_GRAY)
+        c.setLineWidth(line_width)
+        c.line(x1, y, x2, y)
+
+    def _draw_vline(self, c, x, y1, y2, line_width=1.0):
+        c.setStrokeColor(GRID_GRAY)
+        c.setLineWidth(line_width)
+        c.line(x, y1, x, y2)
+
+    def _draw_cell_str(self, c, text, x, y, col_w, font_name, font_size, align):
+        """Draw text within a cell. x is the left edge of the cell."""
+        self._draw_text_aligned(c, text, x, y, col_w, font_name, font_size, align)
+
+    def _draw_text_aligned(self, c, text, x, y, cell_w, font_name, font_size, align):
+        """Draw text with alignment. x is the left edge of the cell."""
+        if not text:
+            return
+        c.setFont(font_name, font_size)
+        if align == 'R':
+            c.drawRightString(x + cell_w - CELL_PADDING_LEFT, y, text)
+        elif align == 'C':
+            c.drawCentredString(x + cell_w / 2, y, text)
+        else:  # Left
+            c.drawString(x + CELL_PADDING_LEFT, y, text)
+
+    # ── Row height calculation ─────────────────────────────────────────
+
+    def _compute_row_heights(self, items: list, font: str) -> List[float]:
+        """Compute the required height for each data row."""
+        heights = []
+        for item in items:
+            row_data = self._build_item_row(item, 1)
+            max_lines = 1
+            for col_idx, cell_text in enumerate(row_data):
+                text_w = max(COL_WIDTHS[col_idx] - CELL_PADDING_LEFT * 2, 10)
+                lines = self._wrap_text(str(cell_text), text_w, font, TABLE_DATA_SIZE)
+                max_lines = max(max_lines, len(lines))
+            rh = max_lines * CELL_LINE_HEIGHT + CELL_PADDING_TOP * 2
+            heights.append(max(rh, 14.0))  # Minimum row height
+        return heights
+
+    def _calc_totals_height(self, items: list, font: str) -> float:
+        """Calculate totals row height."""
+        totals_data = self._build_totals_row(items)
+        max_lines = 1
+        for col_idx, cell_text in enumerate(totals_data):
+            if col_idx < 8:
+                continue  # Skip merged columns
+            text_w = max(COL_WIDTHS[col_idx] - CELL_PADDING_LEFT * 2, 10)
+            lines = self._wrap_text(str(cell_text), text_w, font, TOTALS_VALUE_SIZE)
+            max_lines = max(max_lines, len(lines))
+        return max_lines * CELL_LINE_HEIGHT + CELL_PADDING_TOP * 2 + 4
+
+    # ── Data builders ──────────────────────────────────────────────────
+
+    def _build_item_row(self, item: dict, sr_no: int) -> list:
+        """Build a table row from an invoice item dict."""
+        return [
+            str(sr_no),
+            str(item.get('hs_code', '')),
+            '',  # HS Code Description — not in model, left blank
+            str(item.get('product_description', '')),
+            str(item.get('sale_type', '')),
+            self._fmt_num(item.get('quantity', 0)),
+            str(item.get('uom', '')),
+            str(item.get('rate', '')),
+            self._fmt_num(item.get('value_sales_excluding_st', 0)),
+            self._fmt_num(item.get('fixed_notified_value_or_retail_price', 0)),
+            self._fmt_num(item.get('sales_tax_applicable', 0)),
+            self._fmt_num(item.get('extra_tax', 0)),
+            self._fmt_num(item.get('further_tax', 0)),
+            self._fmt_num(item.get('fed_payable', 0)),
+            self._fmt_num(item.get('sales_tax_withheld_at_source', 0)),
+            self._fmt_num(item.get('discount', 0)),
+            str(item.get('sro_schedule_no', '')),
+            str(item.get('sro_item_serial_no', '')),
+        ]
+
+    def _build_totals_row(self, items: list) -> list:
+        """Build the totals summary row."""
+        sums = {}
+        for field in ['value_sales_excluding_st', 'fixed_notified_value_or_retail_price',
+                       'sales_tax_applicable', 'extra_tax', 'further_tax',
+                       'fed_payable', 'sales_tax_withheld_at_source', 'discount']:
+            sums[field] = sum(float(it.get(field, 0) or 0) for it in items)
+
+        return [
+            '',  # Sr. No.
+            '',  # HS Code
+            '',  # HS Code Description
+            '',  # Product Description
+            '',  # Sales Type
+            '',  # Quantity
+            '',  # UoM
+            '',  # Rate
+            self._fmt_num(sums['value_sales_excluding_st']),
+            self._fmt_num(sums['fixed_notified_value_or_retail_price']),
+            self._fmt_num(sums['sales_tax_applicable']),
+            self._fmt_num(sums['extra_tax']),
+            self._fmt_num(sums['further_tax']),
+            self._fmt_num(sums['fed_payable']),
+            self._fmt_num(sums['sales_tax_withheld_at_source']),
+            self._fmt_num(sums['discount']),
+            '',  # SRO Schedule No.
+            '',  # SRO Item Sr. No.
+        ]
+
+    # ── Page number ────────────────────────────────────────────────────
+
+    # ── FBR compliance elements ──────────────────────────────────────
+
+    def _draw_fbr_logo(self, c: canvas_module.Canvas, font: str) -> None:
+        """Draw FBR logo at top-right of the page, near the company name."""
+        logo = self._load_fbr_logo()
+        if logo is None:
+            return
+        try:
+            lw, lh = logo.size
+            aspect = lw / lh
+            display_w = 2.0 * inch
+            display_h = display_w / aspect
+            if display_h > 0.6 * inch:
+                display_h = 0.6 * inch
+                display_w = display_h * aspect
+            # Position at top-right, same level as company name
+            logo_x = TABLE_RIGHT - display_w
+            logo_y = PAGE_HEIGHT - COMPANY_NAME_Y - display_h + 4
+            c.drawInlineImage(logo, logo_x, logo_y,
+                              width=display_w, height=display_h,
+                              preserveAspectRatio=True)
         except Exception as e:
-            logger.error(f"Failed to generate/draw QR code: {e}")
-            raise ValueError(f"QR code generation failed: {e}")
+            logger.warning(f"Could not draw FBR logo: {e}")
+
+    def _draw_qr_code(self, c: canvas_module.Canvas, usin: str, font: str) -> None:
+        """Draw QR code at bottom-right of the last page."""
+        qr_img = self._generate_qr_code(usin)
+        if qr_img is None:
+            return
+        try:
+            qr_size = 0.85 * inch
+            qr_x = TABLE_RIGHT - qr_size
+            qr_y = 50  # Fixed from bottom
+            c.drawInlineImage(qr_img, qr_x, qr_y,
+                              width=qr_size, height=qr_size,
+                              preserveAspectRatio=True)
+            # Label below QR
+            c.setFont(self._font(), 6)
+            c.setFillColor(BLACK)
+            c.drawCentredString(qr_x + qr_size / 2, qr_y - 10, "Scan to verify")
+            c.drawCentredString(qr_x + qr_size / 2, qr_y - 18,
+                                f"USIN: {usin[:30]}")
+        except Exception as e:
+            logger.warning(f"Could not draw QR code: {e}")
+
+    # ── Page number ──────────────────────────────────────────────────
+
+    def _draw_page_number(self, c, page_num: int, total_pages: int, font: str):
+        """Draw 'Page X of Y' at bottom-right."""
+        text = f"Page {page_num} of {total_pages}"
+        bold = self._font(bold=True)
+        c.setFont(bold, PAGE_NUM_SIZE)
+        c.setFillColor(BLACK)
+        tw = self._string_width(text, bold, PAGE_NUM_SIZE)
+        c.drawString(TABLE_RIGHT - tw, PAGE_HEIGHT - PAGE_BOTTOM, text)

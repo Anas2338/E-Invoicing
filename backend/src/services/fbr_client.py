@@ -197,9 +197,9 @@ class FBRClient:
         # Select the appropriate base URL based on environment
         # Use FBR's actual API endpoints based on the technical specification
         if environment == FBREnvironment.SANDBOX:
-            validation_endpoint = f"{settings.fbr_sandbox_base_url}/di_data/v1/di/validateinvoicedata_sb"
+            validation_endpoint = f"{settings.fbr_sandbox_base_url}/validateinvoicedata_sb"
         else:
-            validation_endpoint = f"{settings.fbr_production_base_url}/di_data/v1/di/validateinvoicedata"
+            validation_endpoint = f"{settings.fbr_production_base_url}/validateinvoicedata"
 
         headers = {
             "Content-Type": "application/json",
@@ -356,9 +356,9 @@ class FBRClient:
 
         # Use the same URLs as the manual system (fbr_service.py)
         if environment == FBREnvironment.SANDBOX:
-            validation_endpoint = "https://gw.fbr.gov.pk/di_data/v1/di/validateinvoicedata_sb"
+            validation_endpoint = f"{settings.fbr_sandbox_base_url}/validateinvoicedata_sb"
         else:
-            validation_endpoint = "https://gw.fbr.gov.pk/di_data/v1/di/validateinvoicedata"
+            validation_endpoint = f"{settings.fbr_production_base_url}/validateinvoicedata"
 
         headers = {
             "Content-Type": "application/json",
@@ -524,9 +524,9 @@ class FBRClient:
 
         # Use the same URLs as the manual system (fbr_service.py)
         if environment == FBREnvironment.SANDBOX:
-            posting_endpoint = "https://gw.fbr.gov.pk/di_data/v1/di/postinvoicedata_sb"
+            posting_endpoint = f"{settings.fbr_sandbox_base_url}/postinvoicedata_sb"
         else:
-            posting_endpoint = "https://gw.fbr.gov.pk/di_data/v1/di/postinvoicedata"
+            posting_endpoint = f"{settings.fbr_production_base_url}/postinvoicedata"
 
         headers = {
             "Content-Type": "application/json",
@@ -659,9 +659,9 @@ class FBRClient:
         # Select the appropriate base URL based on environment
         # Use FBR's actual API endpoints based on the technical specification
         if environment == FBREnvironment.SANDBOX:
-            posting_endpoint = f"{settings.fbr_sandbox_base_url}/di_data/v1/di/postinvoicedata_sb"
+            posting_endpoint = f"{settings.fbr_sandbox_base_url}/postinvoicedata_sb"
         else:
-            posting_endpoint = f"{settings.fbr_production_base_url}/di_data/v1/di/postinvoicedata"
+            posting_endpoint = f"{settings.fbr_production_base_url}/postinvoicedata"
 
         headers = {
             "Content-Type": "application/json",
@@ -791,7 +791,7 @@ class FBRClient:
 
         # Prepare the status check request
         # Using FBR's actual endpoint based on technical specification
-        status_endpoint = f"{base_url}/di_data/v1/di/invoicestatus/{reference_number}"
+        status_endpoint = f"{base_url}/invoicestatus/{reference_number}"
         headers = {
             "Authorization": f"Bearer {settings.fbr_api_key}",
             "X-Correlation-ID": generate_correlation_id(),

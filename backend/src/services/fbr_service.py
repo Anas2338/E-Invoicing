@@ -4,12 +4,17 @@ Handles validation and posting of invoices to FBR Digital Invoicing System.
 """
 
 import json
+import uuid
+import time
 import httpx
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
 
+from sqlmodel import Session
+
 from src.models.invoice import Invoice, InvoiceStatus
+from src.models.fbr_response import FBRResponse, Environment as FBRResponseEnvironment
 from src.config.settings import settings
 
 
@@ -199,13 +204,16 @@ class FBRService:
 
         return fbr_data
 
-    async def validate_invoice(self, invoice: Invoice, access_token: str) -> Dict[str, Any]:
+    async def validate_invoice(
+        self, invoice: Invoice, access_token: str, db: Optional[Session] = None
+    ) -> Dict[str, Any]:
         """
         Validate an invoice with FBR.
 
         Args:
             invoice: Invoice object to validate
             access_token: Bearer token for FBR API authentication
+            db: Optional database session; if provided, an FBRResponse audit record is created
 
         Returns:
             FBR validation response
@@ -214,6 +222,8 @@ class FBRService:
             httpx.HTTPError: If API call fails
         """
         url = self._get_validate_url(invoice.environment)
+        correlation_id = str(invoice.id)
+        start_ms = int(time.time() * 1000)
 
         # Fetch UoM mappings from FBR API
         uom_mapping = await self._fetch_uom_mappings(access_token, invoice.environment)
@@ -234,13 +244,21 @@ class FBRService:
             try:
                 response = await client.post(url, json=fbr_data, headers=headers)
                 response.raise_for_status()
+                elapsed_ms = int(time.time() * 1000) - start_ms
 
                 result = response.json()
                 logger.info(f"FBR validation response for invoice {invoice.id}: {result}")
 
+                if db is not None:
+                    self._save_fbr_response(
+                        db, invoice, fbr_data, result, url, "POST",
+                        response.status_code, correlation_id, elapsed_ms
+                    )
+
                 return result
 
             except httpx.HTTPStatusError as e:
+                elapsed_ms = int(time.time() * 1000) - start_ms
                 error_text = e.response.text if e.response.text else "No error details provided by FBR"
                 logger.error(f"FBR validation failed with status {e.response.status_code}: {error_text}")
                 logger.error(f"Request URL: {url}")
@@ -250,8 +268,16 @@ class FBRService:
                 try:
                     error_json = e.response.json()
                     error_message = error_json.get('message') or error_json.get('error') or error_json.get('detail') or error_text
+                    response_payload = error_json
                 except:
                     error_message = error_text
+                    response_payload = {"raw_error": error_text}
+
+                if db is not None:
+                    self._save_fbr_response(
+                        db, invoice, fbr_data, response_payload, url, "POST",
+                        e.response.status_code, correlation_id, elapsed_ms
+                    )
 
                 return {
                     "error": True,
@@ -259,20 +285,33 @@ class FBRService:
                     "message": f"FBR API error (Status {e.response.status_code}): {error_message}"
                 }
             except httpx.RequestError as e:
+                elapsed_ms = int(time.time() * 1000) - start_ms
                 logger.error(f"FBR validation request failed: {str(e)}")
                 logger.error(f"Request URL: {url}")
+
+                error_response = {"error": str(e), "message": f"Failed to connect to FBR API: {str(e)}"}
+
+                if db is not None:
+                    self._save_fbr_response(
+                        db, invoice, fbr_data, error_response, url, "POST",
+                        0, correlation_id, elapsed_ms
+                    )
+
                 return {
                     "error": True,
                     "message": f"Failed to connect to FBR API: {str(e)}"
                 }
 
-    async def post_invoice(self, invoice: Invoice, access_token: str) -> Dict[str, Any]:
+    async def post_invoice(
+        self, invoice: Invoice, access_token: str, db: Optional[Session] = None
+    ) -> Dict[str, Any]:
         """
         Post a validated invoice to FBR.
 
         Args:
             invoice: Invoice object to post (must be validated first)
             access_token: Bearer token for FBR API authentication
+            db: Optional database session; if provided, an FBRResponse audit record is created
 
         Returns:
             FBR posting response including FBR invoice number
@@ -281,6 +320,8 @@ class FBRService:
             httpx.HTTPError: If API call fails
         """
         url = self._get_post_url(invoice.environment)
+        correlation_id = str(invoice.id)
+        start_ms = int(time.time() * 1000)
 
         # Fetch UoM mappings from FBR API
         uom_mapping = await self._fetch_uom_mappings(access_token, invoice.environment)
@@ -299,29 +340,98 @@ class FBRService:
             try:
                 response = await client.post(url, json=fbr_data, headers=headers)
                 response.raise_for_status()
+                elapsed_ms = int(time.time() * 1000) - start_ms
 
                 result = response.json()
                 logger.info(f"FBR posting response for invoice {invoice.id}: {result}")
 
+                if db is not None:
+                    self._save_fbr_response(
+                        db, invoice, fbr_data, result, url, "POST",
+                        response.status_code, correlation_id, elapsed_ms
+                    )
+
                 return result
 
             except httpx.HTTPStatusError as e:
+                elapsed_ms = int(time.time() * 1000) - start_ms
                 logger.error(f"FBR posting failed with status {e.response.status_code}: {e.response.text}")
+
+                try:
+                    response_payload = e.response.json()
+                except:
+                    response_payload = {"raw_error": e.response.text or "No response body"}
+
+                if db is not None:
+                    self._save_fbr_response(
+                        db, invoice, fbr_data, response_payload, url, "POST",
+                        e.response.status_code, correlation_id, elapsed_ms
+                    )
+
                 return {
                     "error": True,
                     "statusCode": e.response.status_code,
                     "message": f"FBR API error: {e.response.text}"
                 }
             except httpx.RequestError as e:
+                elapsed_ms = int(time.time() * 1000) - start_ms
                 logger.error(f"FBR posting request failed: {str(e)}")
+
+                error_response = {"error": str(e), "message": f"Failed to connect to FBR: {str(e)}"}
+
+                if db is not None:
+                    self._save_fbr_response(
+                        db, invoice, fbr_data, error_response, url, "POST",
+                        0, correlation_id, elapsed_ms
+                    )
+
                 return {
                     "error": True,
                     "message": f"Failed to connect to FBR: {str(e)}"
                 }
 
+    def _save_fbr_response(
+        self,
+        db: Session,
+        invoice: Invoice,
+        request_payload: dict,
+        response_payload: dict,
+        endpoint: str,
+        method: str,
+        status_code: int,
+        correlation_id: str,
+        processing_duration_ms: int,
+    ) -> None:
+        """Persist an FBRResponse audit record and link it to the invoice."""
+        try:
+            env = FBRResponseEnvironment.SANDBOX if invoice.environment == "SANDBOX" else FBRResponseEnvironment.PRODUCTION
+            fbr_resp = FBRResponse(
+                request_payload=request_payload,
+                response_payload=response_payload,
+                endpoint=endpoint,
+                method=method,
+                status_code=status_code,
+                timestamp=datetime.utcnow(),
+                environment=env,
+                correlation_id=correlation_id,
+                processing_duration_ms=processing_duration_ms,
+            )
+            db.add(fbr_resp)
+            db.flush()  # Get the ID without committing
+            invoice.fbr_response_id = fbr_resp.id
+            db.add(invoice)
+            logger.info(f"Saved FBRResponse {fbr_resp.id} for invoice {invoice.id}")
+        except Exception as e:
+            logger.error(f"Failed to save FBRResponse for invoice {invoice.id}: {e}")
+
     def parse_validation_response(self, fbr_response: Dict[str, Any]) -> tuple[bool, Optional[str], Optional[list]]:
         """
         Parse FBR validation response.
+
+        Per FBR TECHNICAL.txt Section 4.2.3/4.2.4:
+        - Uses "validationResponse" wrapper
+        - Status values: "Valid" / "Invalid"
+        - errorCode is present on Invalid responses (e.g., "0046" = "Provide rate.")
 
         Args:
             fbr_response: Response from FBR validation API
@@ -341,14 +451,23 @@ class FBRService:
         if status == "Valid":
             return True, None, None
 
-        # Extract error details
-        error_message = validation_response.get("error") or validation_response.get("message") or validation_response.get("errorMessage")
+        # Extract error details — prefer error, then errorMessage, then message
+        error_message = (
+            validation_response.get("error")
+            or validation_response.get("errorMessage")
+            or validation_response.get("message")
+        )
 
-        # If still no error message, provide a generic one with available details
+        # Prepend errorCode if present (e.g., "0046" → "[0046] Provide rate.")
+        error_code = validation_response.get("errorCode")
+        if error_code and error_message:
+            error_message = f"[{error_code}] {error_message}"
+        elif error_code:
+            error_message = f"Error code: {error_code}"
+
+        # If still no error message, provide a generic one
         if not error_message or error_message.strip() == "":
             error_message = f"FBR validation failed with status: {status or 'Unknown'}"
-
-            # Try to extract more details from the response
             if validation_response:
                 error_message += f". Response details: {str(validation_response)[:200]}"
 
@@ -360,6 +479,11 @@ class FBRService:
         """
         Parse FBR posting response.
 
+        Per FBR TECHNICAL.txt Section 4.1.3/4.1.4/4.1.5:
+        - Both validate and post endpoints use "validationResponse" wrapper
+        - Post response has "invoiceNumber" at top level (validate does not)
+        - Status values are "Valid" / "Invalid" for both endpoints
+
         Args:
             fbr_response: Response from FBR posting API
 
@@ -369,14 +493,24 @@ class FBRService:
         if fbr_response.get("error"):
             return False, None, fbr_response.get("message", "Unknown error")
 
-        posting_response = fbr_response.get("postingResponse", {})
-        status = posting_response.get("status", "")
+        validation_response = fbr_response.get("validationResponse", {})
+        status = validation_response.get("status", "")
 
-        if status == "Posted" or status == "Success":
-            fbr_invoice_number = posting_response.get("invoiceNumber")
+        if status == "Valid":
+            # invoiceNumber is at top level of response, per Section 4.1.3
+            fbr_invoice_number = fbr_response.get("invoiceNumber")
             return True, fbr_invoice_number, None
 
-        error_message = posting_response.get("error", "Posting failed")
+        # Build error from available fields: error, errorCode, message
+        error_code = validation_response.get("errorCode") or ""
+        error_message = validation_response.get("error") or validation_response.get("message") or ""
+        if error_code and error_message:
+            error_message = f"[{error_code}] {error_message}"
+        elif error_code:
+            error_message = f"Error code: {error_code}"
+        elif not error_message:
+            error_message = f"FBR posting failed with status: {status or 'Unknown'}"
+
         return False, None, error_message
 
     async def verify_buyer_registration(self, ntn_cnic: str, access_token: str, environment: str = "SANDBOX") -> Dict[str, Any]:

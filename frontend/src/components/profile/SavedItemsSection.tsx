@@ -246,7 +246,7 @@ export default function SavedItemsSection() {
     setProductDescription(item.product_description);
     setDefaultUom(item.default_uom || '');
     setDefaultRate(item.default_rate || '');
-    setTransactionType(item.transaction_type || '');
+    setTransactionType(transactionTypes.find(t => t.code === item.transaction_type)?.name || item.transaction_type || '');
     setSroScheduleNo(item.sro_schedule_no || '');
     setSroItemSerialNo(item.sro_item_serial_no || '');
     setShowAddForm(true);
@@ -642,7 +642,7 @@ export default function SavedItemsSection() {
                   </SelectTrigger>
                   <SelectContent>
                     {transactionTypes.map((type) => (
-                      <SelectItem key={type.code} value={type.code}>
+                      <SelectItem key={type.code} value={type.name}>
                         {type.name}
                       </SelectItem>
                     ))}

@@ -808,7 +808,7 @@ async def validate_invoice_with_fbr(
     try:
         # Call FBR validation API
         logger.info(f"Validating invoice {invoice_id} with FBR")
-        fbr_response = await fbr_service.validate_invoice(invoice, access_token)
+        fbr_response = await fbr_service.validate_invoice(invoice, access_token, db=db)
 
         # Parse the response
         is_valid, error_message, item_errors = fbr_service.parse_validation_response(fbr_response)
@@ -965,15 +965,17 @@ async def post_invoice_to_fbr(
     try:
         # Call FBR posting API
         logger.info(f"Posting invoice {invoice_id} to FBR")
-        fbr_response = await fbr_service.post_invoice(invoice, access_token)
+        fbr_response = await fbr_service.post_invoice(invoice, access_token, db=db)
 
         # Parse the response
         is_success, fbr_invoice_number, error_message = fbr_service.parse_posting_response(fbr_response)
 
         if is_success:
+            from datetime import datetime
             # Update invoice status to POSTED and store FBR reference number
             invoice.status = InvoiceStatus.POSTED
             invoice.fbr_reference_number = fbr_invoice_number
+            invoice.posted_at = datetime.utcnow()
             db.add(invoice)
             db.commit()
             db.refresh(invoice)
@@ -1124,7 +1126,7 @@ async def manual_post_to_fbr(
         access_token = encryption_service.decrypt(fbr_token)
 
         # Post to FBR
-        fbr_response = await fbr_service.post_invoice(invoice, access_token)
+        fbr_response = await fbr_service.post_invoice(invoice, access_token, db=db)
         is_success, fbr_invoice_number, error_message = fbr_service.parse_posting_response(fbr_response)
 
         if is_success:
