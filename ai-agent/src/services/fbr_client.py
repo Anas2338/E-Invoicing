@@ -199,7 +199,6 @@ class FBRClient:
             payload["invoiceRefNo"] = invoice_data.get("invoice_ref_no")
 
         payload["timestamp"] = start_time.isoformat()
-        logger.info(f"FBR validate: sellerNTN={payload['sellerNTNCNIC']}, buyerNTN={payload['buyerNTNCNIC']}, date={payload['invoiceDate']}")
 
         try:
             response = await self.client.post(
