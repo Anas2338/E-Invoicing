@@ -57,8 +57,12 @@ class FBRClient:
     def _parse_json(response):
         """Parse JSON response regardless of Content-Type header."""
         try:
-            return json.loads(response.text) if response.text else {}
-        except Exception:
+            if not response.text:
+                return {}
+            return json.loads(response.text)
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(f"JSON parse failed: {e}, raw text (first 300): {response.text[:300]}")
             return {}
 
     def __init__(self):

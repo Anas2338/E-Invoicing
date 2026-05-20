@@ -1,17 +1,20 @@
 """
 Retry endpoints for automation operations.
 
-Provides endpoints for retrying failed automation tasks.
+Provides endpoints for retrying failed automation tasks with actual FBR re-validation.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 from typing import List
 from uuid import UUID
+from datetime import datetime
 import logging
 
-from src.database.session import get_automation_db
+from src.database.session import get_automation_db, get_db
 from src.api.middleware.auth_middleware import require_authentication
 from src.models.automation_invoice import AutomationInvoice, AutomationInvoiceStatus
+from src.models.user import User
+from src.services.fbr_client import FBRClient, FBREnvironment
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -21,13 +24,14 @@ logger = logging.getLogger(__name__)
 async def retry_failed_invoice(
     invoice_id: UUID,
     automation_db: Session = Depends(get_automation_db),
+    main_db: Session = Depends(get_db),
     user_id: str = Depends(require_authentication)
 ):
     """
-    Retry a failed or transfer_failed automation invoice.
+    Retry a failed or pending automation invoice with actual FBR re-validation.
 
-    This endpoint allows users to retry invoices that failed during automation processing.
-    The invoice status will be reset to VALIDATED so the AI agent can pick it up in the next processing cycle.
+    Fetches the user's FBR token, validates the invoice data against FBR sandbox/production,
+    and updates the invoice status based on the FBR response.
     """
     # Get the invoice
     statement = select(AutomationInvoice).where(
@@ -49,9 +53,23 @@ async def retry_failed_invoice(
             detail=f"Invoice cannot be retried. Current status: {invoice.status}"
         )
 
-    # Reset invoice to validated status for retry
-    from datetime import datetime
-    invoice.status = AutomationInvoiceStatus.VALIDATED
+    # Fetch user from main database
+    user = main_db.get(User, UUID(user_id))
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    # Get user's FBR token
+    fbr_token = user.fbr_sandbox_token if user.fbr_environment == "SANDBOX" else user.fbr_production_token
+    if not fbr_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"FBR credentials not configured. Please configure your FBR {user.fbr_environment} credentials in settings."
+        )
+
+    # Reset retry tracking
     invoice.retry_count = (invoice.retry_count or 0) + 1
     invoice.last_retry_at = datetime.utcnow()
     invoice.validation_errors = None
@@ -59,14 +77,52 @@ async def retry_failed_invoice(
 
     automation_db.add(invoice)
     automation_db.commit()
-    automation_db.refresh(invoice)
 
-    logger.info(f"Invoice {invoice_id} reset for retry by user {user_id}. Retry count: {invoice.retry_count}")
+    # Run actual FBR validation
+    fbr_client = FBRClient()
+    try:
+        environment = FBREnvironment.SANDBOX if user.fbr_environment == "SANDBOX" else FBREnvironment.PRODUCTION
 
-    return {
-        "success": True,
-        "message": f"Invoice queued for retry. AI agent will process it in the next cycle (every 5 minutes).",
-        "invoice_id": str(invoice.id),
-        "retry_count": invoice.retry_count,
-        "status": invoice.status
-    }
+        is_valid, fbr_response, reference_number = await fbr_client.validate_invoice_with_user_credentials(
+            invoice_data=invoice.invoice_data,
+            environment=environment,
+            fbr_token=fbr_token
+        )
+
+        if is_valid:
+            invoice.status = AutomationInvoiceStatus.VALIDATED
+            invoice.fbr_response = fbr_response
+            logger.info(f"Invoice {invoice_id} FBR validation SUCCESS on retry #{invoice.retry_count}")
+        else:
+            invoice.status = AutomationInvoiceStatus.PENDING
+            invoice.validation_errors = f"FBR validation failed: {str(fbr_response)}"
+            invoice.fbr_response = fbr_response
+            logger.warning(f"Invoice {invoice_id} FBR validation FAILED on retry #{invoice.retry_count}")
+
+        automation_db.add(invoice)
+        automation_db.commit()
+        automation_db.refresh(invoice)
+
+        return {
+            "success": is_valid,
+            "message": f"Invoice {'validated successfully' if is_valid else 'validation failed'} on retry.",
+            "invoice_id": str(invoice.id),
+            "retry_count": invoice.retry_count,
+            "status": invoice.status.value if hasattr(invoice.status, 'value') else str(invoice.status),
+            "validation_errors": invoice.validation_errors,
+        }
+
+    except Exception as e:
+        logger.error(f"FBR validation error on retry for invoice {invoice_id}: {str(e)}")
+        invoice.status = AutomationInvoiceStatus.PENDING
+        invoice.validation_errors = f"Retry FBR validation error: {str(e)}"
+        automation_db.add(invoice)
+        automation_db.commit()
+        automation_db.refresh(invoice)
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"FBR validation failed during retry: {str(e)}"
+        )
+    finally:
+        await fbr_client.client.aclose()
