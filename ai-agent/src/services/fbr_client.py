@@ -53,6 +53,14 @@ class FBRClient:
     # Reverse mapping: description -> code (for Excel parsing)
     SALE_TYPE_REVERSE_MAPPING = {v: k for k, v in SALE_TYPE_MAPPING.items()}
 
+    @staticmethod
+    def _parse_json(response):
+        """Parse JSON response regardless of Content-Type header."""
+        try:
+            return json.loads(response.text) if response.text else {}
+        except Exception:
+            return {}
+
     def __init__(self):
         self.client = httpx.AsyncClient(
             timeout=httpx.Timeout(30.0),  # 30 second timeout
@@ -91,7 +99,7 @@ class FBRClient:
             response = await self.client.get(uom_url, headers=headers)
             response.raise_for_status()
 
-            uom_data = response.json()
+            uom_data = self._parse_json(response)
 
             # Build mapping: code -> description
             uom_mapping = {}
@@ -246,7 +254,7 @@ class FBRClient:
             response_text = response.text if response.content else ""
 
             try:
-                response_json = response.json() if response.content else {}
+                response_json = self._parse_json(response)
             except Exception as json_error:
                 logger.error(f"Failed to parse FBR response as JSON. Status: {response.status_code}, Body: {response_text[:500]}")
                 log_fbr_interaction(
@@ -414,7 +422,7 @@ class FBRClient:
             response_text = response.text if response.content else ""
 
             try:
-                response_json = response.json() if response.content else {}
+                response_json = self._parse_json(response)
             except Exception as json_error:
                 logger.error(f"Failed to parse FBR response as JSON. Status: {response.status_code}, Body: {response_text[:500]}")
                 log_fbr_interaction(
@@ -584,14 +592,14 @@ class FBRClient:
                 status_code=response.status_code,
                 duration=duration,
                 request_payload=payload,
-                response_payload=response.json() if response.content else {},
+                response_payload=self._parse_json(response),
                 environment=environment.value,
                 correlation_id=headers["X-Correlation-ID"]
             )
 
             # Handle the response
             if response.status_code == 201:
-                response_data = response.json()
+                response_data = self._parse_json(response)
 
                 # Invoice was successfully posted
                 reference_number = response_data.get("reference_number")
@@ -599,13 +607,13 @@ class FBRClient:
                 return True, response_data, reference_number
             elif response.status_code in [400, 422]:
                 # Posting failed with specific errors
-                response_data = response.json() if response.content else {}
+                response_data = self._parse_json(response)
 
                 return False, response_data, None
             else:
                 # Unexpected status code
                 logger.error(f"Unexpected status code during posting: {response.status_code}")
-                response_data = response.json() if response.content else {"error": "Unexpected response from FBR"}
+                response_data = self._parse_json(response) if response.content else {"error": "Unexpected response from FBR"}
 
                 return False, response_data, None
 
@@ -711,14 +719,14 @@ class FBRClient:
                 status_code=response.status_code,
                 duration=duration,
                 request_payload=payload,
-                response_payload=response.json() if response.content else {},
+                response_payload=self._parse_json(response),
                 environment=environment.value,
                 correlation_id=headers["X-Correlation-ID"]
             )
 
             # Handle the response
             if response.status_code == 201:
-                response_data = response.json()
+                response_data = self._parse_json(response)
 
                 # Invoice was successfully posted
                 reference_number = response_data.get("reference_number")
@@ -726,13 +734,13 @@ class FBRClient:
                 return True, response_data, reference_number
             elif response.status_code in [400, 422]:
                 # Posting failed with specific errors
-                response_data = response.json() if response.content else {}
+                response_data = self._parse_json(response)
 
                 return False, response_data, None
             else:
                 # Unexpected status code
                 logger.error(f"Unexpected status code during posting: {response.status_code}")
-                response_data = response.json() if response.content else {"error": "Unexpected response from FBR"}
+                response_data = self._parse_json(response) if response.content else {"error": "Unexpected response from FBR"}
 
                 return False, response_data, None
 
@@ -815,20 +823,20 @@ class FBRClient:
                 status_code=response.status_code,
                 duration=duration,
                 request_payload={},
-                response_payload=response.json() if response.content else {},
+                response_payload=self._parse_json(response),
                 environment=environment.value,
                 correlation_id=headers["X-Correlation-ID"]
             )
 
             # Handle the response
             if response.status_code == 200:
-                response_data = response.json()
+                response_data = self._parse_json(response)
 
                 return True, response_data
             else:
                 # Unexpected status code
                 logger.error(f"Unexpected status code during status check: {response.status_code}")
-                response_data = response.json() if response.content else {"error": "Failed to get invoice status"}
+                response_data = self._parse_json(response) if response.content else {"error": "Failed to get invoice status"}
 
                 return False, response_data
 
