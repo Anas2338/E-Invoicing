@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, BackgroundTasks
 from fastapi.responses import JSONResponse
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, timezone
 from typing import Optional
 import secrets
 from sqlmodel import Session, select
@@ -1219,15 +1219,15 @@ def request_password_reset(
         if not user.is_active:
             return {"message": "If an account with that email exists, a reset code has been sent."}
 
-        if user.reset_pin_expires_at and user.reset_pin_expires_at > datetime.utcnow():
-            cooldown_remaining = (user.reset_pin_expires_at - datetime.utcnow()).total_seconds()
+        if user.reset_pin_expires_at and user.reset_pin_expires_at > datetime.now(timezone.utc):
+            cooldown_remaining = (user.reset_pin_expires_at - datetime.now(timezone.utc)).total_seconds()
             if cooldown_remaining > 540:
                 logger.info(f"Reset PIN cooldown active for {email}: {cooldown_remaining}s remaining")
                 return {"message": "If an account with that email exists, a reset code has been sent."}
 
         pin = ''.join(secrets.choice('0123456789') for _ in range(6))
         hashed_pin = get_password_hash(pin)
-        expires_at = datetime.utcnow() + timedelta(minutes=10)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
 
         user.reset_pin_hash = hashed_pin
         user.reset_pin_expires_at = expires_at
@@ -1275,7 +1275,7 @@ def verify_reset_pin(request: Request, verify_data: PasswordResetVerify, db: Ses
                 detail="Invalid or expired reset code"
             )
 
-        if datetime.utcnow() > user.reset_pin_expires_at:
+        if datetime.now(timezone.utc) > user.reset_pin_expires_at:
             user.reset_pin_hash = None
             user.reset_pin_expires_at = None
             db.add(user)
@@ -1346,7 +1346,7 @@ def confirm_password_reset(
                 detail="Invalid or expired reset code"
             )
 
-        if datetime.utcnow() > user.reset_pin_expires_at:
+        if datetime.now(timezone.utc) > user.reset_pin_expires_at:
             user.reset_pin_hash = None
             user.reset_pin_expires_at = None
             db.add(user)
