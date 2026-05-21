@@ -35,15 +35,35 @@ jobs:
             set -e
             cd ~/e-invoicing
 
-            echo "=== Checking Docker DNS ==="
-            if ! grep -q '"dns"' /etc/docker/daemon.json 2>/dev/null; then
-              echo "ERROR: Docker DNS not configured on VPS!"
-              echo "Run this ONCE manually on the VPS:"
-              echo '  echo '"'"'{"dns": ["8.8.8.8", "1.1.1.1"]}'"'"' | sudo tee /etc/docker/daemon.json'
-              echo '  sudo systemctl restart docker'
-              exit 1
+            echo "=== Configuring Docker DNS ==="
+            # Ensure Docker daemon has working DNS
+            if [ ! -f /etc/docker/daemon.json ]; then
+              echo '{"dns": ["8.8.8.8", "1.1.1.1"]}' | sudo tee /etc/docker/daemon.json
+              sudo systemctl restart docker
+              echo "Docker DNS configured and restarted."
+            elif ! grep -q '"dns"' /etc/docker/daemon.json; then
+              sudo jq '. + {"dns": ["8.8.8.8", "1.1.1.1"]}' /etc/docker/daemon.json | sudo tee /etc/docker/daemon.json.tmp
+              sudo mv /etc/docker/daemon.json.tmp /etc/docker/daemon.json
+              sudo systemctl restart docker
+              echo "Docker DNS added and restarted."
+            fi
+
+            # Verify Docker can resolve external hosts
+            echo "Testing Docker DNS..."
+            if ! docker run --rm busybox nslookup deb.debian.org 2>&1 | grep -q "Address"; then
+              echo "WARNING: Docker DNS test failed, trying alternate DNS..."
+              sudo jq '.dns = ["1.1.1.1", "208.67.222.222"]' /etc/docker/daemon.json | sudo tee /etc/docker/daemon.json.tmp
+              sudo mv /etc/docker/daemon.json.tmp /etc/docker/daemon.json
+              sudo systemctl restart docker
             fi
             echo "Docker DNS: OK"
+
+            echo "=== Checking host DNS ==="
+            if ! nslookup deb.debian.org > /dev/null 2>&1; then
+              echo "WARNING: Host DNS not working — adding fallback resolv.conf"
+              echo "nameserver 1.1.1.1" | sudo tee /etc/resolv.conf
+            fi
+            echo "Host DNS: OK"
 
             echo "=== Updating nginx config ==="
             if [ -f nginx/e-invoicing.conf ]; then

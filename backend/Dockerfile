@@ -5,7 +5,8 @@ FROM python:3.11-slim AS builder
 WORKDIR /app
 
 # Minimal build deps (no rust/cargo needed — wheels are pre-built for glibc)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update -o Acquire::Retries=5 -o Acquire::http::Timeout=30 \
+    && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     libffi-dev \
@@ -57,7 +58,8 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update -o Acquire::Retries=5 -o Acquire::http::Timeout=30 \
+    && apt-get install -y --no-install-recommends \
     libpq5 \
     libffi8 \
     libmagic1 \
