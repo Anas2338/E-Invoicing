@@ -141,14 +141,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signUp = async (email: string, password: string, name: string, pin: string) => {
+  const signUp = async (email: string, password: string, name: string) => {
     setLoading(true);
     try {
       const response = await fetch(`${API_BASE_URL}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include', // Important: receive and send cookies
-        body: JSON.stringify({ email, password, name, pin }),
+        credentials: 'include',
+        body: JSON.stringify({ email, password, name }),
       });
 
       const data = await response.json();

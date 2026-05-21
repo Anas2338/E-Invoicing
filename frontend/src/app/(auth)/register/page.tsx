@@ -14,11 +14,11 @@ export default function RegisterPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [pendingApproval, setPendingApproval] = useState(false);
 
-  const handleSubmit = async (email: string, password: string, name: string, pin: string) => {
+  const handleSubmit = async (email: string, password: string, name: string) => {
     try {
       setError(null);
       setSuccess(null);
-      const result = await signUp(email, password, name, pin);
+      const result = await signUp(email, password, name);
 
       // Check if registration requires approval
       if (result && result.status === 'pending_approval') {

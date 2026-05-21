@@ -17,8 +17,8 @@ class UserCreate(UserBase):
     """
     Schema for creating users.
     """
-    password: Optional[str] = None  # Password would typically be handled separately
-    pin: Optional[str] = None  # 4-6 digit PIN for password reset
+    password: Optional[str] = None
+    pin: Optional[str] = None  # Deprecated: no longer required, kept for backward compat
 
 
 class UserUpdate(BaseModel):
@@ -92,9 +92,27 @@ class UserProfileUpdate(BaseModel):
         extra = "forbid"
 
 
+class PasswordResetRequest(BaseModel):
+    """Schema for requesting a password reset PIN via email."""
+    email: str
+
+
+class PasswordResetVerify(BaseModel):
+    """Schema for verifying the PIN sent via email."""
+    email: str
+    pin: str
+
+
+class PasswordResetConfirm(BaseModel):
+    """Schema for confirming password reset with PIN and new password."""
+    email: str
+    pin: str
+    new_password: str
+
+
 class PasswordResetWithPin(BaseModel):
     """
-    Schema for password reset using email and PIN.
+    Schema for password reset using email and PIN (legacy).
     """
     email: str
     pin: str

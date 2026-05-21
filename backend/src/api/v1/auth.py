@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, BackgroundTasks
 from fastapi.responses import JSONResponse
 from datetime import timedelta, datetime
 from typing import Optional
+import secrets
 from sqlmodel import Session, select
 from passlib.context import CryptContext
 from slowapi import Limiter
@@ -12,7 +13,8 @@ import logging
 
 from src.database.session import get_db
 from src.models.user import User
-from src.schemas.user import UserCreate, UserLogin, UserToken, UserProfile, UserProfileUpdate, PasswordResetWithPin
+from src.schemas.user import UserCreate, UserLogin, UserToken, UserProfile, UserProfileUpdate, PasswordResetWithPin, PasswordResetRequest, PasswordResetVerify, PasswordResetConfirm
+from src.services.email_service import send_reset_pin_email
 from src.api.middleware.auth_middleware import require_authentication
 from src.utils.jwt_utils import create_access_token, create_refresh_token
 from src.utils.helpers import sanitize_input
@@ -342,24 +344,7 @@ def register_user(request: Request, user_create: UserCreate, db: Session = Depen
                 detail=error_message
             )
 
-        # Validate PIN if provided
-        if user_create.pin:
-            pin = user_create.pin.strip()
-            if not pin.isdigit():
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="PIN must contain only digits"
-                )
-            if len(pin) < 4 or len(pin) > 6:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="PIN must be 4-6 digits"
-                )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="PIN is required for account recovery"
-            )
+        # PIN is no longer required — password reset now uses email-based dynamic PIN
 
         # Check if user already exists
         statement = select(User).where(User.email == email)
@@ -373,12 +358,10 @@ def register_user(request: Request, user_create: UserCreate, db: Session = Depen
 
         # Create new user
         hashed_password = get_password_hash(user_create.password)
-        hashed_pin = get_password_hash(user_create.pin) if user_create.pin else None
         new_user = User(
             email=email,
             name=name,
             hashed_password=hashed_password,
-            hashed_pin=hashed_pin,
             is_active=True,
             account_status='pending',  # New users start as pending
             approval_flags={"has_production_access": False, "can_post_to_production": False}
@@ -1203,6 +1186,204 @@ def reset_password_with_pin(request: Request, reset_data: PasswordResetWithPin, 
         raise
     except Exception as e:
         logger.error(f"Password reset failed for {email}: {type(e).__name__}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password reset failed. Please try again."
+        )
+
+
+@router.post("/password-reset/request")
+@limiter.limit("3/15minutes")
+def request_password_reset(
+    request: Request,
+    reset_request: PasswordResetRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Request a password reset PIN via email.
+    Generates a 6-digit PIN, stores it hashed with 10-min expiry,
+    and sends it to the user's email address.
+    Always returns success to prevent email enumeration.
+    """
+    email = sanitize_input(reset_request.email)
+
+    try:
+        statement = select(User).where(User.email == email)
+        user = db.exec(statement).first()
+
+        if not user:
+            logger.info(f"Password reset requested for non-existent email: {email}")
+            return {"message": "If an account with that email exists, a reset code has been sent."}
+
+        if not user.is_active:
+            return {"message": "If an account with that email exists, a reset code has been sent."}
+
+        if user.reset_pin_expires_at and user.reset_pin_expires_at > datetime.utcnow():
+            cooldown_remaining = (user.reset_pin_expires_at - datetime.utcnow()).total_seconds()
+            if cooldown_remaining > 540:
+                logger.info(f"Reset PIN cooldown active for {email}: {cooldown_remaining}s remaining")
+                return {"message": "If an account with that email exists, a reset code has been sent."}
+
+        pin = ''.join(secrets.choice('0123456789') for _ in range(6))
+        hashed_pin = get_password_hash(pin)
+        expires_at = datetime.utcnow() + timedelta(minutes=10)
+
+        user.reset_pin_hash = hashed_pin
+        user.reset_pin_expires_at = expires_at
+        db.add(user)
+        db.commit()
+
+        background_tasks.add_task(send_reset_pin_email, email, pin)
+
+        logger.info(f"Reset PIN generated and queued for email to {email}")
+        return {"message": "If an account with that email exists, a reset code has been sent."}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Password reset request failed for {email}: {type(e).__name__}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unable to process request. Please try again."
+        )
+
+
+@router.post("/password-reset/verify")
+@limiter.limit("5/15minutes")
+def verify_reset_pin(request: Request, verify_data: PasswordResetVerify, db: Session = Depends(get_db)):
+    """
+    Verify the PIN received via email for password reset.
+    Returns success if the PIN is valid and not expired.
+    """
+    email = sanitize_input(verify_data.email)
+    pin = verify_data.pin.strip()
+
+    try:
+        statement = select(User).where(User.email == email)
+        user = db.exec(statement).first()
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired reset code"
+            )
+
+        if not user.reset_pin_hash or not user.reset_pin_expires_at:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired reset code"
+            )
+
+        if datetime.utcnow() > user.reset_pin_expires_at:
+            user.reset_pin_hash = None
+            user.reset_pin_expires_at = None
+            db.add(user)
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired reset code"
+            )
+
+        if not verify_password(pin, user.reset_pin_hash):
+            logger.warning(f"Invalid reset PIN attempt for {email}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired reset code"
+            )
+
+        logger.info(f"Reset PIN verified successfully for {email}")
+
+        return {
+            "verified": True,
+            "message": "Code verified. You can now set a new password."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Reset PIN verification failed for {email}: {type(e).__name__}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification failed. Please try again."
+        )
+
+
+@router.post("/password-reset/confirm")
+@limiter.limit("5/15minutes")
+def confirm_password_reset(
+    request: Request,
+    reset_data: PasswordResetConfirm,
+    db: Session = Depends(get_db)
+):
+    """
+    Confirm password reset with verified PIN and set new password.
+    """
+    email = sanitize_input(reset_data.email)
+    pin = reset_data.pin.strip()
+    new_password = reset_data.new_password
+
+    try:
+        is_valid, error_message = validate_password_strength(new_password)
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_message
+            )
+
+        statement = select(User).where(User.email == email)
+        user = db.exec(statement).first()
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired reset code"
+            )
+
+        if not user.reset_pin_hash or not user.reset_pin_expires_at:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired reset code"
+            )
+
+        if datetime.utcnow() > user.reset_pin_expires_at:
+            user.reset_pin_hash = None
+            user.reset_pin_expires_at = None
+            db.add(user)
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired reset code"
+            )
+
+        if not verify_password(pin, user.reset_pin_hash):
+            logger.warning(f"Invalid reset PIN on confirm for {email}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired reset code"
+            )
+
+        user.hashed_password = get_password_hash(new_password)
+        user.reset_pin_hash = None
+        user.reset_pin_expires_at = None
+        user.token_version += 1
+        user.failed_login_attempts = 0
+        user.locked_until = None
+
+        db.add(user)
+        db.commit()
+
+        logger.info(f"Password reset confirmed for {email}")
+
+        return {
+            "success": True,
+            "message": "Password reset successful. You can now login with your new password."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Password reset confirm failed for {email}: {type(e).__name__}: {e}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Password reset failed. Please try again."

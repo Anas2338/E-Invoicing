@@ -94,6 +94,15 @@ class Settings(BaseSettings):
     # Dry Run Mode - Simulates FBR responses without actual API calls (for testing)
     dry_run: bool = Field(default=False, validation_alias="DRY_RUN")
 
+    # Email / SMTP settings
+    smtp_host: str = Field(default="localhost", validation_alias="SMTP_HOST")
+    smtp_port: int = Field(default=587, validation_alias="SMTP_PORT")
+    smtp_username: str = Field(default="", validation_alias="SMTP_USERNAME")
+    smtp_password: str = Field(default="", validation_alias="SMTP_PASSWORD")
+    smtp_from_email: str = Field(default="noreply@example.com", validation_alias="SMTP_FROM_EMAIL")
+    smtp_from_name: str = Field(default="E-Invoicing", validation_alias="SMTP_FROM_NAME")
+    smtp_use_tls: bool = Field(default=True, validation_alias="SMTP_USE_TLS")
+
     # CORS settings - accepts JSON array, comma-separated string, or single URL
     allowed_origins: Union[List[str], str] = Field(default="http://localhost:3000", validation_alias="ALLOWED_ORIGINS")
 

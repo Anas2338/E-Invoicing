@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,9 @@ import { toast } from 'react-toastify';
 import { Eye, EyeOff } from 'lucide-react';
 
 const API_BASE_URL = '/api/v1';
+const RESEND_COOLDOWN = 60;
+
+type Step = 'request' | 'verify' | 'reset';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -20,46 +23,85 @@ export default function ForgotPasswordPage() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [step, setStep] = useState<'verify' | 'reset'>('verify');
+  const [step, setStep] = useState<Step>('request');
+  const [cooldown, setCooldown] = useState(0);
   const router = useRouter();
 
-  const handleVerify = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const startCooldown = useCallback(() => {
+    setCooldown(RESEND_COOLDOWN);
+  }, []);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setInterval(() => {
+      setCooldown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldown]);
+
+  const sendResetCode = useCallback(async () => {
     setIsSubmitting(true);
-
-    // Validate PIN format
-    if (!/^\d{4,6}$/.test(pin)) {
-      toast.error('PIN must be 4-6 digits');
-      setIsSubmitting(false);
-      return;
-    }
-
     try {
-      // Call backend to verify email and PIN
-      const response = await fetch(`${API_BASE_URL}/auth/password-reset/verify-pin`, {
+      const response = await fetch(`${API_BASE_URL}/auth/password-reset/request`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email,
-          pin,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        // Verification successful - move to password reset step
-        toast.success('Credentials verified! Please enter your new password.');
+        toast.success('If the email exists, a 6-digit code has been sent.');
+        startCooldown();
+        setStep('verify');
+      } else {
+        toast.error(data.detail || 'Failed to send reset code.');
+      }
+    } catch {
+      toast.error('Failed to send reset code. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [email, startCooldown]);
+
+  const handleRequest = (e: React.FormEvent) => {
+    e.preventDefault();
+    sendResetCode();
+  };
+
+  const handleVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    if (!/^\d{6}$/.test(pin)) {
+      toast.error('Please enter a valid 6-digit code.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/password-reset/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, pin }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        toast.success('Code verified. Enter your new password.');
         setStep('reset');
       } else {
-        // Verification failed - show error
-        toast.error(data.detail || 'Invalid email or PIN');
+        toast.error(data.detail || 'Invalid or expired reset code.');
       }
-    } catch (error) {
-      console.error('Error verifying credentials:', error);
-      toast.error('Failed to verify credentials. Please try again.');
+    } catch {
+      toast.error('Verification failed. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -69,14 +111,12 @@ export default function ForgotPasswordPage() {
     e.preventDefault();
     setIsSubmitting(true);
 
-    // Validate passwords match
     if (newPassword !== confirmPassword) {
       toast.error('Passwords do not match');
       setIsSubmitting(false);
       return;
     }
 
-    // Validate password strength
     if (newPassword.length < 8) {
       toast.error('Password must be at least 8 characters');
       setIsSubmitting(false);
@@ -90,11 +130,9 @@ export default function ForgotPasswordPage() {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/password-reset/with-pin`, {
+      const response = await fetch(`${API_BASE_URL}/auth/password-reset/confirm`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email,
           pin,
@@ -110,28 +148,35 @@ export default function ForgotPasswordPage() {
       } else {
         toast.error(data.detail || 'Failed to reset password');
       }
-    } catch (error) {
-      console.error('Error resetting password:', error);
+    } catch {
       toast.error('Failed to reset password. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const stepLabels: Record<Step, string> = {
+    request: 'Reset Password',
+    verify: 'Enter Reset Code',
+    reset: 'Set New Password',
+  };
+
+  const stepDescriptions: Record<Step, string> = {
+    request: 'Enter your email address and we will send you a 6-digit reset code.',
+    verify: 'Enter the 6-digit code sent to your email address.',
+    reset: 'Enter your new password.',
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#f6f6f7] via-white to-[#f1f8f5] dark:from-[#0a0a0a] dark:via-[#1a1a1a] dark:to-[#0d3d2f]/20 py-12 px-4 sm:px-6 lg:px-8">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Reset Password</CardTitle>
-          <CardDescription>
-            {step === 'verify'
-              ? 'Enter your email address and recovery PIN to verify your identity.'
-              : 'Enter your new password.'}
-          </CardDescription>
+          <CardTitle>{stepLabels[step]}</CardTitle>
+          <CardDescription>{stepDescriptions[step]}</CardDescription>
         </CardHeader>
         <CardContent>
-          {step === 'verify' ? (
-            <form onSubmit={handleVerify} className="space-y-4">
+          {step === 'request' && (
+            <form onSubmit={handleRequest} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email">Email Address</Label>
                 <Input
@@ -145,31 +190,8 @@ export default function ForgotPasswordPage() {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="pin">Recovery PIN</Label>
-                <Input
-                  id="pin"
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  maxLength={6}
-                  placeholder="Enter your 4-6 digit PIN"
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-                  required
-                  disabled={isSubmitting}
-                />
-                <p className="text-xs text-[#6d7175] dark:text-[#8c9196]">
-                  Enter the PIN you set during registration
-                </p>
-              </div>
-
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? 'Verifying...' : 'Continue'}
+              <Button type="submit" className="w-full" disabled={isSubmitting || cooldown > 0}>
+                {isSubmitting ? 'Sending...' : cooldown > 0 ? `Resend in ${cooldown}s` : 'Send Reset Code'}
               </Button>
 
               <div className="text-center">
@@ -181,7 +203,59 @@ export default function ForgotPasswordPage() {
                 </Link>
               </div>
             </form>
-          ) : (
+          )}
+
+          {step === 'verify' && (
+            <form onSubmit={handleVerify} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="pin">6-Digit Reset Code</Label>
+                <Input
+                  id="pin"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  placeholder="Enter 6-digit code"
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+                  required
+                  disabled={isSubmitting}
+                  className="text-center text-2xl tracking-[0.5em]"
+                />
+                <p className="text-xs text-[#6d7175] dark:text-[#8c9196]">
+                  Check your inbox for the 6-digit code. Code expires in 10 minutes.
+                </p>
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => setStep('request')}
+                  disabled={isSubmitting}
+                >
+                  Back
+                </Button>
+                <Button type="submit" className="w-full" disabled={isSubmitting}>
+                  {isSubmitting ? 'Verifying...' : 'Verify Code'}
+                </Button>
+              </div>
+
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={sendResetCode}
+                  disabled={cooldown > 0}
+                  className="text-sm text-[#008060] dark:text-[#00a876] hover:text-[#006e52] dark:hover:text-[#008f64] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend code'}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {step === 'reset' && (
             <form onSubmit={handleReset} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="new-password">New Password</Label>
@@ -252,11 +326,7 @@ export default function ForgotPasswordPage() {
                 >
                   Back
                 </Button>
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={isSubmitting}
-                >
+                <Button type="submit" className="w-full" disabled={isSubmitting}>
                   {isSubmitting ? 'Resetting...' : 'Reset Password'}
                 </Button>
               </div>

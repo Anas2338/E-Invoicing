@@ -112,9 +112,13 @@ class User(UserBase, Base, table=True):
     created_at: datetime = Field(sa_column=Column(DateTime, default=datetime.utcnow))
     updated_at: datetime = Field(sa_column=Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow))
 
-    # Password reset fields
+    # Password reset fields (token-based, legacy)
     reset_token: Optional[str] = Field(default=None, sa_column=Column(String, nullable=True))
     reset_token_expires: Optional[datetime] = Field(default=None, sa_column=Column(DateTime, nullable=True))
+
+    # Password reset PIN fields (email-based dynamic PIN)
+    reset_pin_hash: Optional[str] = Field(default=None, sa_column=Column(String, nullable=True))
+    reset_pin_expires_at: Optional[datetime] = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
 
     # Relationships
     invoices: list["Invoice"] = Relationship(back_populates="user")
