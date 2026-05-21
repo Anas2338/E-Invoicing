@@ -342,8 +342,7 @@ async def get_transaction_types(
     """
     try:
         transaction_types = db.query(FBRTransactionType).all()
-        result = [{"code": t.code, "name": t.name} for t in transaction_types]
-        logger.info(f"Returning {len(result)} transaction types from database")
+        result = [{"code": t.code, "name": t.name.strip()} for t in transaction_types]
         return result
     except Exception as e:
         logger.error(f"Error fetching transaction types from database: {str(e)}")
@@ -574,7 +573,7 @@ async def get_all_master_data(
             "registration_types": FALLBACK_REGISTRATION_TYPES,
             "invoice_types": [{"code": i.code, "name": i.name} for i in invoice_types],
             "hs_codes": [],  # Excluded for performance - fetch separately if needed
-            "transaction_types": [{"code": t.code, "name": t.name} for t in transaction_types]
+            "transaction_types": [{"code": t.code, "name": t.name.strip()} for t in transaction_types]
         }
     except Exception as e:
         logger.error(f"Error fetching all master data from database: {str(e)}")
