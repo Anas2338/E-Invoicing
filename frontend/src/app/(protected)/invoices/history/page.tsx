@@ -592,37 +592,57 @@ export default function InvoiceHistoryPage() {
                 Create Invoice
               </Button>
             </>
-          ) : (
-            <>
-              <Button
-                variant="outline"
-                onClick={handleBulkValidate}
-                disabled={bulkValidating}
-                className="w-full sm:w-auto border-[#008060] text-[#008060] hover:bg-[#008060] hover:text-white"
-              >
-                <CheckCircle className="h-4 w-4 mr-2" />
-                {bulkValidating ? 'Validating...' : `Validate ${selectedInvoices.size} Selected`}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={handleBulkPrint}
-                disabled={bulkPrinting}
-                className="w-full sm:w-auto border-[#1e40af] text-[#1e40af] hover:bg-[#1e40af] hover:text-white"
-              >
-                <Printer className="h-4 w-4 mr-2" />
-                {bulkPrinting ? 'Generating...' : `Print ${selectedInvoices.size} Selected`}
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={handleBulkDelete}
-                disabled={bulkDeleting}
-                className="w-full sm:w-auto"
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                {bulkDeleting ? 'Deleting...' : `Delete ${selectedInvoices.size} Selected`}
-              </Button>
-            </>
-          )}
+          ) : (() => {
+            const hasPostedSelected = Array.from(selectedInvoices).some(
+              id => invoices.find(inv => inv.id === id)?.status === 'POSTED'
+            );
+
+            if (hasPostedSelected) {
+              return (
+                <Button
+                  variant="outline"
+                  onClick={handleBulkPrint}
+                  disabled={bulkPrinting}
+                  className="w-full sm:w-auto border-[#1e40af] text-[#1e40af] hover:bg-[#1e40af] hover:text-white"
+                >
+                  <Printer className="h-4 w-4 mr-2" />
+                  {bulkPrinting ? 'Generating...' : `Print ${selectedInvoices.size} Selected`}
+                </Button>
+              );
+            }
+
+            return (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={handleBulkValidate}
+                  disabled={bulkValidating}
+                  className="w-full sm:w-auto border-[#008060] text-[#008060] hover:bg-[#008060] hover:text-white"
+                >
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  {bulkValidating ? 'Validating...' : `Validate ${selectedInvoices.size} Selected`}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleBulkPrint}
+                  disabled={bulkPrinting}
+                  className="w-full sm:w-auto border-[#1e40af] text-[#1e40af] hover:bg-[#1e40af] hover:text-white"
+                >
+                  <Printer className="h-4 w-4 mr-2" />
+                  {bulkPrinting ? 'Generating...' : `Print ${selectedInvoices.size} Selected`}
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleBulkDelete}
+                  disabled={bulkDeleting}
+                  className="w-full sm:w-auto"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  {bulkDeleting ? 'Deleting...' : `Delete ${selectedInvoices.size} Selected`}
+                </Button>
+              </>
+            );
+          })()}
         </div>
       </div>
 

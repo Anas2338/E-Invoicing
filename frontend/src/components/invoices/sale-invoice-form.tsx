@@ -1083,45 +1083,6 @@ export function SaleInvoiceForm({
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="buyerRegistrationType">Registration Type *</Label>
-              <Select value={buyerRegistrationType} onValueChange={(val) => setBuyerRegistrationType(val as 'Registered' | 'Unregistered')}>
-                <SelectTrigger disabled={isVerifyingBuyer}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {masterData?.registration_types.map((type) => (
-                    <SelectItem key={type.code} value={type.name}>{type.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label htmlFor="buyerNTNCNIC">
-                Buyer NTN/CNIC {buyerRegistrationType === 'Registered' ? '*' : '(Optional)'}
-              </Label>
-              <div className="relative">
-                <Input
-                  id="buyerNTNCNIC"
-                  value={buyerNTNCNIC}
-                  onChange={(e) => setBuyerNTNCNIC(e.target.value)}
-                  placeholder="Enter NTN or CNIC"
-                  required={buyerRegistrationType === 'Registered'}
-                  className={isVerifyingBuyer ? 'pr-10' : ''}
-                />
-                {isVerifyingBuyer && (
-                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
-                    <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
-                  </div>
-                )}
-              </div>
-              {buyerVerificationMessage && (
-                <p className={`text-xs mt-1 ${buyerVerificationMessage.startsWith('✓') ? 'text-green-600' : 'text-amber-600'}`}>
-                  {buyerVerificationMessage}
-                </p>
-              )}
-            </div>
 
             <div className="relative">
               <Label htmlFor="buyerBusinessName">Business Name *</Label>
@@ -1169,6 +1130,46 @@ export function SaleInvoiceForm({
                     </div>
                   ))}
                 </div>
+              )}
+            </div>
+
+            <div>
+              <Label htmlFor="buyerRegistrationType">Registration Type *</Label>
+              <Select value={buyerRegistrationType} onValueChange={(val) => setBuyerRegistrationType(val as 'Registered' | 'Unregistered')}>
+                <SelectTrigger disabled={isVerifyingBuyer}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {masterData?.registration_types.map((type) => (
+                    <SelectItem key={type.code} value={type.name}>{type.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label htmlFor="buyerNTNCNIC">
+                Buyer NTN/CNIC {buyerRegistrationType === 'Registered' ? '*' : '(Optional)'}
+              </Label>
+              <div className="relative">
+                <Input
+                  id="buyerNTNCNIC"
+                  value={buyerNTNCNIC}
+                  onChange={(e) => setBuyerNTNCNIC(e.target.value)}
+                  placeholder="Enter NTN or CNIC"
+                  required={buyerRegistrationType === 'Registered'}
+                  className={isVerifyingBuyer ? 'pr-10' : ''}
+                />
+                {isVerifyingBuyer && (
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                    <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                  </div>
+                )}
+              </div>
+              {buyerVerificationMessage && (
+                <p className={`text-xs mt-1 ${buyerVerificationMessage.startsWith('✓') ? 'text-green-600' : 'text-amber-600'}`}>
+                  {buyerVerificationMessage}
+                </p>
               )}
             </div>
 

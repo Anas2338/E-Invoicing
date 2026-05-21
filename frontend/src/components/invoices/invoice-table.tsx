@@ -74,17 +74,22 @@ export function InvoiceTable({
     return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
   };
 
+  const isSelectable = (status: string) =>
+    status === 'DRAFT' || status === 'VALIDATED' || status === 'FAILED' || status === 'TRANSFERRED' || status === 'POSTED';
+
+  const isDeletable = (status: string) =>
+    status === 'DRAFT' || status === 'VALIDATED' || status === 'FAILED' || status === 'TRANSFERRED';
+
   const handleSelectAll = (checked: boolean) => {
     if (!onSelectionChange) return;
 
     if (checked) {
-      // Select all deletable invoices (DRAFT, VALIDATED, or FAILED)
-      const deletableIds = new Set(
+      const selectableIds = new Set(
         invoices
-          .filter(inv => inv.status === 'DRAFT' || inv.status === 'VALIDATED' || inv.status === 'FAILED' || inv.status === 'TRANSFERRED')
+          .filter(inv => isSelectable(inv.status))
           .map(inv => inv.id)
       );
-      onSelectionChange(deletableIds);
+      onSelectionChange(selectableIds);
     } else {
       onSelectionChange(new Set());
     }
@@ -102,10 +107,10 @@ export function InvoiceTable({
     onSelectionChange(newSelection);
   };
 
-  const deletableInvoices = invoices.filter(inv => inv.status === 'DRAFT' || inv.status === 'VALIDATED' || inv.status === 'FAILED' || inv.status === 'TRANSFERRED');
-  const allDeletableSelected = deletableInvoices.length > 0 &&
-    deletableInvoices.every(inv => selectedInvoices.has(inv.id));
-  const someDeletableSelected = deletableInvoices.some(inv => selectedInvoices.has(inv.id));
+  const selectableInvoices = invoices.filter(inv => isSelectable(inv.status));
+  const allSelectableSelected = selectableInvoices.length > 0 &&
+    selectableInvoices.every(inv => selectedInvoices.has(inv.id));
+  const someSelectableSelected = selectableInvoices.some(inv => selectedInvoices.has(inv.id));
 
   if (invoices.length === 0) {
     return (
@@ -136,7 +141,7 @@ export function InvoiceTable({
       {/* Mobile Card View */}
       <div className="block lg:hidden space-y-4">
         {invoices.map((invoice) => {
-          const isDeletable = invoice.status === 'DRAFT' || invoice.status === 'VALIDATED' || invoice.status === 'FAILED' || invoice.status === 'TRANSFERRED';
+          const canDelete = isDeletable(invoice.status);
           const isSelected = selectedInvoices.has(invoice.id);
 
           return (
@@ -153,7 +158,7 @@ export function InvoiceTable({
                     <Checkbox
                       checked={isSelected}
                       onCheckedChange={(checked) => handleSelectInvoice(invoice.id, checked as boolean)}
-                      disabled={!isDeletable}
+                      disabled={!isSelectable(invoice.status)}
                       aria-label={`Select invoice ${invoice.invoiceNumber}`}
                       className="mt-1"
                     />
@@ -288,7 +293,7 @@ export function InvoiceTable({
                     className="w-full h-9"
                   />
                 </div>
-                {onDelete && isDeletable && (
+                {onDelete && canDelete && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -313,10 +318,10 @@ export function InvoiceTable({
             {onSelectionChange && (
               <th scope="col" className="px-6 py-3 text-left">
                 <Checkbox
-                  checked={allDeletableSelected}
+                  checked={allSelectableSelected}
                   onCheckedChange={handleSelectAll}
-                  aria-label="Select all deletable invoices"
-                  className={someDeletableSelected && !allDeletableSelected ? 'data-[state=checked]:bg-gray-400' : ''}
+                  aria-label="Select all invoices"
+                  className={someSelectableSelected && !allSelectableSelected ? 'data-[state=checked]:bg-gray-400' : ''}
                 />
               </th>
             )}
@@ -348,7 +353,7 @@ export function InvoiceTable({
         </thead>
         <tbody className="bg-white dark:bg-[#1a1a1a] divide-y divide-[#e1e3e5] dark:divide-[#2e2e2e]">
           {invoices.map((invoice) => {
-            const isDeletable = invoice.status === 'DRAFT' || invoice.status === 'VALIDATED' || invoice.status === 'FAILED' || invoice.status === 'TRANSFERRED';
+            const canDelete = isDeletable(invoice.status);
             const isSelected = selectedInvoices.has(invoice.id);
 
             return (
@@ -358,7 +363,7 @@ export function InvoiceTable({
                   <Checkbox
                     checked={isSelected}
                     onCheckedChange={(checked) => handleSelectInvoice(invoice.id, checked as boolean)}
-                    disabled={!isDeletable}
+                    disabled={!isSelectable(invoice.status)}
                     aria-label={`Select invoice ${invoice.invoiceNumber}`}
                   />
                 </td>
@@ -488,7 +493,7 @@ export function InvoiceTable({
                   />
 
                   {/* Delete Button - Only for DRAFT or FAILED */}
-                  {onDelete && isDeletable && (
+                  {onDelete && canDelete && (
                     <Button
                       variant="outline"
                       size="sm"
