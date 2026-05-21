@@ -2,6 +2,7 @@ import smtplib
 import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.utils import make_msgid, formatdate
 from src.config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -12,6 +13,8 @@ def _create_reset_pin_email(to_email: str, pin: str) -> MIMEMultipart:
     msg["Subject"] = "Your Password Reset Code"
     msg["From"] = f"{settings.smtp_from_name} <{settings.smtp_from_email}>"
     msg["To"] = to_email
+    msg["Date"] = formatdate(localtime=True)
+    msg["Message-ID"] = make_msgid(domain=settings.smtp_from_email.split("@")[1])
 
     html = f"""\
 <html>
