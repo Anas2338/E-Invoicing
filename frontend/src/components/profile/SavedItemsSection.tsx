@@ -125,6 +125,16 @@ export default function SavedItemsSection() {
     }
   };
 
+  const getDefaultTransactionType = () => {
+    if (transactionTypes.length === 0) return '';
+    return transactionTypes[0].name;
+  };
+
+  const handleOpenAddForm = () => {
+    setTransactionType(getDefaultTransactionType());
+    setShowAddForm(true);
+  };
+
   const resetForm = () => {
     setItemCode('');
     setItemName('');
@@ -159,6 +169,7 @@ export default function SavedItemsSection() {
         product_description: productDescription,
         default_uom: defaultUom,
         default_rate: defaultRate,
+        default_sale_type: transactionType,
         transaction_type: transactionType,
         sro_schedule_no: sroScheduleNo || undefined,
         sro_item_serial_no: sroItemSerialNo || undefined,
@@ -200,6 +211,7 @@ export default function SavedItemsSection() {
         product_description: productDescription,
         default_uom: defaultUom,
         default_rate: defaultRate,
+        default_sale_type: transactionType,
         transaction_type: transactionType,
         sro_schedule_no: sroScheduleNo || undefined,
         sro_item_serial_no: sroItemSerialNo || undefined,
@@ -443,7 +455,7 @@ export default function SavedItemsSection() {
                   className="hidden"
                 />
                 <Button
-                  onClick={() => setShowAddForm(true)}
+                  onClick={handleOpenAddForm}
                   size="sm"
                   className="bg-[#008060] hover:bg-[#006e52] dark:bg-[#00a876] dark:hover:bg-[#008f64]"
                 >
@@ -797,7 +809,7 @@ export default function SavedItemsSection() {
                 <p className="text-[#6d7175] dark:text-[#8c9196] mb-4">No saved items yet</p>
                 {!showAddForm && (
                   <Button
-                    onClick={() => setShowAddForm(true)}
+                    onClick={handleOpenAddForm}
                     size="sm"
                     className="bg-[#008060] hover:bg-[#006e52] dark:bg-[#00a876] dark:hover:bg-[#008f64]"
                   >

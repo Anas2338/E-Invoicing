@@ -31,7 +31,7 @@ class SavedProductCreate(BaseModel):
     product_description: str
     default_uom: Optional[str] = None
     default_rate: Optional[str] = None
-    default_sale_type: Optional[str] = "01"
+    default_sale_type: Optional[str] = None
     transaction_type: Optional[str] = None
     sro_schedule_no: Optional[str] = None
     sro_item_serial_no: Optional[str] = None
