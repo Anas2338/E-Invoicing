@@ -175,6 +175,9 @@ class FBRService:
                 "saleType": sale_type_description,
                 "sroItemSerialNo": item.get("sro_item_serial_no", "")
             }
+            # Omit extraTax when 0 — FBR rejects 0 as "extra tax provided" for some sale types
+            if transformed_item["extraTax"] == 0:
+                del transformed_item["extraTax"]
             transformed_items.append(transformed_item)
 
         fbr_data = {
