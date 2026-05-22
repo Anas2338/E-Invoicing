@@ -136,19 +136,12 @@ class FBRService:
         # Transform items from snake_case to camelCase
         transformed_items = []
         for item in (invoice.items or []):
-            # Normalize sale_type: could be code, description, or empty
+            # Pass sale_type through as-is; only resolve pure digit codes for backward compatibility
             sale_type_input = str(item.get("sale_type", "01")).strip()
-
-            # If it's a description, convert to code first
-            if sale_type_input in self.SALE_TYPE_REVERSE_MAPPING:
-                sale_type_code = self.SALE_TYPE_REVERSE_MAPPING[sale_type_input]
-            elif sale_type_input.isdigit() and sale_type_input in self.SALE_TYPE_MAPPING:
-                sale_type_code = sale_type_input
+            if sale_type_input.isdigit() and sale_type_input in self.SALE_TYPE_MAPPING:
+                sale_type_description = self.SALE_TYPE_MAPPING[sale_type_input]
             else:
-                # Unrecognized or empty — fall back to default
-                sale_type_code = "01"
-
-            sale_type_description = self.SALE_TYPE_MAPPING[sale_type_code]
+                sale_type_description = sale_type_input  # Pass through stored name unchanged
 
             # Add % suffix only for non-zero numeric rates (0, "Exempt" stay as-is)
             rate = str(item.get("rate", "0"))

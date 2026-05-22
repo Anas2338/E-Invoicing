@@ -19,7 +19,7 @@ interface InvoiceItem {
   quantity: number;
   totalValues: number;
   valueSalesExcludingST: number;
-  fixedNotifiedValueOrRetailPrice: number;
+  fixedNotifiedValueOrRetailPrice: string;
   salesTaxApplicable: number;
   salesTaxWithheldAtSource: string;
   extraTax: number;
@@ -100,7 +100,7 @@ export function SaleInvoiceForm({
     quantity: 0,
     totalValues: 0,
     valueSalesExcludingST: 0,
-    fixedNotifiedValueOrRetailPrice: 0,
+    fixedNotifiedValueOrRetailPrice: '0',
     salesTaxApplicable: 0,
     salesTaxWithheldAtSource: '0',
     extraTax: 0,
@@ -348,7 +348,7 @@ export function SaleInvoiceForm({
           quantity: item.quantity || 1,
           totalValues: item.totalValues || item.total_values || 0,
           valueSalesExcludingST: item.valueSalesExcludingST || item.value_sales_excluding_st || 0,
-          fixedNotifiedValueOrRetailPrice: item.fixedNotifiedValueOrRetailPrice || item.fixed_notified_value_or_retail_price || 0,
+          fixedNotifiedValueOrRetailPrice: String(item.fixedNotifiedValueOrRetailPrice ?? item.fixed_notified_value_or_retail_price ?? '0'),
           salesTaxApplicable: item.salesTaxApplicable || item.sales_tax_applicable || 0,
           salesTaxWithheldAtSource: item.salesTaxWithheldAtSource || item.sales_tax_withheld_at_source?.toString() || '',
           extraTax: item.extraTax || item.extra_tax || 0,
@@ -559,7 +559,7 @@ export function SaleInvoiceForm({
       quantity: 1,
       totalValues: 0,
       valueSalesExcludingST: 0,
-      fixedNotifiedValueOrRetailPrice: 0,
+      fixedNotifiedValueOrRetailPrice: '0',
       salesTaxApplicable: 0,
       salesTaxWithheldAtSource: '0',
       extraTax: 0,
@@ -588,10 +588,7 @@ export function SaleInvoiceForm({
          masterData?.transaction_types.find(t => t.name === selectedItem.transaction_type)?.code ||
          selectedItem.transaction_type)
       : '';
-    const ttName = selectedItem.transaction_type
-      ? (masterData?.transaction_types.find(t => t.code === selectedItem.transaction_type)?.name ||
-         selectedItem.transaction_type)
-      : '';
+    const ttName = selectedItem.transaction_type || '';
 
     // If this is the first item (index 0), set the Transaction Type from the item
     if (index === 0 && ttCode) {
@@ -1402,12 +1399,10 @@ export function SaleInvoiceForm({
                 <div>
                   <Label>Fixed/Retail Price *</Label>
                   <Input
-                    type="number"
-                    step="0.01"
-                    value={item.fixedNotifiedValueOrRetailPrice || ''}
+                    type="text"
+                    value={item.fixedNotifiedValueOrRetailPrice ?? '0'}
                     onChange={(e) => {
-                      const val = e.target.value;
-                      updateItem(index, 'fixedNotifiedValueOrRetailPrice', val === '' ? 0 : parseFloat(val));
+                      updateItem(index, 'fixedNotifiedValueOrRetailPrice', e.target.value);
                     }}
                     required
                   />
@@ -1527,14 +1522,12 @@ export function SaleInvoiceForm({
                 </div>
 
                 <div>
-                  <Label>Item Transaction Type (Info Only)</Label>
+                  <Label>Sale Type</Label>
                   <Input
                     value={(() => {
                       if (!selectedSavedItems[index]) return '';
                       const selectedItem = savedItems.find(si => si.id.toString() === selectedSavedItems[index]);
-                      if (!selectedItem || !selectedItem.transaction_type) return '';
-                      const transType = masterData?.transaction_types.find(t => t.code === selectedItem.transaction_type);
-                      return transType ? transType.name : selectedItem.transaction_type;
+                      return selectedItem?.transaction_type || '';
                     })()}
                     disabled
                     placeholder="No item selected"

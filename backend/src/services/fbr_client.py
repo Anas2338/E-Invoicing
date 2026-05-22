@@ -125,18 +125,12 @@ class FBRClient:
         """
         transformed_items = []
         for item in items:
-            # Get sale type - could be code ("01") or description ("Goods at standard rate (default)")
-            sale_type_input = str(item.get("sale_type", "01"))
-
-            # If it's a description, convert to code first
-            if sale_type_input in self.SALE_TYPE_REVERSE_MAPPING:
-                sale_type_code = self.SALE_TYPE_REVERSE_MAPPING[sale_type_input]
+            # Pass sale_type through as-is; only resolve pure digit codes for backward compatibility
+            sale_type_input = str(item.get("sale_type", "01")).strip()
+            if sale_type_input.isdigit() and sale_type_input in self.SALE_TYPE_MAPPING:
+                sale_type_description = self.SALE_TYPE_MAPPING[sale_type_input]
             else:
-                # Assume it's already a code
-                sale_type_code = sale_type_input
-
-            # Now convert code to full description for FBR
-            sale_type_description = self.SALE_TYPE_MAPPING.get(sale_type_code, sale_type_code)
+                sale_type_description = sale_type_input  # Pass through stored name unchanged
 
             # Add % suffix only for non-zero numeric rates (0, "Exempt" stay as-is)
             rate = str(item.get("rate", "0"))
