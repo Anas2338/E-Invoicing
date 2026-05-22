@@ -192,6 +192,12 @@ export default function InvoiceHistoryPage() {
       // Call validation API
       const response = await api.invoices.validate(id);
 
+      // Log the exact FBR request payload to browser console
+      console.group(`FBR Validation — ${invoice.invoiceNumber}`);
+      console.log('FBR Request Payload:', JSON.stringify(response.fbr_request_payload, null, 2));
+      console.log('FBR Response:', JSON.stringify(response.validation_result, null, 2));
+      console.groupEnd();
+
       // Show result in dialog
       setDialogData({
         success: response.success,

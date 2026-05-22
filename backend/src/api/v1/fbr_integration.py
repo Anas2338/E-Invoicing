@@ -115,7 +115,7 @@ async def validate_invoice(
     fbr_client = FBRClient()
 
     try:
-        is_valid, fbr_response_data, reference_number = await fbr_client.validate_invoice_with_user_credentials(
+        is_valid, fbr_response_data, reference_number, fbr_request_payload = await fbr_client.validate_invoice_with_user_credentials(
             invoice.invoice_data,
             invoice.environment,
             encrypted_token
@@ -151,7 +151,8 @@ async def validate_invoice(
             invoice_id=invoice_id,
             status="validated" if is_valid else "failed",
             validation_result=fbr_response_data,
-            fbr_reference_number=reference_number
+            fbr_reference_number=reference_number,
+            fbr_request_payload=fbr_request_payload
         )
 
     except Exception as e:

@@ -138,10 +138,14 @@ class FBRClient:
             # Now convert code to full description for FBR
             sale_type_description = self.SALE_TYPE_MAPPING.get(sale_type_code, sale_type_code)
 
-            # Get rate and ensure it has % suffix
+            # Get rate and ensure it has % suffix (only for numeric rates)
             rate = str(item.get("rate", "0"))
             if not rate.endswith("%"):
-                rate = rate + "%"
+                try:
+                    float(rate)
+                    rate = rate + "%"
+                except ValueError:
+                    pass  # Non-numeric rate like "Exempt" — keep as-is
 
             # Get UoM and convert to FBR's exact description using mapping
             # This matches the manual system's approach (fbr_service.py line 144-145)
@@ -332,7 +336,7 @@ class FBRClient:
         invoice_data: Dict[str, Any],
         environment: FBREnvironment,
         fbr_token: str
-    ) -> Tuple[bool, Dict[str, Any], Optional[str]]:
+    ) -> Tuple[bool, Dict[str, Any], Optional[str], Optional[Dict[str, Any]]]:
         """
         Validate an invoice with the FBR system using user's credentials.
 
@@ -342,7 +346,7 @@ class FBRClient:
             fbr_token: User's ENCRYPTED FBR access token
 
         Returns:
-            Tuple of (is_valid, response_data, reference_number)
+            Tuple of (is_valid, response_data, reference_number, fbr_request_payload)
         """
         start_time = datetime.utcnow()
 
@@ -352,7 +356,7 @@ class FBRClient:
             decrypted_token = encryption_service.decrypt(fbr_token)
         except Exception as e:
             logger.error(f"Failed to decrypt FBR token: {e}")
-            return False, {"error": "Invalid FBR credentials"}, None
+            return False, {"error": "Invalid FBR credentials"}, None, None
 
         # Use the same URLs as the manual system (fbr_service.py)
         if environment == FBREnvironment.SANDBOX:
@@ -427,7 +431,7 @@ class FBRClient:
                     environment=environment.value,
                     correlation_id=headers["X-Correlation-ID"]
                 )
-                return False, {"error": f"FBR API returned invalid response: {response_text[:200]}"}, None
+                return False, {"error": f"FBR API returned invalid response: {response_text[:200]}"}, None, payload
 
             # Log the interaction
             log_fbr_interaction(
@@ -453,14 +457,14 @@ class FBRClient:
                 is_valid = (status == "Valid" or status_code == "00")
                 reference_number = response_json.get("reference_number")
 
-                return is_valid, response_json, reference_number
+                return is_valid, response_json, reference_number, payload
             elif response.status_code in [400, 422]:
                 # Validation failed with specific errors
-                return False, response_json, None
+                return False, response_json, None, payload
             else:
                 # Unexpected status code
                 logger.error(f"Unexpected status code during validation: {response.status_code}")
-                return False, response_json or {"error": "Unexpected response from FBR"}, None
+                return False, response_json or {"error": "Unexpected response from FBR"}, None, payload
 
         except httpx.RequestError as e:
             logger.error(f"Request error during FBR validation: {str(e)}")
@@ -477,7 +481,7 @@ class FBRClient:
                 environment=environment.value
             )
 
-            return False, {"error": f"Request failed: {str(e)}"}, None
+            return False, {"error": f"Request failed: {str(e)}"}, None, payload
         except Exception as e:
             logger.error(f"Unexpected error during FBR validation: {str(e)}")
             duration = (datetime.utcnow() - start_time).total_seconds()
@@ -493,7 +497,7 @@ class FBRClient:
                 environment=environment.value
             )
 
-            return False, {"error": f"Unexpected error: {str(e)}"}, None
+            return False, {"error": f"Unexpected error: {str(e)}"}, None, payload
 
     async def post_invoice_with_user_credentials(
         self,

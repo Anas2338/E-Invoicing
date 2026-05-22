@@ -150,10 +150,14 @@ class FBRService:
 
             sale_type_description = self.SALE_TYPE_MAPPING[sale_type_code]
 
-            # Get rate and ensure it has % suffix
+            # Get rate and ensure it has % suffix (only for numeric rates)
             rate = str(item.get("rate", "0"))
             if not rate.endswith("%"):
-                rate = rate + "%"
+                try:
+                    float(rate)
+                    rate = rate + "%"
+                except ValueError:
+                    pass  # Non-numeric rate like "Exempt" — keep as-is
 
             # Get UoM code and convert to description
             uom_code = str(item.get("uom", ""))
@@ -255,7 +259,7 @@ class FBRService:
                         response.status_code, correlation_id, elapsed_ms
                     )
 
-                return result
+                return result, fbr_data
 
             except httpx.HTTPStatusError as e:
                 elapsed_ms = int(time.time() * 1000) - start_ms
@@ -283,7 +287,7 @@ class FBRService:
                     "error": True,
                     "statusCode": e.response.status_code,
                     "message": f"FBR API error (Status {e.response.status_code}): {error_message}"
-                }
+                }, fbr_data
             except httpx.RequestError as e:
                 elapsed_ms = int(time.time() * 1000) - start_ms
                 logger.error(f"FBR validation request failed: {str(e)}")
@@ -300,7 +304,7 @@ class FBRService:
                 return {
                     "error": True,
                     "message": f"Failed to connect to FBR API: {str(e)}"
-                }
+                }, fbr_data
 
     async def post_invoice(
         self, invoice: Invoice, access_token: str, db: Optional[Session] = None

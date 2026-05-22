@@ -21,6 +21,7 @@ class FBRValidationResponse(BaseModel):
     validation_result: Dict[str, Any]
     fbr_reference_number: Optional[str] = None
     error_details: Optional[Dict[str, Any]] = None
+    fbr_request_payload: Optional[Dict[str, Any]] = None
 
 
 class FBRPostingRequest(BaseModel):

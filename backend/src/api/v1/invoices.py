@@ -808,7 +808,7 @@ async def validate_invoice_with_fbr(
     try:
         # Call FBR validation API
         logger.info(f"Validating invoice {invoice_id} with FBR")
-        fbr_response = await fbr_service.validate_invoice(invoice, access_token, db=db)
+        fbr_response, fbr_request_payload = await fbr_service.validate_invoice(invoice, access_token, db=db)
 
         # Parse the response
         is_valid, error_message, item_errors = fbr_service.parse_validation_response(fbr_response)
@@ -853,7 +853,8 @@ async def validate_invoice_with_fbr(
                     validation_errors=updated_invoice.validation_errors,
                     # Automation source fields omitted
                 ),
-                "fbr_response": fbr_response
+                "fbr_response": fbr_response,
+                "fbr_request_payload": fbr_request_payload
             }
         else:
             # Store validation errors
@@ -870,7 +871,8 @@ async def validate_invoice_with_fbr(
                 "success": False,
                 "message": error_message,
                 "errors": item_errors,
-                "fbr_response": fbr_response
+                "fbr_response": fbr_response,
+                "fbr_request_payload": fbr_request_payload
             }
 
     except Exception as e:
