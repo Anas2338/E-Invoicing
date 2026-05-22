@@ -1438,12 +1438,10 @@ export function SaleInvoiceForm({
                 <div>
                   <Label>Further Tax {buyerRegistrationType === 'Unregistered' && '*'}</Label>
                   <Input
-                    type="number"
-                    step="0.01"
-                    value={item.furtherTax || ''}
+                    type="text"
+                    value={item.furtherTax ?? '0'}
                     onChange={(e) => {
-                      const val = e.target.value;
-                      updateItem(index, 'furtherTax', val === '' ? 0 : parseFloat(val));
+                      updateItem(index, 'furtherTax', e.target.value);
                     }}
                     required={buyerRegistrationType === 'Unregistered'}
                   />
