@@ -150,12 +150,12 @@ class FBRService:
 
             sale_type_description = self.SALE_TYPE_MAPPING[sale_type_code]
 
-            # Get rate and ensure it has % suffix (only for numeric rates)
+            # Add % suffix only for non-zero numeric rates (0, "Exempt" stay as-is)
             rate = str(item.get("rate", "0"))
             if not rate.endswith("%"):
                 try:
-                    float(rate)
-                    rate = rate + "%"
+                    if float(rate) != 0:
+                        rate = rate + "%"
                 except ValueError:
                     pass  # Non-numeric rate like "Exempt" — keep as-is
 
