@@ -806,9 +806,9 @@ export function SaleInvoiceForm({
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validate Further Tax for Unregistered buyers
+    // Validate Further Tax for Unregistered buyers (0 is allowed if user explicitly sets it)
     if (buyerRegistrationType === 'Unregistered') {
-      const itemsWithoutFurtherTax = items.filter(item => !item.furtherTax || item.furtherTax === 0);
+      const itemsWithoutFurtherTax = items.filter(item => String(item.furtherTax ?? '').trim() === '');
       if (itemsWithoutFurtherTax.length > 0) {
         toast.error('Further Tax is required for all items when buyer is Unregistered');
         return;
