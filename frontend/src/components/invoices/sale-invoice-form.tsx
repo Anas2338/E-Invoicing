@@ -519,12 +519,14 @@ export function SaleInvoiceForm({
         const salesTax = parseFloat(String(item.salesTaxApplicable)) || 0;
         const discount = Number(item.discount) || 0;
 
+        const extraTax = Number(item.extraTax) || 0;
+
         if (buyerRegistrationType === 'Unregistered') {
           // Calculate 4% of Value Excl. Sales Tax
           if (valueExclTax > 0) {
             const furtherTax = valueExclTax * 0.04;
-            // Total Value = Value Excl. Tax + Sales Tax + Further Tax - Discount
-            const totalValue = valueExclTax + salesTax + furtherTax - discount;
+            // Total Value = Value Excl. Tax + Sales Tax + Further Tax + Extra Tax - Discount
+            const totalValue = valueExclTax + salesTax + furtherTax + extraTax - discount;
             return {
               ...item,
               furtherTax: parseFloat(furtherTax.toFixed(2)),
@@ -533,8 +535,8 @@ export function SaleInvoiceForm({
           }
         } else {
           // Clear Further Tax for Registered buyers and recalculate Total Value
-          // Total Value = Value Excl. Tax + Sales Tax - Discount (no Further Tax)
-          const totalValue = valueExclTax + salesTax - discount;
+          // Total Value = Value Excl. Tax + Sales Tax + Extra Tax - Discount (no Further Tax)
+          const totalValue = valueExclTax + salesTax + extraTax - discount;
           return {
             ...item,
             furtherTax: 0,
@@ -682,7 +684,7 @@ export function SaleInvoiceForm({
       updatedItems[index] = { ...updatedItems[index], [field]: value };
 
       // Auto-calculate when Value Excl. Sales Tax, Fixed/Retail Price, Further Tax, or Discount is updated
-      if (field === 'valueSalesExcludingST' || field === 'fixedNotifiedValueOrRetailPrice' || field === 'furtherTax' || field === 'discount') {
+      if (field === 'valueSalesExcludingST' || field === 'fixedNotifiedValueOrRetailPrice' || field === 'furtherTax' || field === 'discount' || field === 'extraTax') {
         const valueExclTax = Number(updatedItems[index].valueSalesExcludingST) || 0;
         const fixedPrice = Number(updatedItems[index].fixedNotifiedValueOrRetailPrice) || 0;
         const taxRate = parseFloat(updatedItems[index].rate) || 0;
@@ -702,8 +704,9 @@ export function SaleInvoiceForm({
             furtherTax = baseValue * 0.04;
           }
 
-          // Total Value (Inc. Tax) = Base Value + Sales Tax + Further Tax - Discount
-          const totalValue = baseValue + salesTax + furtherTax - discount;
+          const extraTax = Number(updatedItems[index].extraTax) || 0;
+          // Total Value (Inc. Tax) = Base Value + Sales Tax + Further Tax + Extra Tax - Discount
+          const totalValue = baseValue + salesTax + furtherTax + extraTax - discount;
 
           if (field !== 'discount') {
             updatedItems[index].salesTaxApplicable = parseFloat(salesTax.toFixed(2));
