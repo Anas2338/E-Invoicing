@@ -123,6 +123,9 @@ export function SaleInvoiceForm({
   const [selectedSavedItems, setSelectedSavedItems] = useState<{ [key: number]: string }>({});
   const [loadingSavedData, setLoadingSavedData] = useState(false);
 
+  // Track which items have manually edited furtherTax (user explicitly typed a value)
+  const [manualFurtherTax, setManualFurtherTax] = useState<Set<number>>(new Set());
+
   // Fetch master data on component mount
   useEffect(() => {
     const fetchMasterData = async () => {
@@ -514,7 +517,7 @@ export function SaleInvoiceForm({
   // Auto-calculate Further Tax for all items when buyer registration type changes
   useEffect(() => {
     setItems(prevItems => {
-      return prevItems.map(item => {
+      return prevItems.map((item, idx) => {
         const valueExclTax = parseFloat(String(item.valueSalesExcludingST)) || 0;
         const salesTax = parseFloat(String(item.salesTaxApplicable)) || 0;
         const discount = Number(item.discount) || 0;
@@ -522,8 +525,8 @@ export function SaleInvoiceForm({
         const extraTax = Number(item.extraTax) || 0;
 
         if (buyerRegistrationType === 'Unregistered') {
-          // Calculate 4% of Value Excl. Sales Tax
-          if (valueExclTax > 0) {
+          // Calculate 4% of Value Excl. Sales Tax (skip if user manually set furtherTax)
+          if (valueExclTax > 0 && !manualFurtherTax.has(idx)) {
             const furtherTax = valueExclTax * 0.04;
             // Total Value = Value Excl. Tax + Sales Tax + Further Tax + Extra Tax - Discount
             const totalValue = valueExclTax + salesTax + furtherTax + extraTax - discount;
@@ -546,7 +549,7 @@ export function SaleInvoiceForm({
         return item;
       });
     });
-  }, [buyerRegistrationType]);
+  }, [buyerRegistrationType, manualFurtherTax]);
 
   const addItem = () => {
     // Find the transaction type name from the code
@@ -698,9 +701,11 @@ export function SaleInvoiceForm({
           const salesTax = baseValue * (taxRate / 100);
 
           // Calculate Further Tax (4%) for Unregistered buyers only when NOT manually edited
-          // Skip auto-recalculation when editing furtherTax or discount directly
           let furtherTax = Number(updatedItems[index].furtherTax) || 0;
-          if (field !== 'furtherTax' && field !== 'discount' && buyerRegistrationType === 'Unregistered') {
+          if (field === 'furtherTax') {
+            setManualFurtherTax(prev => new Set(prev).add(index));
+          }
+          if (!manualFurtherTax.has(index) && field !== 'discount' && buyerRegistrationType === 'Unregistered') {
             furtherTax = baseValue * 0.04;
           }
 
@@ -718,7 +723,7 @@ export function SaleInvoiceForm({
 
       return updatedItems;
     });
-  }, [buyerRegistrationType]);
+  }, [buyerRegistrationType, manualFurtherTax]);
 
   // State to track which items are fetching HS code descriptions
   const [fetchingHSCode, setFetchingHSCode] = useState<{ [key: number]: boolean }>({});
@@ -1425,12 +1430,10 @@ export function SaleInvoiceForm({
                 <div>
                   <Label>Extra Tax</Label>
                   <Input
-                    type="number"
-                    step="0.01"
-                    value={item.extraTax || ''}
+                    type="text"
+                    value={item.extraTax ?? '0'}
                     onChange={(e) => {
-                      const val = e.target.value;
-                      updateItem(index, 'extraTax', val === '' ? 0 : parseFloat(val));
+                      updateItem(index, 'extraTax', e.target.value);
                     }}
                   />
                 </div>
