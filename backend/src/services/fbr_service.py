@@ -170,7 +170,7 @@ class FBRService:
                 "fixedNotifiedValueOrRetailPrice": _f("fixed_notified_value_or_retail_price"),
                 "salesTaxApplicable": _f("sales_tax_applicable"),
                 "salesTaxWithheldAtSource": _f("sales_tax_withheld_at_source"),
-                "extraTax": round(_f("extra_tax"), 2),
+                "extraTax": "" if float(item.get("extra_tax") or 0) == 0 else str(item.get("extra_tax", "")),
                 "furtherTax": _f("further_tax"),
                 "sroScheduleNo": item.get("sro_schedule_no", ""),
                 "fedPayable": _f("fed_payable"),
