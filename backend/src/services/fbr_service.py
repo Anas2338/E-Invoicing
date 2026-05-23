@@ -143,11 +143,13 @@ class FBRService:
             else:
                 sale_type_description = sale_type_input  # Pass through stored name unchanged
 
-            # Add % suffix only for non-zero numeric rates (0, "Exempt" stay as-is)
+            # Format rate: add % for non-zero rates, and for zero-rate goods send "0%"
             rate = str(item.get("rate", "0"))
             if not rate.endswith("%"):
                 try:
-                    if float(rate) != 0:
+                    rate_val = float(rate)
+                    is_zero_rated = "zero-rate" in sale_type_description.lower()
+                    if rate_val != 0 or is_zero_rated:
                         rate = rate + "%"
                 except ValueError:
                     pass  # Non-numeric rate like "Exempt" — keep as-is
