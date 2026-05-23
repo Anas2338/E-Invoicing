@@ -155,28 +155,28 @@ class FBRClient:
                 hs_code = f"{parts[0]}.{parts[1].ljust(4, '0')}"
 
             # Transform to camelCase format matching manual system
+            # Safe float: handle empty strings from text fields
+            _f = lambda k, d=0: float(item.get(k) or d)
+
             transformed_item = {
                 "hsCode": hs_code,
                 "productDescription": item.get("product_description", ""),
                 "rate": rate,
                 "uoM": uom_description,
-                "quantity": float(item.get("quantity", 0)),
-                "totalValues": float(item.get("total_values", 0)),
-                "valueSalesExcludingST": float(item.get("value_sales_excluding_st", 0)),
-                "fixedNotifiedValueOrRetailPrice": float(item.get("fixed_notified_value_or_retail_price", 0)),
-                "salesTaxApplicable": float(item.get("sales_tax_applicable", 0)),
-                "salesTaxWithheldAtSource": float(item.get("sales_tax_withheld_at_source", 0)),
-                "extraTax": float(item.get("extra_tax", 0)),
-                "furtherTax": float(item.get("further_tax", 0)),
+                "quantity": _f("quantity"),
+                "totalValues": _f("total_values"),
+                "valueSalesExcludingST": _f("value_sales_excluding_st"),
+                "fixedNotifiedValueOrRetailPrice": _f("fixed_notified_value_or_retail_price"),
+                "salesTaxApplicable": _f("sales_tax_applicable"),
+                "salesTaxWithheldAtSource": _f("sales_tax_withheld_at_source"),
+                "extraTax": _f("extra_tax"),
+                "furtherTax": _f("further_tax"),
                 "sroScheduleNo": item.get("sro_schedule_no", ""),
-                "fedPayable": float(item.get("fed_payable", 0)),
-                "discount": float(item.get("discount", 0)),
+                "fedPayable": _f("fed_payable"),
+                "discount": _f("discount"),
                 "saleType": sale_type_description,
                 "sroItemSerialNo": item.get("sro_item_serial_no", "")
             }
-            # Omit extraTax when 0 — FBR rejects 0 as "extra tax provided" for some sale types
-            if transformed_item["extraTax"] == 0:
-                del transformed_item["extraTax"]
             transformed_items.append(transformed_item)
 
         return transformed_items
