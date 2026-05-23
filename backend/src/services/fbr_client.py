@@ -177,6 +177,9 @@ class FBRClient:
                 "saleType": sale_type_description,
                 "sroItemSerialNo": item.get("sro_item_serial_no", "")
             }
+            # Remove extraTax when 0 — FBR rejects 0 for sale types where extra tax is not applicable
+            if transformed_item.get("extraTax") == 0:
+                del transformed_item["extraTax"]
             transformed_items.append(transformed_item)
 
         return transformed_items
