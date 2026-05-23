@@ -246,7 +246,20 @@ class FBRService:
                 response.raise_for_status()
                 elapsed_ms = int(time.time() * 1000) - start_ms
 
-                result = response.json()
+                try:
+                    result = response.json()
+                except (ValueError, json.JSONDecodeError) as json_err:
+                    raw_text = response.text[:500] if response.text else "(empty)"
+                    logger.error(f"FBR returned non-JSON response (status {response.status_code}): {raw_text}")
+                    elapsed_ms = int(time.time() * 1000) - start_ms
+                    error_response = {"error": True, "message": f"FBR returned invalid response: {raw_text}"}
+                    if db is not None:
+                        self._save_fbr_response(
+                            db, invoice, fbr_data, error_response, url, "POST",
+                            response.status_code, correlation_id, elapsed_ms
+                        )
+                    return error_response, fbr_data
+
                 logger.info(f"FBR validation response for invoice {invoice.id}: {result}")
 
                 if db is not None:
