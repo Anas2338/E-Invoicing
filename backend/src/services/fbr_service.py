@@ -170,7 +170,7 @@ class FBRService:
                 "fixedNotifiedValueOrRetailPrice": _f("fixed_notified_value_or_retail_price"),
                 "salesTaxApplicable": _f("sales_tax_applicable"),
                 "salesTaxWithheldAtSource": _f("sales_tax_withheld_at_source"),
-                "extraTax": _f("extra_tax"),
+                "extraTax": round(_f("extra_tax"), 2),
                 "furtherTax": _f("further_tax"),
                 "sroScheduleNo": item.get("sro_schedule_no", ""),
                 "fedPayable": _f("fed_payable"),
@@ -178,9 +178,6 @@ class FBRService:
                 "saleType": sale_type_description,
                 "sroItemSerialNo": item.get("sro_item_serial_no", "")
             }
-            # Remove extraTax when 0 — FBR rejects 0 for sale types where extra tax is not applicable
-            if transformed_item.get("extraTax") == 0:
-                del transformed_item["extraTax"]
             transformed_items.append(transformed_item)
 
         fbr_data = {
