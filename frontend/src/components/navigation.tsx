@@ -4,10 +4,10 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
-import { ThemeToggle } from '@/components/theme-toggle';
 import { NotificationDropdown } from '@/components/notifications/notification-dropdown';
-import { Home, FileText, User, LogOut, Menu, X, Zap, Bell } from 'lucide-react';
+import { Home, FileText, LogOut, Menu, X, Zap, Bell, HelpCircle } from 'lucide-react';
 import { notificationService } from '@/lib/api/api-client';
+
 
 export function Navigation() {
   const router = useRouter();
@@ -22,7 +22,6 @@ export function Navigation() {
   // Fetch notification count on mount and periodically
   useEffect(() => {
     const fetchNotificationCount = async () => {
-      // Prevent duplicate fetches
       if (fetchingRef.current) return;
 
       fetchingRef.current = true;
@@ -30,21 +29,18 @@ export function Navigation() {
         const response = await notificationService.getUnreadCount();
         setNotificationCount(response.count);
       } catch (error) {
-        // Silently fail - don't show error to user
+        // Silently fail
       } finally {
         fetchingRef.current = false;
       }
     };
 
-    // Fetch immediately
     fetchNotificationCount();
 
-    // Clear any existing interval (prevents duplicates from React Strict Mode)
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
     }
 
-    // Poll every 60 seconds for new notifications (reduced from 30s)
     intervalRef.current = setInterval(fetchNotificationCount, 60000);
 
     return () => {
@@ -63,10 +59,8 @@ export function Navigation() {
     { name: 'Dashboard', path: '/dashboard', icon: Home },
     { name: 'Automation', path: '/automation', icon: Zap, requiresAutomation: true },
     { name: 'Invoices', path: '/invoices/history', icon: FileText },
-    { name: 'Profile', path: '/profile', icon: User },
   ];
 
-  // Filter navigation items based on user's automation access
   const navItems = allNavItems.filter(item => {
     if (item.requiresAutomation) {
       return user?.automation_enabled === true;
@@ -75,7 +69,7 @@ export function Navigation() {
   });
 
   return (
-    <nav className="sticky top-0 z-50 bg-white dark:bg-[#1a1a1a] shadow-sm border-b border-[#e1e3e5] dark:border-[#2e2e2e] mb-8">
+    <nav className="sticky top-0 z-50 bg-white dark:bg-[#1a1a1a] shadow-sm border-b border-[#e1e3e5] dark:border-[#2e2e2e] mb-2">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex">
@@ -111,33 +105,36 @@ export function Navigation() {
           </div>
 
           {/* Desktop Actions */}
-          <div className="hidden sm:flex items-center gap-2">
-            {/* Notification Bell */}
-            <div className="relative">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setNotificationDropdownOpen(!notificationDropdownOpen);
-                }}
-                className="relative p-2 text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
-                aria-label="Notifications"
-              >
-                <Bell className="h-5 w-5" />
-                {notificationCount > 0 && (
-                  <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-600 rounded-full">
-                    {notificationCount > 99 ? '99+' : notificationCount}
-                  </span>
-                )}
-              </button>
+          <div className="hidden sm:flex items-center gap-1">
+            {/* Notifications */}
+            <button
+              onClick={() => setNotificationDropdownOpen(true)}
+              className="relative p-2 text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+              aria-label="Notifications"
+            >
+              <Bell className="h-5 w-5" />
+              {notificationCount > 0 && (
+                <span className="absolute top-0.5 right-0.5 inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold leading-none text-white bg-red-600 rounded-full">
+                  {notificationCount > 9 ? '9+' : notificationCount}
+                </span>
+              )}
+            </button>
 
-              <NotificationDropdown
-                isOpen={notificationDropdownOpen}
-                onClose={() => setNotificationDropdownOpen(false)}
-                onCountChange={setNotificationCount}
-              />
-            </div>
+            {/* Help */}
+            <button
+              onClick={() => router.push('/help')}
+              className="p-2 text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+              aria-label="Help"
+            >
+              <HelpCircle className="h-5 w-5" />
+            </button>
 
-            <ThemeToggle />
+            {/* Notification Dropdown */}
+            <NotificationDropdown
+              isOpen={notificationDropdownOpen}
+              onClose={() => setNotificationDropdownOpen(false)}
+              onCountChange={setNotificationCount}
+            />
 
             <Button
               variant="ghost"
@@ -151,33 +148,35 @@ export function Navigation() {
           </div>
 
           {/* Mobile Actions */}
-          <div className="flex items-center gap-2 sm:hidden">
-            {/* Mobile Notification Bell */}
-            <div className="relative">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setNotificationDropdownOpen(!notificationDropdownOpen);
-                }}
-                className="relative p-2 text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
-                aria-label="Notifications"
-              >
-                <Bell className="h-5 w-5" />
-                {notificationCount > 0 && (
-                  <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-600 rounded-full">
-                    {notificationCount > 99 ? '99+' : notificationCount}
-                  </span>
-                )}
-              </button>
+          <div className="flex items-center gap-1 sm:hidden">
+            {/* Notifications */}
+            <button
+              onClick={() => setNotificationDropdownOpen(true)}
+              className="relative p-2 text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+              aria-label="Notifications"
+            >
+              <Bell className="h-5 w-5" />
+              {notificationCount > 0 && (
+                <span className="absolute top-0.5 right-0.5 inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold leading-none text-white bg-red-600 rounded-full">
+                  {notificationCount > 9 ? '9+' : notificationCount}
+                </span>
+              )}
+            </button>
 
-              <NotificationDropdown
-                isOpen={notificationDropdownOpen}
-                onClose={() => setNotificationDropdownOpen(false)}
-                onCountChange={setNotificationCount}
-              />
-            </div>
+            {/* Help */}
+            <button
+              onClick={() => router.push('/help')}
+              className="p-2 text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+              aria-label="Help"
+            >
+              <HelpCircle className="h-5 w-5" />
+            </button>
 
-            <ThemeToggle />
+            <NotificationDropdown
+              isOpen={notificationDropdownOpen}
+              onClose={() => setNotificationDropdownOpen(false)}
+              onCountChange={setNotificationCount}
+            />
 
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}

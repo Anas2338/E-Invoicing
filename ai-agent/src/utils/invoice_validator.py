@@ -86,22 +86,29 @@ class InvoiceValidator:
         return True, None
 
     @staticmethod
-    def validate_ntn_or_cnic(value: str) -> Tuple[bool, Optional[str]]:
+    def validate_ntn_or_cnic(value: str, allow_empty: bool = False) -> Tuple[bool, Optional[str]]:
         """
         Validate NTN or CNIC (accepts either format).
         Uses relaxed validation - FBR API is the final validator.
 
         Args:
             value: NTN or CNIC to validate
+            allow_empty: If True, empty values are considered valid
 
         Returns:
             Tuple of (is_valid, error_message)
         """
         if not value:
+            if allow_empty:
+                return True, None
             return False, "NTN/CNIC is required"
 
         # Remove spaces and convert to string
         value = str(value).strip().replace(' ', '')
+
+        # Handle float-to-string artifacts (e.g., "1234567.0" → "1234567")
+        if value.endswith(".0") and len(value) > 2:
+            value = value[:-2]
 
         # Use relaxed pattern - accept alphanumeric strings of reasonable length
         if not InvoiceValidator.RELAXED_NTN_CNIC_PATTERN.match(value):
@@ -232,9 +239,9 @@ class InvoiceValidator:
         if not is_valid:
             return False, f"Seller {error}"
 
-        # Validate buyer NTN/CNIC
+        # Validate buyer NTN/CNIC (empty is allowed — buyer may not have NTN/CNIC)
         buyer_ntn = invoice_data.get('buyer_ntn_cnic', '')
-        is_valid, error = InvoiceValidator.validate_ntn_or_cnic(buyer_ntn)
+        is_valid, error = InvoiceValidator.validate_ntn_or_cnic(buyer_ntn, allow_empty=True)
         if not is_valid:
             return False, f"Buyer {error}"
 

@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Trash2, Plus, Loader2, AlertCircle, Info } from 'lucide-react';
+import { Trash2, Plus, Loader2, AlertCircle, Info, Building2, MapPin, FileText } from 'lucide-react';
 import { masterDataService, fbrIntegrationService, type AllMasterData } from '@/lib/api/api-client';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
@@ -874,6 +874,37 @@ export function SaleInvoiceForm({
 
       {/* Form content - show immediately, disable fields until master data loads */}
       <>
+          {/* Seller Info Bar — auto-filled from profile, displayed at top right */}
+          {(sellerNTNCNIC || sellerBusinessName || sellerProvince || sellerAddress) && (
+            <div className="flex justify-end">
+              <div className="flex flex-wrap items-center gap-3 text-sm bg-white dark:bg-[#1a1a1a] border border-[#e1e3e5] dark:border-[#2e2e2e] rounded-xl px-4 py-3 shadow-sm">
+                {sellerBusinessName && (
+                  <span className="font-semibold text-[#202223] dark:text-[#e3e3e3] flex items-center gap-1.5">
+                    <Building2 className="h-4 w-4 text-[#008060] dark:text-[#00a876]" />
+                    {sellerBusinessName}
+                  </span>
+                )}
+                {sellerNTNCNIC && (
+                  <span className="bg-[#f1f8f5] dark:bg-[#0d3d2f]/30 px-2.5 py-1 rounded-md font-mono text-sm text-[#008060] dark:text-[#00a876] flex items-center gap-1.5">
+                    <FileText className="h-3.5 w-3.5" />
+                    NTN: {sellerNTNCNIC}
+                  </span>
+                )}
+                {sellerProvince && (
+                  <span className="text-[#6d7175] dark:text-[#8c9196] flex items-center gap-1.5">
+                    <MapPin className="h-3.5 w-3.5" />
+                    {sellerProvince}
+                  </span>
+                )}
+                {sellerAddress && (
+                  <span className="text-[#6d7175] dark:text-[#8c9196] text-xs max-w-[200px] truncate" title={sellerAddress}>
+                    {sellerAddress}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Invoice Header */}
           <Card>
             <CardHeader>
@@ -1010,74 +1041,6 @@ export function SaleInvoiceForm({
               </p>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      {/* Seller Information */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Seller Information</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="sellerNTNCNIC">Seller NTN/CNIC *</Label>
-              <Input
-                id="sellerNTNCNIC"
-                value={sellerNTNCNIC}
-                onChange={(e) => setSellerNTNCNIC(e.target.value)}
-                placeholder="Enter NTN or CNIC"
-                required
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="sellerBusinessName">Business Name *</Label>
-              <Input
-                id="sellerBusinessName"
-                value={sellerBusinessName}
-                onChange={(e) => setSellerBusinessName(e.target.value)}
-                placeholder="Enter business name"
-                required
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="sellerProvince">Province *</Label>
-              <Select value={sellerProvince} onValueChange={(val) => {
-                setSellerProvince(val);
-                // Find and store province code
-                const province = masterData?.provinces.find(p => p.name === val);
-                if (province) {
-                  setSellerProvinceCode(province.code);
-                }
-              }}>
-                <SelectTrigger disabled={(masterData?.provinces.length ?? 0) === 0}>
-                  <SelectValue placeholder={(masterData?.provinces.length ?? 0) === 0 ? "Configure FBR token in profile" : "Select province"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {(masterData?.provinces.length ?? 0) === 0 ? (
-                    <SelectItem value="none" disabled>No options available - Configure FBR token</SelectItem>
-                  ) : (
-                    masterData?.provinces.map((province) => (
-                      <SelectItem key={province.code} value={province.name}>{province.name}</SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label htmlFor="sellerAddress">Address *</Label>
-              <Input
-                id="sellerAddress"
-                value={sellerAddress}
-                onChange={(e) => setSellerAddress(e.target.value)}
-                placeholder="Enter business address"
-                required
-              />
-            </div>
-          </div>
         </CardContent>
       </Card>
 

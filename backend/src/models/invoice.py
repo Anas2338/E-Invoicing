@@ -3,7 +3,7 @@ from typing import Optional, TYPE_CHECKING, List
 from datetime import datetime
 import uuid
 from enum import Enum
-from sqlalchemy import Column, DateTime, String, JSON, Integer
+from sqlalchemy import Column, DateTime, String, JSON, Integer, event
 from sqlalchemy.types import Uuid
 from sqlalchemy import NUMERIC
 from .base import Base
@@ -11,6 +11,16 @@ from .base import Base
 if TYPE_CHECKING:
     from .user import User
     from .fbr_response import FBRResponse
+
+
+def _clean_ntn_cnic(value):
+    """Normalize NTN/CNIC value — strips .0 suffix from float string artifacts."""
+    if value is None:
+        return value
+    s = str(value).strip()
+    if s.endswith(".0") and len(s) > 2 and s[:-2].isdigit():
+        s = s[:-2]
+    return s
 
 
 class InvoiceType(str, Enum):
@@ -232,3 +242,24 @@ class InvoiceRead(InvoiceBase):
     updated_at: datetime
     user: Optional["User"] = None
     fbr_response: Optional["FBRResponse"] = None
+
+
+# SQLAlchemy event listeners to auto-clean NTN/CNIC values
+# This fixes existing data with .0 suffix and prevents future bad data
+@event.listens_for(Invoice, 'load')
+def _clean_ntn_on_load(invoice, context):
+    """Clean NTN/CNIC values when loading from database."""
+    if invoice.seller_ntn_cnic:
+        invoice.seller_ntn_cnic = _clean_ntn_cnic(invoice.seller_ntn_cnic)
+    if invoice.buyer_ntn_cnic:
+        invoice.buyer_ntn_cnic = _clean_ntn_cnic(invoice.buyer_ntn_cnic)
+
+
+@event.listens_for(Invoice, 'before_insert')
+@event.listens_for(Invoice, 'before_update')
+def _clean_ntn_before_write(mapper, connection, target):
+    """Clean NTN/CNIC values before writing to database."""
+    if target.seller_ntn_cnic:
+        target.seller_ntn_cnic = _clean_ntn_cnic(target.seller_ntn_cnic)
+    if target.buyer_ntn_cnic:
+        target.buyer_ntn_cnic = _clean_ntn_cnic(target.buyer_ntn_cnic)

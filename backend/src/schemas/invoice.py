@@ -185,6 +185,8 @@ class UnifiedInvoiceItem(BaseModel):
     scheduled_date: Optional[str] = None  # automated only
     scheduled_time: Optional[str] = None  # automated only
     environment: Optional[str] = None  # both
+    fbr_reference_number: Optional[str] = None  # FBR reference number after posting
+    income_tax: Optional[str] = None  # income tax type
 
 
 class UnifiedInvoiceListResponse(BaseModel):

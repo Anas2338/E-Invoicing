@@ -54,11 +54,18 @@ class ValidationService:
             except ValueError:
                 validation_errors["invoice_date"] = "Invalid date format, expected YYYY-MM-DD"
 
-        # Validate NTN/CNIC format (7 or 13 digits)
+        # Validate NTN/CNIC format (7 or 13 chars, buyer may be empty)
         for field in ["seller_ntn_cnic", "buyer_ntn_cnic"]:
             if field in invoice_data:
-                ntn_cnic = str(invoice_data[field])
-                if not (len(ntn_cnic) == 7 or len(ntn_cnic) == 13):
+                ntn_cnic = str(invoice_data[field]).strip()
+                if field == "buyer_ntn_cnic" and not ntn_cnic:
+                    continue  # Empty buyer NTN/CNIC is allowed
+                # Handle float-to-string artifacts (e.g., "1234567.0" → "1234567")
+                if ntn_cnic.endswith(".0") and len(ntn_cnic) > 2:
+                    ntn_cnic = ntn_cnic[:-2]
+                # Accept 7-char NTN, 13-char CNIC, or alphanumeric formats with dashes
+                ntn_cnic_clean = ntn_cnic.replace('-', '').replace(' ', '')
+                if not (6 <= len(ntn_cnic_clean) <= 15):
                     validation_errors[field] = f"{field} must be 7 or 13 digits"
 
         # Validate buyer registration type

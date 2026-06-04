@@ -3,12 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { InvoiceTable } from '@/components/invoices/invoice-table';
 import { ValidationResultDialog } from '@/components/invoices/validation-result-dialog';
 import { api, ApiError } from '@/lib/api';
-import { Plus, Trash2, ArrowLeft, CheckCircle, RefreshCw, Printer } from 'lucide-react';
+import { Trash2, CheckCircle, RefreshCw, Printer, Loader2, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 interface Invoice {
@@ -21,6 +19,7 @@ interface Invoice {
   status: string;
   environment: string;
   invoiceType: string;
+  fbrReferenceNumber?: string;
   incomeTax: string;
   createdAt: string;
   scheduledDate?: string;
@@ -34,9 +33,14 @@ export default function InvoiceHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [invoiceNumberFilter, setInvoiceNumberFilter] = useState('');
+  const [dateFromFilter, setDateFromFilter] = useState('');
+  const [dateToFilter, setDateToFilter] = useState('');
+  const [buyerNameFilter, setBuyerNameFilter] = useState('');
+  const [amountFilter, setAmountFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [incomeTaxFilter, setIncomeTaxFilter] = useState('all');
+  const [fbrRefFilter, setFbrRefFilter] = useState('');
   const [selectedInvoices, setSelectedInvoices] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [bulkValidating, setBulkValidating] = useState(false);
@@ -61,29 +65,13 @@ export default function InvoiceHistoryPage() {
     message: '',
   });
 
-  const statusOptions = [
-    { value: 'all', label: 'All' },
-    { value: 'DRAFT', label: 'Draft' },
-    { value: 'VALIDATED', label: 'Validated' },
-    { value: 'TRANSFERRED', label: 'Transferred' },
-    { value: 'POSTED', label: 'Posted' },
-    { value: 'FAILED', label: 'Failed' },
-  ];
-
-
-  const incomeTaxOptions = [
-    { value: 'all', label: 'All' },
-    { value: '236G', label: '236G' },
-    { value: '236H', label: '236H' },
-  ];
+  useEffect(() => {
+    applyFilters();
+  }, [invoices, invoiceNumberFilter, dateFromFilter, dateToFilter, buyerNameFilter, amountFilter, statusFilter, incomeTaxFilter, fbrRefFilter]);
 
   useEffect(() => {
     fetchInvoices();
   }, []);
-
-  useEffect(() => {
-    applyFilters();
-  }, [invoices, searchTerm, statusFilter, incomeTaxFilter]);
 
   const fetchInvoices = async (isBackgroundRefresh = false, showRefreshIndicator = false) => {
     try {
@@ -94,7 +82,7 @@ export default function InvoiceHistoryPage() {
       }
       setError(null);
 
-      // Fetch unified invoices from backend (manual + automated)
+      // Fetch all invoices (max page_size = 100 per backend limit)
       const response = await api.invoices.getUnifiedHistory({ page_size: 100 });
 
       // Transform backend data to match our interface
@@ -109,6 +97,7 @@ export default function InvoiceHistoryPage() {
           status: invoice.status,
           environment: invoice.environment || '',
           invoiceType: invoice.invoice_type || 'Sale Invoice',
+          fbrReferenceNumber: invoice.fbr_reference_number || '',
           incomeTax: invoice.income_tax || '236G',
           createdAt: invoice.created_at,
           scheduledDate: invoice.scheduled_date,
@@ -146,13 +135,31 @@ export default function InvoiceHistoryPage() {
   const applyFilters = () => {
     let result = [...invoices];
 
-    // Apply search filter
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
+    // Apply invoice number filter
+    if (invoiceNumberFilter) {
+      const term = invoiceNumberFilter.toLowerCase();
       result = result.filter(invoice =>
-        invoice.invoiceNumber.toLowerCase().includes(term) ||
-        invoice.buyerName.toLowerCase().includes(term) ||
-        invoice.sellerName.toLowerCase().includes(term) ||
+        invoice.invoiceNumber.toLowerCase().includes(term)
+      );
+    }
+
+    // Apply date range filter (only when both From and To are selected)
+    if (dateFromFilter && dateToFilter) {
+      result = result.filter(invoice => invoice.date >= dateFromFilter && invoice.date <= dateToFilter);
+    }
+
+    // Apply buyer name filter
+    if (buyerNameFilter) {
+      const term = buyerNameFilter.toLowerCase();
+      result = result.filter(invoice =>
+        invoice.buyerName.toLowerCase().includes(term)
+      );
+    }
+
+    // Apply amount filter
+    if (amountFilter) {
+      const term = amountFilter.toLowerCase();
+      result = result.filter(invoice =>
         invoice.totalAmount.toString().includes(term)
       );
     }
@@ -165,6 +172,14 @@ export default function InvoiceHistoryPage() {
     // Apply income tax filter
     if (incomeTaxFilter !== 'all') {
       result = result.filter(invoice => invoice.incomeTax === incomeTaxFilter);
+    }
+
+    // Apply FBR reference filter
+    if (fbrRefFilter) {
+      const term = fbrRefFilter.toLowerCase();
+      result = result.filter(invoice =>
+        invoice.fbrReferenceNumber?.toLowerCase().includes(term)
+      );
     }
 
     setFilteredInvoices(result);
@@ -348,11 +363,11 @@ export default function InvoiceHistoryPage() {
   const handleBulkValidate = async () => {
     if (selectedInvoices.size === 0) return;
 
-    // Filter to only include DRAFT and FAILED invoices
+    // Filter to only include DRAFT invoices (skip VALIDATED, FAILED, POSTED)
     const selectedInvoicesList = Array.from(selectedInvoices);
     const validatableInvoices = selectedInvoicesList.filter(id => {
       const invoice = invoices.find(inv => inv.id === id);
-      return invoice?.status === 'DRAFT' || invoice?.status === 'FAILED';
+      return invoice?.status === 'DRAFT';
     });
 
     const skippedCount = selectedInvoicesList.length - validatableInvoices.length;
@@ -362,7 +377,7 @@ export default function InvoiceHistoryPage() {
       setDialogData({
         success: false,
         title: 'No Validatable Invoices Selected',
-        message: 'All selected invoices are already validated or posted. Only DRAFT and FAILED invoices can be validated.',
+        message: 'Only DRAFT invoices can be validated.',
         errors: []
       });
       setDialogOpen(true);
@@ -371,7 +386,7 @@ export default function InvoiceHistoryPage() {
 
     // Show confirmation with info about skipped invoices
     const confirmMessage = skippedCount > 0
-      ? `Validate ${validatableInvoices.length} invoice${validatableInvoices.length > 1 ? 's' : ''} with FBR?\n\n${skippedCount} already validated/posted invoice${skippedCount > 1 ? 's' : ''} will be skipped.\n\nThis will validate each invoice one by one.`
+      ? `Validate ${validatableInvoices.length} invoice${validatableInvoices.length > 1 ? 's' : ''} with FBR?\n\n${skippedCount} non-draft invoice${skippedCount > 1 ? 's' : ''} will be skipped.\n\nThis will validate each invoice one by one.`
       : `Validate ${validatableInvoices.length} selected invoice${validatableInvoices.length > 1 ? 's' : ''} with FBR?\n\nThis will validate each invoice one by one.`;
 
     if (!confirm(confirmMessage)) {
@@ -384,7 +399,7 @@ export default function InvoiceHistoryPage() {
     const errors: string[] = [];
 
     try {
-      // Validate each DRAFT or FAILED invoice one by one
+      // Validate each DRAFT invoice one by one
       for (const invoiceId of validatableInvoices) {
         const invoice = invoices.find(inv => inv.id === invoiceId);
 
@@ -515,7 +530,7 @@ export default function InvoiceHistoryPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
+      <div className="flex items-center justify-center h-full">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#008060] dark:border-[#00a876] mx-auto"></div>
           <p className="mt-4 text-[#6d7175] dark:text-[#8c9196]">Loading invoices...</p>
@@ -549,209 +564,90 @@ export default function InvoiceHistoryPage() {
   }
 
   return (
-    <div className="space-y-6 pb-8">
-      {/* Back to Dashboard Button */}
-      <div className="flex items-center gap-4">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => router.push('/dashboard')}
-          className="flex items-center gap-2"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Dashboard
-        </Button>
-      </div>
-
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-[#202223] dark:text-[#e3e3e3]">Invoice History</h1>
-          <div className="flex items-center gap-2 mt-2">
-            <p className="text-sm sm:text-base text-[#6d7175] dark:text-[#8c9196]">View and manage your invoices</p>
-            {refreshing && (
-              <span className="flex items-center gap-1 text-xs text-[#008060] dark:text-[#00a876]">
-                <RefreshCw className="h-3 w-3 animate-spin" />
-                Updating...
-              </span>
-            )}
-          </div>
-          <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
-            Last updated: {lastRefreshTime.toLocaleTimeString()}
-          </p>
-        </div>
-        <div className="flex flex-col sm:flex-row gap-3">
-          {selectedInvoices.size === 0 ? (
-            <>
-              <Button
-                variant="outline"
-                onClick={() => fetchInvoices(true, true)}
-                disabled={refreshing}
-                className="w-full sm:w-auto"
-                title="Refresh invoice list"
-              >
-                <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-                Refresh
-              </Button>
-              <Button onClick={() => router.push('/invoices/create')} className="w-full sm:w-auto">
-                <Plus className="h-4 w-4 mr-2" />
-                Create Invoice
-              </Button>
-            </>
-          ) : (() => {
-            const hasPostedSelected = Array.from(selectedInvoices).some(
+    <div className="h-full flex flex-col space-y-2 sm:space-y-3">
+      {/* Table + Actions Sidebar */}
+      <div className="flex gap-0 flex-1 min-h-0">
+        {/* Action Bar — vertical, left of table */}
+        <div className="flex flex-col items-center gap-1 sm:gap-1.5 pt-2 sm:pt-3 pr-1 sm:pr-1.5 flex-shrink-0">
+          {(invoiceNumberFilter || dateFromFilter || dateToFilter || buyerNameFilter || amountFilter || statusFilter !== 'all' || incomeTaxFilter !== 'all' || fbrRefFilter) && (
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => {
+                setInvoiceNumberFilter('');
+                setDateFromFilter('');
+                setDateToFilter('');
+                setBuyerNameFilter('');
+                setAmountFilter('');
+                setStatusFilter('all');
+                setIncomeTaxFilter('all');
+                setFbrRefFilter('');
+              }}
+              className="h-8 w-8 text-[#6d7175] hover:text-[#202223]"
+              title="Clear Filters"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+          {(() => {
+            const hasPostedSelected = selectedInvoices.size > 0 && Array.from(selectedInvoices).some(
               id => invoices.find(inv => inv.id === id)?.status === 'POSTED'
             );
-
-            if (hasPostedSelected) {
-              return (
-                <Button
-                  variant="outline"
-                  onClick={handleBulkPrint}
-                  disabled={bulkPrinting}
-                  className="w-full sm:w-auto border-[#1e40af] text-[#1e40af] hover:bg-[#1e40af] hover:text-white"
-                >
-                  <Printer className="h-4 w-4 mr-2" />
-                  {bulkPrinting ? 'Generating...' : `Print ${selectedInvoices.size} Selected`}
-                </Button>
-              );
-            }
-
             return (
               <>
                 <Button
                   variant="outline"
-                  onClick={handleBulkValidate}
-                  disabled={bulkValidating}
-                  className="w-full sm:w-auto border-[#008060] text-[#008060] hover:bg-[#008060] hover:text-white"
+                  size="icon"
+                  onClick={() => fetchInvoices(true, true)}
+                  disabled={refreshing || hasPostedSelected}
+                  className="h-8 w-8"
+                  title="Refresh"
                 >
-                  <CheckCircle className="h-4 w-4 mr-2" />
-                  {bulkValidating ? 'Validating...' : `Validate ${selectedInvoices.size} Selected`}
+                  <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={handleBulkPrint}
-                  disabled={bulkPrinting}
-                  className="w-full sm:w-auto border-[#1e40af] text-[#1e40af] hover:bg-[#1e40af] hover:text-white"
+                  size="icon"
+                  onClick={handleBulkValidate}
+                  disabled={bulkValidating || selectedInvoices.size === 0 || hasPostedSelected}
+                  className="h-8 w-8 border-[#008060] text-[#008060] hover:bg-[#008060] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="Validate selected"
                 >
-                  <Printer className="h-4 w-4 mr-2" />
-                  {bulkPrinting ? 'Generating...' : `Print ${selectedInvoices.size} Selected`}
+                  {bulkValidating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
                 </Button>
                 <Button
-                  variant="destructive"
-                  onClick={handleBulkDelete}
-                  disabled={bulkDeleting}
-                  className="w-full sm:w-auto"
+                  variant="outline"
+                  size="icon"
+                  onClick={handleBulkPrint}
+                  disabled={bulkPrinting || selectedInvoices.size === 0}
+                  className="h-8 w-8 border-[#1e40af] text-[#1e40af] hover:bg-[#1e40af] hover:text-white"
+                  title="Print selected"
                 >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  {bulkDeleting ? 'Deleting...' : `Delete ${selectedInvoices.size} Selected`}
+                  <Printer className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleBulkDelete}
+                  disabled={bulkDeleting || selectedInvoices.size === 0 || hasPostedSelected}
+                  className="h-8 w-8 text-red-500 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="Delete selected"
+                >
+                  <Trash2 className="h-4 w-4" />
                 </Button>
               </>
             );
           })()}
+          {selectedInvoices.size > 0 && (
+            <span className="text-[10px] text-[#6d7175] dark:text-[#8c9196] text-center">
+              {selectedInvoices.size}
+            </span>
+          )}
         </div>
-      </div>
 
-      {/* Filters */}
-      <div className="bg-white dark:bg-[#1a1a1a] rounded-2xl border border-[#e1e3e5] dark:border-[#2e2e2e] shadow-sm p-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] mb-1">Search</label>
-            <Input
-              type="text"
-              placeholder="Search by invoice #, buyer, seller..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] mb-2">Status</label>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="h-11 text-[#202223] dark:text-[#e3e3e3] shadow p-4">
-                <span className="text-[#6d7175] dark:text-[#8c9196]">
-                  {statusOptions.find(opt => opt.value === statusFilter)?.label || 'All'}
-                </span>
-              </SelectTrigger>
-              <SelectContent>
-                {statusOptions.map(option => (
-                  <SelectItem key={option.value} value={option.value} className="text-[#202223] dark:text-[#e3e3e3]">
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] mb-2">Income Tax Type</label>
-            <Select value={incomeTaxFilter} onValueChange={setIncomeTaxFilter}>
-              <SelectTrigger className="h-11 text-[#202223] dark:text-[#e3e3e3] shadow p-4">
-                <span className="text-[#6d7175] dark:text-[#8c9196]">
-                  {incomeTaxOptions.find(opt => opt.value === incomeTaxFilter)?.label || 'All'}
-                </span>
-              </SelectTrigger>
-              <SelectContent>
-                {incomeTaxOptions.map(option => (
-                  <SelectItem key={option.value} value={option.value} className="text-[#202223] dark:text-[#e3e3e3]">
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex items-end">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setSearchTerm('');
-                setStatusFilter('all');
-                setIncomeTaxFilter('all');
-              }}
-              className="w-full"
-            >
-              Reset Filters
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Stats Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-[#e1e3e5] dark:border-[#2e2e2e] shadow-sm p-4">
-          <div className="text-sm text-[#6d7175] dark:text-[#8c9196]">Total Invoices</div>
-          <div className="text-2xl font-bold text-[#202223] dark:text-[#e3e3e3]">{invoices.length}</div>
-        </div>
-        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-[#e1e3e5] dark:border-[#2e2e2e] shadow-sm p-4">
-          <div className="text-sm text-[#6d7175] dark:text-[#8c9196]">Draft</div>
-          <div className="text-2xl font-bold text-[#92400e] dark:text-[#fbbf24]">
-            {invoices.filter(inv => inv.status === 'DRAFT').length}
-          </div>
-        </div>
-        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-[#e1e3e5] dark:border-[#2e2e2e] shadow-sm p-4">
-          <div className="text-sm text-[#6d7175] dark:text-[#8c9196]">Validated</div>
-          <div className="text-2xl font-bold text-[#1e40af] dark:text-[#60a5fa]">
-            {invoices.filter(inv => inv.status === 'VALIDATED').length}
-          </div>
-        </div>
-        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-[#e1e3e5] dark:border-[#2e2e2e] shadow-sm p-4">
-          <div className="text-sm text-[#6d7175] dark:text-[#8c9196]">Posted</div>
-          <div className="text-2xl font-bold text-[#065f46] dark:text-[#34d399]">
-            {invoices.filter(inv => inv.status === 'POSTED').length}
-          </div>
-        </div>
-        <div className="bg-white dark:bg-[#1a1a1a] rounded-xl border border-[#e1e3e5] dark:border-[#2e2e2e] shadow-sm p-4">
-          <div className="text-sm text-[#6d7175] dark:text-[#8c9196]">Failed</div>
-          <div className="text-2xl font-bold text-[#dc2626] dark:text-[#f87171]">
-            {invoices.filter(inv => inv.status === 'FAILED').length}
-          </div>
-        </div>
-      </div>
-
-      {/* Invoice Table */}
-      <div className="bg-white dark:bg-[#1a1a1a] rounded-2xl border border-[#e1e3e5] dark:border-[#2e2e2e] shadow-sm">
-        <InvoiceTable
+        {/* Invoice Table */}
+        <div className="rounded-2xl flex-1 min-h-0">
+          <InvoiceTable
           invoices={filteredInvoices}
           selectedInvoices={selectedInvoices}
           onSelectionChange={setSelectedInvoices}
@@ -762,7 +658,24 @@ export default function InvoiceHistoryPage() {
           onDelete={handleDeleteInvoice}
           validatingInvoiceId={validatingInvoiceId}
           postingInvoiceId={postingInvoiceId}
+          invoiceNumberFilter={invoiceNumberFilter}
+          onInvoiceNumberFilterChange={setInvoiceNumberFilter}
+          dateFromFilter={dateFromFilter}
+          onDateFromFilterChange={setDateFromFilter}
+          dateToFilter={dateToFilter}
+          onDateToFilterChange={setDateToFilter}
+          buyerNameFilter={buyerNameFilter}
+          onBuyerNameFilterChange={setBuyerNameFilter}
+          amountFilter={amountFilter}
+          onAmountFilterChange={setAmountFilter}
+          statusFilter={statusFilter}
+          onStatusFilterChange={setStatusFilter}
+          incomeTaxFilter={incomeTaxFilter}
+          onIncomeTaxFilterChange={setIncomeTaxFilter}
+          fbrRefFilter={fbrRefFilter}
+          onFbrRefFilterChange={setFbrRefFilter}
         />
+      </div>
       </div>
 
       {/* Validation/Posting Result Dialog */}

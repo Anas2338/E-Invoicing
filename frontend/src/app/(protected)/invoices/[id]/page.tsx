@@ -122,7 +122,7 @@ export default function InvoiceDetailsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          {invoice?.status === 'DRAFT' && (
+          {(invoice?.status === 'DRAFT' || invoice?.status === 'VALIDATED' || invoice?.status === 'FAILED' || invoice?.status === 'TRANSFERRED') && (
             <Button
               variant="outline"
               onClick={() => router.push(`/invoices/${invoiceId}/edit`)}

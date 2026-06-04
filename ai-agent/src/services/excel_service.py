@@ -17,6 +17,31 @@ from src.utils.excel_validator import ExcelValidator
 logger = logging.getLogger(__name__)
 
 
+def _clean_ntn_cnic(value) -> str:
+    """Normalize NTN/CNIC value from Excel cell.
+
+    Returns empty string for blank cells and common placeholder values
+    that Excel/pandas produce (e.g., 0, 0.0, nan). Handles float-to-int
+    conversion for numeric cells (e.g., 1234567.0 → "1234567").
+    Otherwise returns the trimmed string representation.
+    """
+    if pd.isna(value):
+        return ""
+    # Handle numeric types: convert float to int if it's a whole number,
+    # then to string — avoids "1234567.0" from pandas float reading
+    if isinstance(value, float):
+        if value == int(value):
+            value = int(value)
+    s = str(value).strip()
+    # Treat common empty-like / placeholder values as genuinely empty
+    if s in ("", "0", "0.0", "nan", "None", "none", "null", "N/A", "n/a", "-", "NA", "na", "Nil", "nil"):
+        return ""
+    # Strip trailing ".0" that may come from numeric string conversion
+    if s.endswith(".0") and len(s) > 2:
+        s = s[:-2]
+    return s
+
+
 class ExcelService:
     """Service for Excel file operations."""
 
@@ -420,7 +445,7 @@ class ExcelService:
                     "seller_address": seller_info.get("seller_address", ""),
 
                     # Buyer information
-                    "buyer_ntn_cnic": str(row['buyer_ntn_cnic']).strip() if pd.notna(row['buyer_ntn_cnic']) else "",
+                    "buyer_ntn_cnic": _clean_ntn_cnic(row['buyer_ntn_cnic']),
                     "buyer_business_name": str(row['buyer_business_name']).strip() if pd.notna(row['buyer_business_name']) else "",
                     "buyer_province": str(row['buyer_province']).strip() if pd.notna(row['buyer_province']) else "",
                     "buyer_address": str(row['buyer_address']).strip() if pd.notna(row['buyer_address']) else "",
@@ -692,7 +717,7 @@ class ExcelService:
                     "seller_business_name": seller_info.get("seller_business_name", ""),
                     "seller_province": seller_info.get("seller_province", ""),
                     "seller_address": seller_info.get("seller_address", ""),
-                    "buyer_ntn_cnic": str(row['buyer_ntn_cnic']).strip() if pd.notna(row['buyer_ntn_cnic']) else "",
+                    "buyer_ntn_cnic": _clean_ntn_cnic(row['buyer_ntn_cnic']),
                     "buyer_business_name": str(row['buyer_business_name']).strip() if pd.notna(row['buyer_business_name']) else "",
                     "buyer_province": str(row['buyer_province']).strip() if pd.notna(row['buyer_province']) else "",
                     "buyer_address": str(row['buyer_address']).strip() if pd.notna(row['buyer_address']) else "",

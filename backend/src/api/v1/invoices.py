@@ -9,7 +9,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from src.database.session import get_db
-from src.services.invoice_service import InvoiceService
+from src.services.invoice_service import InvoiceService, get_user_environment_filter
 from src.services.fbr_service import fbr_service
 from src.services.auto_posting_service import AutoPostingService
 from src.services.pdf_service import PDFService
@@ -220,6 +220,10 @@ def get_unified_invoice_history(
     # Convert user_id string to UUID
     user_uuid = UUID(user_id)
 
+    # Determine environment filter based on user's available FBR tokens
+    user = db.get(User, user_uuid)
+    environment_filter = get_user_environment_filter(user) if user else None
+
     # Get unified invoice history
     invoices, total = service.get_unified_invoice_history(
         db=db,
@@ -229,7 +233,8 @@ def get_unified_invoice_history(
         date_from=date_from,
         date_to=date_to,
         page=page,
-        page_size=page_size
+        page_size=page_size,
+        environment=environment_filter
     )
 
     # Calculate total pages
@@ -261,6 +266,10 @@ def get_buyers_from_invoice_history(
     try:
         user_uuid = UUID(user_id)
 
+        # Determine environment filter based on user's available FBR tokens
+        user = db.get(User, user_uuid)
+        env_filter = get_user_environment_filter(user) if user else None
+
         # Get all invoices for this user with buyer information
         from sqlmodel import select
 
@@ -270,6 +279,10 @@ def get_buyers_from_invoice_history(
             Invoice.buyer_business_name.isnot(None),
             Invoice.buyer_business_name != ''
         )
+
+        # Apply environment filter
+        if env_filter:
+            statement = statement.where(Invoice.environment == env_filter)
 
         # Apply search filter if provided
         if search and search.strip():
@@ -480,11 +493,15 @@ def list_invoices(
     # Convert user_id string to UUID
     user_uuid = UUID(user_id)
 
+    # Determine environment filter based on user's available FBR tokens
+    user = db.get(User, user_uuid)
+    environment_override = get_user_environment_filter(user) if user else None
+
     # Get invoices with filters
-    invoices = service.get_invoices_by_user(db, user_uuid, filters)
+    invoices = service.get_invoices_by_user(db, user_uuid, filters, environment_override)
 
     # Get total count for pagination
-    total_count = service.get_invoice_count(db, user_uuid, filters)
+    total_count = service.get_invoice_count(db, user_uuid, filters, environment_override)
 
     # Calculate pagination info
     total_pages = (total_count + filters.size - 1) // filters.size

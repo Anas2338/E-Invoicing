@@ -1,17 +1,56 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { SummaryCard } from '@/components/dashboard/summary-card';
 import { RecentInvoices } from '@/components/dashboard/recent-invoices';
-import { UserProfileCard } from '@/components/dashboard/user-profile-card';
-import { QuickActionsPanel } from '@/components/dashboard/quick-actions-panel';
+import { SaleInvoiceForm } from '@/components/invoices/sale-invoice-form';
+import ManualExcelUploadForm from '@/components/invoices/ManualExcelUploadForm';
+import { ValidationResultDialog } from '@/components/invoices/validation-result-dialog';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/providers/auth-provider';
+import { invoiceService } from '@/lib/api/api-client';
+import { toast } from 'react-toastify';
+import { 
+  FileSpreadsheet, 
+  ArrowLeft, 
+  ShoppingCart, 
+  Package, 
+  Settings, 
+  FileText, 
+  Layers, 
+  FileCheck, 
+  Send, 
+  AlertTriangle,
+  ArrowRight
+} from 'lucide-react';
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [invoiceType, setInvoiceType] = useState<'sale' | 'purchase' | 'excel' | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [validatingInvoiceId, setValidatingInvoiceId] = useState<string | null>(null);
+
+  // Dialog state
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogData, setDialogData] = useState<{
+    success: boolean;
+    title: string;
+    message: string;
+    invoiceNumber?: string;
+    fbrNumber?: string;
+    errors?: any[];
+    invoiceId?: string;
+  }>({
+    success: false,
+    title: '',
+    message: '',
+  });
 
   const [invoiceStats, setInvoiceStats] = useState({
     draft: 0,
@@ -24,9 +63,14 @@ export default function DashboardPage() {
     id: string;
     number: string;
     date: string;
+    fbrInvoiceNumber?: string;
     amount: number;
     status: 'draft' | 'validated' | 'posted' | 'failed';
+    buyerName: string;
   }>>([]);
+
+  const [fbrNtn, setFbrNtn] = useState('');
+  const [fbrBusinessName, setFbrBusinessName] = useState('');
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -34,12 +78,8 @@ export default function DashboardPage() {
         setLoading(true);
         setError(null);
 
-        // PERFORMANCE: Single optimized API call instead of 6 separate calls
-        // Old: 6 queries × 4-5s each = 24-30s total
-        // New: 1 query = 4-5s total (6x faster)
         const data = await api.dashboard.getStats();
 
-        // Set stats from optimized response - manual invoices only
         setInvoiceStats({
           draft: data.manual_stats.draft || 0,
           validated: data.manual_stats.validated || 0,
@@ -47,7 +87,7 @@ export default function DashboardPage() {
           failed: data.manual_stats.failed || 0,
         });
 
-        setRecentInvoices(data.recent_invoices || []);
+        setRecentInvoices((data.recent_invoices || []).slice(0, 4));
       } catch (err) {
         if (err instanceof ApiError) {
           setError(err.message);
@@ -59,15 +99,105 @@ export default function DashboardPage() {
       }
     };
 
+    const fetchFbrCredentials = async () => {
+      try {
+        const fbrData = await api.auth.getFbrCredentials();
+        setFbrNtn(fbrData.fbr_seller_ntn || '');
+        setFbrBusinessName(fbrData.fbr_business_name || '');
+      } catch {
+        // Silently fail — credentials are non-critical for dashboard
+      }
+    };
+
     fetchDashboardData();
+    fetchFbrCredentials();
   }, []);
+
+  const handleSubmit = async (data: any) => {
+    setIsSubmitting(true);
+    try {
+      const response = await invoiceService.createInvoice(data);
+      if (response.success) {
+        toast.success('Invoice created successfully!');
+        router.push('/invoices/history');
+      }
+    } catch (error) {
+      console.error('Error creating invoice:', error);
+      toast.error('Failed to create invoice. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const refreshRecentInvoices = async () => {
+    try {
+      const data = await api.dashboard.getStats();
+      setRecentInvoices((data.recent_invoices || []).slice(0, 4));
+      setInvoiceStats({
+        draft: data.manual_stats.draft || 0,
+        validated: data.manual_stats.validated || 0,
+        posted: data.manual_stats.posted || 0,
+        failed: data.manual_stats.failed || 0,
+      });
+    } catch {
+      // Silently fail on background refresh
+    }
+  };
+
+  const handleViewInvoice = (id: string) => {
+    router.push(`/invoices/${id}` as any);
+  };
+
+  const handleValidateInvoice = async (id: string) => {
+    const invoice = recentInvoices.find(inv => inv.id === id);
+    if (!invoice) return;
+
+    if (!confirm(`Validate invoice ${invoice.number} with FBR?`)) return;
+
+    setValidatingInvoiceId(id);
+    try {
+      const response = await api.invoices.validate(id);
+
+      console.group(`FBR Validation — ${invoice.number}`);
+      console.log('FBR Request Payload:', JSON.stringify(response.fbr_request_payload, null, 2));
+      console.log('FBR Response:', JSON.stringify(response.validation_result, null, 2));
+      console.groupEnd();
+
+      setDialogData({
+        success: response.success,
+        title: 'Validation Successful',
+        message: response.message || (response.success ? 'Invoice validated successfully' : 'Validation failed'),
+        invoiceNumber: invoice.number,
+        errors: response.errors || [],
+        invoiceId: id,
+      });
+      setDialogOpen(true);
+
+      if (response.success) await refreshRecentInvoices();
+    } catch (err) {
+      setDialogData({
+        success: false,
+        title: 'Validation Error',
+        message: err instanceof ApiError ? err.message : 'Failed to validate invoice. Please try again.',
+        invoiceNumber: invoice.number,
+        errors: [],
+        invoiceId: id,
+      });
+      setDialogOpen(true);
+    } finally {
+      setValidatingInvoiceId(null);
+    }
+  };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#008060] dark:border-[#00a876] mx-auto"></div>
-          <p className="mt-4 text-[#6d7175] dark:text-[#8c9196]">Loading dashboard...</p>
+      <div className="flex items-center justify-center min-h-[70vh]">
+        <div className="text-center space-y-6">
+          <div className="relative w-16 h-16 sm:w-20 sm:h-20 mx-auto">
+            <div className="absolute inset-0 rounded-full border-4 border-emerald-500/20 animate-pulse" />
+            <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-emerald-600 dark:border-t-emerald-400 animate-spin" />
+          </div>
+          <p className="text-base sm:text-lg md:text-xl font-black text-neutral-600 dark:text-neutral-300 tracking-wide">Loading dashboard</p>
         </div>
       </div>
     );
@@ -75,21 +205,15 @@ export default function DashboardPage() {
 
   if (error) {
     return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold text-[#202223] dark:text-[#e3e3e3]">Dashboard</h1>
-          <p className="mt-2 text-[#6d7175] dark:text-[#8c9196]">Welcome back, {user?.name || 'User'}!</p>
-        </div>
-        <div className="bg-[#fef3f2] dark:bg-[#3d1e1e] border border-[#fecdca] dark:border-[#5c2b2b] rounded-xl p-4">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-[#d72c0d] dark:text-[#ff6f59]" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-              </svg>
+      <div className="w-full max-w-4xl mx-auto mt-10 px-4">
+        <div className="bg-red-50/50 dark:bg-red-950/20 border-2 border-red-200 dark:border-red-900/50 rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 backdrop-blur-sm shadow-2xl">
+          <div className="flex flex-col sm:flex-row gap-4 sm:gap-5 items-center sm:items-start text-center sm:text-left">
+            <div className="flex-shrink-0 p-3 sm:p-4 bg-red-100 dark:bg-red-900/40 rounded-xl sm:rounded-2xl h-12 w-12 sm:h-16 sm:w-16 flex items-center justify-center shadow-inner">
+              <AlertTriangle className="h-6 w-6 sm:h-8 sm:w-8 text-red-600 dark:text-red-400" />
             </div>
-            <div className="ml-3">
-              <h3 className="text-sm font-medium text-[#d72c0d] dark:text-[#ff6f59]">Error loading dashboard</h3>
-              <p className="mt-1 text-sm text-[#d72c0d] dark:text-[#ff6f59]">{error}</p>
+            <div className="space-y-1 sm:space-y-2">
+              <h3 className="text-xl sm:text-2xl md:text-3xl font-black text-neutral-900 dark:text-neutral-100 tracking-tight">System Gateway Error</h3>
+              <p className="text-sm sm:text-base md:text-lg font-semibold text-neutral-600 dark:text-neutral-400 leading-relaxed">{error}</p>
             </div>
           </div>
         </div>
@@ -97,131 +221,264 @@ export default function DashboardPage() {
     );
   }
 
-  return (
-    <div className="space-y-6">
-      {/* Header with Actions */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-[#202223] dark:text-[#e3e3e3]">Dashboard</h1>
-          <p className="mt-2 text-sm sm:text-base text-[#6d7175] dark:text-[#8c9196]">Welcome back, {user?.name || 'User'}! Here's what's happening with your invoices.</p>
-        </div>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <button
-            onClick={() => window.location.reload()}
-            className="inline-flex items-center justify-center h-10 px-4 py-2 border-2 border-[#c9cccf] dark:border-[#2e2e2e] rounded-xl shadow-sm text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] bg-white dark:bg-[#1a1a1a] hover:bg-[#f6f6f7] dark:hover:bg-[#2e2e2e] focus:outline-none focus:ring-2 focus:ring-[#008060] dark:focus:ring-[#00a876] transition-all duration-150"
-          >
-            <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            Refresh
-          </button>
-          <a
-            href="/invoices/create"
-            className="inline-flex items-center justify-center h-10 px-4 py-2 border border-transparent rounded-xl shadow-sm text-sm font-semibold text-white bg-[#008060] hover:bg-[#006e52] dark:bg-[#00a876] dark:hover:bg-[#008f64] focus:outline-none focus:ring-2 focus:ring-[#008060] dark:focus:ring-[#00a876] transition-all duration-150 hover:shadow-md"
-          >
-            <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Create Invoice
-          </a>
-        </div>
-      </div>
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        <SummaryCard
-          title="Draft"
-          count={invoiceStats.draft}
-          icon="📝"
-          color="bg-blue-500"
-        />
-        <SummaryCard
-          title="Validated"
-          count={invoiceStats.validated}
-          icon="✅"
-          color="bg-green-500"
-        />
-        <SummaryCard
-          title="Posted"
-          count={invoiceStats.posted}
-          icon="📤"
-          color="bg-purple-500"
-        />
-        <SummaryCard
-          title="Failed"
-          count={invoiceStats.failed}
-          icon="❌"
-          color="bg-red-500"
+  if (invoiceType === 'sale') {
+    return (
+      <div className="space-y-6 w-full max-w-[1600px] mx-auto px-4 md:px-6 py-4">
+        <Button
+          variant="ghost"
+          size="lg"
+          onClick={() => setInvoiceType(null)}
+          className="flex items-center gap-3 text-lg font-black text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors px-0 hover:bg-transparent"
+        >
+          <ArrowLeft className="h-6 w-6 stroke-[3]" />
+          Back to Dashboard
+        </Button>
+        <SaleInvoiceForm
+          onSubmit={handleSubmit}
+          onCancel={() => setInvoiceType(null)}
+          isLoading={isSubmitting}
         />
       </div>
+    );
+  }
 
-      {/* Total Summary */}
-      <div className="bg-gradient-to-r from-[#008060] to-[#00a876] dark:from-[#006e52] dark:to-[#008f64] rounded-2xl shadow-lg p-4 sm:p-6 text-white">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="text-center sm:text-left">
-            <p className="text-sm font-semibold text-white/80">Total Manual Invoices</p>
-            <p className="text-2xl sm:text-3xl font-bold mt-2">
-              {invoiceStats.draft + invoiceStats.validated + invoiceStats.posted + invoiceStats.failed}
-            </p>
-          </div>
-          <div className="text-center sm:text-right">
-            <p className="text-sm font-semibold text-white/80">Success Rate</p>
-            <p className="text-2xl sm:text-3xl font-bold mt-2">
-              {(() => {
-                const total = invoiceStats.draft + invoiceStats.validated + invoiceStats.posted + invoiceStats.failed;
-                const successful = invoiceStats.validated + invoiceStats.posted;
-                return total > 0 ? Math.round((successful / total) * 100) : 0;
-              })()}%
-            </p>
-          </div>
-        </div>
+  if (invoiceType === 'excel') {
+    return (
+      <div className="space-y-6 w-full max-w-[1600px] mx-auto px-4 md:px-6 py-4">
+        <Button
+          variant="ghost"
+          size="lg"
+          onClick={() => setInvoiceType(null)}
+          className="flex items-center gap-3 text-lg font-black text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors px-0 hover:bg-transparent"
+        >
+          <ArrowLeft className="h-6 w-6 stroke-[3]" />
+          Back to Dashboard
+        </Button>
+        <ManualExcelUploadForm />
       </div>
+    );
+  }
 
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column - Recent Invoices (2/3 width) */}
-        <div className="lg:col-span-2 space-y-6">
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-[#202223] dark:text-[#e3e3e3]">Recent Invoices</h2>
-              <a
-                href="/invoices/history"
-                className="text-sm font-semibold text-[#008060] dark:text-[#00a876] hover:text-[#006e52] dark:hover:text-[#008f64] transition-colors duration-150"
-              >
-                View all →
-              </a>
+  if (invoiceType === 'purchase') {
+    return (
+      <div className="space-y-6 w-full max-w-[1600px] mx-auto px-4 md:px-6 py-4">
+        <Button
+          variant="ghost"
+          size="lg"
+          onClick={() => setInvoiceType(null)}
+          className="flex items-center gap-3 text-lg font-black text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors px-0 hover:bg-transparent"
+        >
+          <ArrowLeft className="h-6 w-6 stroke-[3]" />
+          Back to Dashboard
+        </Button>
+        <Card className="border-2 border-neutral-200 dark:border-neutral-800 bg-white/50 dark:bg-neutral-900/50 backdrop-blur-md rounded-3xl shadow-2xl">
+          <CardContent className="flex flex-col items-center justify-center py-32 text-center px-6">
+            <div className="h-24 w-24 rounded-3xl bg-orange-500/10 dark:bg-orange-500/20 flex items-center justify-center mb-8 ring-8 ring-orange-500/5 shadow-lg">
+              <ShoppingCart className="h-12 w-12 text-orange-600 dark:text-orange-400" />
             </div>
-            {recentInvoices.length > 0 ? (
-              <RecentInvoices invoices={recentInvoices} />
-            ) : (
-              <div className="bg-white dark:bg-[#1a1a1a] rounded-2xl border border-[#e1e3e5] dark:border-[#2e2e2e] shadow-sm p-12 text-center">
-                <svg className="mx-auto h-12 w-12 text-[#8c9196] dark:text-[#6d7175]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <h3 className="mt-2 text-sm font-semibold text-[#202223] dark:text-[#e3e3e3]">No invoices</h3>
-                <p className="mt-1 text-sm text-[#6d7175] dark:text-[#8c9196]">Get started by creating your first invoice.</p>
-                <div className="mt-6">
-                  <a
-                    href="/invoices/create"
-                    className="inline-flex items-center h-10 px-4 py-2 border border-transparent shadow-sm text-sm font-semibold rounded-xl text-white bg-[#008060] hover:bg-[#006e52] dark:bg-[#00a876] dark:hover:bg-[#008f64] focus:outline-none focus:ring-2 focus:ring-[#008060] dark:focus:ring-[#00a876] transition-all duration-150 hover:shadow-md"
-                  >
-                    <svg className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    Create Invoice
-                  </a>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+            <h2 className="text-3xl md:text-4xl font-black text-neutral-900 dark:text-neutral-100 tracking-tight">Purchase Logs Incoming</h2>
+            <p className="text-lg md:text-xl font-medium text-neutral-500 dark:text-neutral-400 max-w-xl mt-4 leading-relaxed">
+              The Procurement & Purchase portal is under deep integration parameters. Rest assured, you can continuously manage Sale entries without systemic friction.
+            </p>
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={() => setInvoiceType(null)}
+              className="mt-10 rounded-2xl border-2 border-neutral-300 dark:border-neutral-700 font-black px-10 py-7 text-lg shadow-xl hover:bg-neutral-50 dark:hover:bg-neutral-800 transition-all transform hover:-translate-y-0.5"
+            >
+              Return safely
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
-        {/* Right Column - User Profile & Quick Actions (1/3 width) */}
-        <div className="space-y-6">
-          <UserProfileCard user={user} />
-          <QuickActionsPanel />
+  return (
+    <div className="h-full flex flex-col space-y-2 sm:space-y-3 lg:space-y-4 pt-1 pb-2 px-3 sm:px-4 md:px-6 lg:px-8 w-full max-w-[1600px] mx-auto overflow-auto lg:overflow-hidden">
+
+      {/* SECTION 1: Responsive Grid Setup for Actions & Gateways */}
+      <div className="flex-shrink-0">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+
+          {/* Sale Invoice */}
+          <div className="relative group h-28 sm:h-32 lg:h-36 p-[1.5px] rounded-2xl sm:rounded-3xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(37,99,235,0.5)]">
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-400 via-blue-500 to-indigo-600 opacity-80 group-hover:opacity-100 transition-opacity duration-300" />
+            <button
+              onClick={() => setInvoiceType('sale')}
+              className="relative h-full w-full flex flex-col items-center justify-center gap-1.5 sm:gap-2 lg:gap-3 rounded-[22px] bg-gradient-to-b from-blue-400 to-blue-500 text-white cursor-pointer px-4 border-2 border-white/90 shadow-lg"
+            >
+              <div className="h-9 w-9 sm:h-10 sm:w-10 lg:h-12 lg:w-12 rounded-xl lg:rounded-2xl bg-white/20 flex items-center justify-center transform group-hover:scale-110 transition-transform duration-300 border-2 border-white/30 shadow-lg">
+                <FileText className="h-5 w-5 lg:h-6 lg:w-6 text-white stroke-[2.5]" />
+              </div>
+              <span className="text-xs sm:text-sm lg:text-base font-black tracking-wide text-white drop-shadow-md">
+                Sale Invoice
+              </span>
+            </button>
+          </div>
+
+          {/* Purchase Invoice */}
+          <div className="relative group h-28 sm:h-32 lg:h-36 p-[1.5px] rounded-2xl sm:rounded-3xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(234,88,12,0.5)]">
+            <div className="absolute inset-0 bg-gradient-to-br from-orange-400 via-orange-500 to-red-600 opacity-80 group-hover:opacity-100 transition-opacity duration-300" />
+            <button
+              onClick={() => setInvoiceType('purchase')}
+              className="relative h-full w-full flex flex-col items-center justify-center gap-1.5 sm:gap-2 lg:gap-3 rounded-[22px] bg-gradient-to-b from-orange-400 to-orange-500 text-white cursor-pointer px-4 border-2 border-white/90 shadow-lg"
+            >
+              <div className="h-9 w-9 sm:h-10 sm:w-10 lg:h-12 lg:w-12 rounded-xl lg:rounded-2xl bg-white/20 flex items-center justify-center transform group-hover:scale-110 transition-transform duration-300 border-2 border-white/30 shadow-lg">
+                <ShoppingCart className="h-5 w-5 lg:h-6 lg:w-6 text-white stroke-[2.5]" />
+              </div>
+              <span className="text-xs sm:text-sm lg:text-base font-black tracking-wide text-white drop-shadow-md">Purchase Invoice</span>
+            </button>
+          </div>
+
+          {/* Upload via Excel */}
+          <div className="relative group h-28 sm:h-32 lg:h-36 p-[1.5px] rounded-2xl sm:rounded-3xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(22,163,74,0.5)]">
+            <div className="absolute inset-0 bg-gradient-to-br from-emerald-400 via-green-500 to-teal-600 opacity-80 group-hover:opacity-100 transition-opacity duration-300" />
+            <button
+              onClick={() => setInvoiceType('excel')}
+              className="relative h-full w-full flex flex-col items-center justify-center gap-1.5 sm:gap-2 lg:gap-3 rounded-[22px] bg-gradient-to-b from-emerald-400 to-emerald-500 text-white cursor-pointer px-4 border-2 border-white/90 shadow-lg"
+            >
+              <div className="h-9 w-9 sm:h-10 sm:w-10 lg:h-12 lg:w-12 rounded-xl lg:rounded-2xl bg-white/20 flex items-center justify-center transform group-hover:scale-110 transition-transform duration-300 border-2 border-white/30 shadow-lg">
+                <FileSpreadsheet className="h-5 w-5 lg:h-6 lg:w-6 text-white stroke-[2.5]" />
+              </div>
+              <span className="text-xs sm:text-sm lg:text-base font-black tracking-wide text-white drop-shadow-md">Excel Upload</span>
+            </button>
+          </div>
+
+          {/* Products */}
+          <div className="relative group h-28 sm:h-32 lg:h-36 p-[1.5px] rounded-2xl sm:rounded-3xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(124,58,237,0.5)]">
+            <div className="absolute inset-0 bg-gradient-to-br from-violet-400 via-purple-500 to-fuchsia-600 opacity-80 group-hover:opacity-100 transition-opacity duration-300" />
+            <button
+              onClick={() => router.push('/products')}
+              className="relative h-full w-full flex flex-col items-center justify-center gap-1.5 sm:gap-2 lg:gap-3 rounded-[22px] bg-gradient-to-b from-purple-400 to-indigo-500 text-white cursor-pointer px-4"
+            >
+              <div className="h-9 w-9 sm:h-10 sm:w-10 lg:h-12 lg:w-12 rounded-xl lg:rounded-2xl bg-white/20 flex items-center justify-center transform group-hover:scale-110 transition-transform duration-300 border-2 border-white/30 shadow-lg">
+                <Package className="h-5 w-5 lg:h-6 lg:w-6 text-white stroke-[2.5]" />
+              </div>
+              <span className="text-xs sm:text-sm lg:text-base font-black tracking-wide text-white drop-shadow-md">Items</span>
+            </button>
+          </div>
+
+          {/* Credentials & Dynamic Account Settings Card */}
+          <div className="relative group sm:col-span-2 md:col-span-2 lg:col-span-4 xl:col-span-2 h-28 sm:h-32 lg:h-36 p-[1.5px] rounded-2xl sm:rounded-3xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_35px_rgba(0,128,96,0.35)]">
+            <div className="absolute inset-0 bg-gradient-to-r from-[#008060] via-[#00a876] to-[#3f51b5] opacity-50 group-hover:opacity-100 transition-opacity duration-300" />
+            <div className="relative h-full w-full flex flex-col rounded-[22px] bg-[#008060] dark:bg-[#161616]/95 backdrop-blur-md transition-colors">
+              <div className="flex-1 flex flex-col items-center justify-center gap-1 px-5 z-10 text-center">
+                {fbrBusinessName ? (
+                  <span className="text-base font-black tracking-wide text-white dark:text-neutral-50 truncate max-w-full drop-shadow-sm">
+                    {fbrBusinessName.toUpperCase()}
+                  </span>
+                ) : (
+                  <span className="text-base font-bold italic text-neutral-400 dark:text-neutral-500">No active gateway name</span>
+                )}
+                {fbrNtn && (
+                  <span className="text-xs lg:text-sm font-mono font-black text-[#FFFFFF] dark:text-[#00a876] bg-[#008060]/10 dark:bg-[#00a876]/10 border-2 border-[#008060]/20 dark:border-[#00a876]/20 px-2 sm:px-3 py-0.5 rounded-full shadow-inner tracking-wider">
+                    NTN: {fbrNtn}
+                  </span>
+                )}
+              </div>
+              <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-neutral-200 dark:via-neutral-800 to-transparent" />
+              
+              {/* Dynamic Action Trigger Zone */}
+              <div className="h-10 sm:h-12 lg:h-14 flex overflow-hidden rounded-b-[22px]">
+                <button
+                  onClick={() => router.push('/settings')}
+                  className="flex items-center justify-center gap-1.5 sm:gap-2 lg:gap-3 flex-1 bg-gradient-to-b from-neutral-50/50 to-neutral-100/80 dark:from-neutral-900/40 dark:to-neutral-900/90 border-t border-neutral-100 dark:border-neutral-800/50 transition-all duration-300 cursor-pointer px-3 sm:px-4 group/btn"
+                >
+                  <div className="relative h-6 w-6 lg:h-7 lg:w-7 rounded-lg lg:rounded-xl bg-gradient-to-br from-[#008060] to-[#00a876] flex items-center justify-center transform transition-all duration-500 shadow-md shadow-emerald-600/20">
+                    <div className="absolute inset-0 rounded-lg lg:rounded-xl bg-emerald-400/40 animate-pulse opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300 scale-125" />
+                    <Settings className="h-3.5 w-3.5 lg:h-4 lg:w-4 text-white relative z-10" />
+                  </div>
+                  <span className="text-xs lg:text-sm font-black tracking-tight text-neutral-800 dark:text-neutral-200 transition-colors duration-200">
+                    Account Settings
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
+
+      {/* SECTION 2: Metric Performance Overview */}
+      <div className="flex-shrink-0">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+          <SummaryCard
+            title="Draft"
+            count={invoiceStats.draft}
+            icon={<Layers className="h-4 w-4 sm:h-5 sm:w-5 text-white" />}
+            color="bg-blue-600 dark:bg-blue-500 shadow-xl shadow-blue-500/30"
+            bg="bg-white dark:bg-[#1a1a1a] border-2 border-blue-400 dark:border-neutral-800/80 rounded-3xl shadow-lg p-4 text-xl"
+            className="text-xl font-black"
+          />
+          <SummaryCard
+            title="Validated"
+            count={invoiceStats.validated}
+            icon={<FileCheck className="h-4 w-4 sm:h-5 sm:w-5 text-white" />}
+            color="bg-emerald-600 dark:bg-emerald-500 shadow-xl shadow-emerald-500/30"
+            bg="bg-white dark:bg-[#1a1a1a] border-2 border-green-400 dark:border-neutral-800/80 rounded-3xl shadow-lg p-4 text-xl"
+            className="text-xl font-black"
+          />
+          <SummaryCard
+            title="Posted"
+            count={invoiceStats.posted}
+            icon={<Send className="h-4 w-4 sm:h-5 sm:w-5 text-white" />}
+            color="bg-purple-600 dark:bg-purple-500 shadow-xl shadow-purple-500/30"
+            bg="bg-white dark:bg-[#1a1a1a] border-2 border-purple-400 dark:border-neutral-800/80 rounded-3xl shadow-lg p-4 text-xl"
+            className="text-xl font-black"
+          />
+          <SummaryCard
+            title="Failed"
+            count={invoiceStats.failed}
+            icon={<AlertTriangle className="h-4 w-4 sm:h-5 sm:w-5 text-white" />}
+            color="bg-rose-600 dark:bg-rose-500 shadow-xl shadow-rose-500/30"
+            bg="bg-white dark:bg-[#1a1a1a] border-2 border-red-400 dark:border-neutral-800/80 rounded-3xl shadow-lg p-4 text-xl"
+            className="text-xl font-black"
+          />
+        </div>
+      </div>
+
+      {/* SECTION 3: Main Ledger Stream Records Header & Lists */}
+      <div className="flex-1 flex flex-col min-h-0">
+
+        
+
+        <div className="flex-1 min-h-0 overflow-hidden">
+          {recentInvoices.length > 0 ? (
+            /* 🌟 Added light blue heading classes with explicit text colors for both theme layers */
+            <RecentInvoices
+              invoices={recentInvoices}
+              onView={handleViewInvoice}
+            />
+          ) : (
+            <div className="bg-white dark:bg-[#161616] rounded-2xl sm:rounded-3xl border-2 border-neutral-200 dark:border-neutral-800/80 shadow-xl py-8 sm:py-10 lg:py-12 text-center max-w-3xl mx-auto space-y-3 sm:space-y-4 px-4 sm:px-6">
+              <div className="mx-auto h-10 w-10 sm:h-12 sm:w-12 text-neutral-500 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-900 rounded-xl sm:rounded-2xl flex items-center justify-center border-2 border-neutral-200 dark:border-neutral-800 shadow-inner">
+                <FileText className="h-5 w-5 sm:h-6 sm:w-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base sm:text-lg md:text-xl font-black text-neutral-900 dark:text-neutral-100 tracking-tight">No Transactions Detected</h3>
+                <p className="text-xs sm:text-sm font-semibold text-neutral-500 dark:text-neutral-400 max-w-md mx-auto leading-relaxed">
+                  Your systemic queue is currently pristine. Trigger live manual invoices or file transfers above to spin up the pipeline.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Validation/Posting Result Dialog */}
+      <ValidationResultDialog
+        isOpen={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        success={dialogData.success}
+        title={dialogData.title}
+        message={dialogData.message}
+        invoiceNumber={dialogData.invoiceNumber}
+        fbrNumber={dialogData.fbrNumber}
+        errors={dialogData.errors}
+        invoiceId={dialogData.invoiceId}
+        onRetry={dialogData.invoiceId ? () => handleValidateInvoice(dialogData.invoiceId!) : undefined}
+      />
     </div>
   );
 }

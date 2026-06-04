@@ -15,6 +15,38 @@ from src.utils.helpers import calculate_hash
 logger = logging.getLogger(__name__)
 
 
+def _clean_ntn_cnic(value: str) -> str:
+    """Normalize NTN/CNIC value — strips .0 suffix from float string artifacts."""
+    if not value:
+        return value
+    s = str(value).strip()
+    if s.endswith(".0") and len(s) > 2 and s[:-2].isdigit():
+        s = s[:-2]
+    return s
+
+
+def get_user_environment_filter(user: User) -> Optional[str]:
+    """
+    Determine the FBR environment(s) a user can access based on their tokens.
+    Returns:
+        None if user has both sandbox and production tokens (show all invoices)
+        "SANDBOX" if user only has sandbox token
+        "PRODUCTION" if user only has production token
+        None if user has neither token (show all invoices — no token configured yet)
+    """
+    has_sandbox = bool(user.fbr_sandbox_token)
+    has_production = bool(user.fbr_production_token)
+
+    if has_sandbox and has_production:
+        return None
+    elif has_sandbox:
+        return "SANDBOX"
+    elif has_production:
+        return "PRODUCTION"
+    else:
+        return None
+
+
 class InvoiceService:
     """
     Service class for handling invoice-related business logic.
@@ -46,11 +78,11 @@ class InvoiceService:
             invoice_type=invoice_create.invoice_type,
             invoice_date=invoice_create.invoice_date,
             transaction_type_id=invoice_create.transaction_type_id,
-            seller_ntn_cnic=invoice_create.seller_ntn_cnic,
+            seller_ntn_cnic=_clean_ntn_cnic(invoice_create.seller_ntn_cnic),
             seller_business_name=invoice_create.seller_business_name,
             seller_province=invoice_create.seller_province,
             seller_address=invoice_create.seller_address,
-            buyer_ntn_cnic=invoice_create.buyer_ntn_cnic,
+            buyer_ntn_cnic=_clean_ntn_cnic(invoice_create.buyer_ntn_cnic),
             buyer_business_name=invoice_create.buyer_business_name,
             buyer_province=invoice_create.buyer_province,
             buyer_address=invoice_create.buyer_address,
@@ -128,7 +160,7 @@ class InvoiceService:
             "fbr_responses": fbr_responses
         }
 
-    def get_invoices_by_user(self, db: Session, user_id: UUID, filters: InvoiceFilter) -> List[Invoice]:
+    def get_invoices_by_user(self, db: Session, user_id: UUID, filters: InvoiceFilter, environment_override: Optional[str] = None) -> List[Invoice]:
         """
         Get all invoices for a specific user with optional filtering.
 
@@ -136,19 +168,25 @@ class InvoiceService:
             db: Database session
             user_id: ID of the user whose invoices to retrieve
             filters: Filtering parameters
+            environment_override: Hard environment filter based on user's accessible tokens.
+                Overrides filters.environment. Used to restrict sandbox-only or production-only users.
 
         Returns:
             List of Invoice objects matching the criteria
         """
         query = select(Invoice).where(Invoice.user_id == user_id).where(Invoice.is_deleted == False)
 
-        # Apply filters
+        # Apply environment override first (hard limit based on user tokens)
+        if environment_override:
+            query = query.where(Invoice.environment == environment_override)
+        elif filters.environment:
+            query = query.where(Invoice.environment == filters.environment)
+
+        # Apply other filters
         if filters.status:
             query = query.where(Invoice.status == filters.status)
         if filters.invoice_type:
             query = query.where(Invoice.invoice_type == filters.invoice_type)
-        if filters.environment:
-            query = query.where(Invoice.environment == filters.environment)
         if filters.source:
             query = query.where(Invoice.source == filters.source)
         if filters.date_from:
@@ -234,6 +272,9 @@ class InvoiceService:
         # Update fields directly from the dict
         for field, value in update_data.items():
             if hasattr(invoice, field):
+                # Clean NTN/CNIC values to strip .0 float artifacts
+                if field in ('seller_ntn_cnic', 'buyer_ntn_cnic') and isinstance(value, str):
+                    value = _clean_ntn_cnic(value)
                 setattr(invoice, field, value)
 
         # Update the updated_at timestamp
@@ -326,7 +367,7 @@ class InvoiceService:
 
         return True
 
-    def get_invoice_count(self, db: Session, user_id: UUID, filters: InvoiceFilter = None) -> int:
+    def get_invoice_count(self, db: Session, user_id: UUID, filters: InvoiceFilter = None, environment_override: Optional[str] = None) -> int:
         """
         Get the count of invoices for a user with optional filtering.
 
@@ -334,6 +375,7 @@ class InvoiceService:
             db: Database session
             user_id: ID of the user
             filters: Optional filters to apply
+            environment_override: Hard environment filter based on user's accessible tokens
 
         Returns:
             Count of invoices matching criteria
@@ -342,13 +384,18 @@ class InvoiceService:
 
         query = select(func.count(Invoice.id)).where(Invoice.user_id == user_id).where(Invoice.is_deleted == False)
 
+        # Apply environment override (hard limit based on user tokens — applies regardless of filters)
+        if environment_override:
+            query = query.where(Invoice.environment == environment_override)
+
         if filters:
+            # Apply user-requested environment filter only if no override
+            if not environment_override and filters.environment:
+                query = query.where(Invoice.environment == filters.environment)
             if filters.status:
                 query = query.where(Invoice.status == filters.status)
             if filters.invoice_type:
                 query = query.where(Invoice.invoice_type == filters.invoice_type)
-            if filters.environment:
-                query = query.where(Invoice.environment == filters.environment)
             if filters.date_from:
                 query = query.where(Invoice.created_at >= filters.date_from)
             if filters.date_to:
@@ -393,7 +440,8 @@ class InvoiceService:
         date_from: Optional[date] = None,
         date_to: Optional[date] = None,
         page: int = 1,
-        page_size: int = 20
+        page_size: int = 20,
+        environment: Optional[str] = None
     ) -> Tuple[List[Dict], int]:
         """
         Get unified list of manual and automated invoices from main database only.
@@ -438,6 +486,10 @@ class InvoiceService:
         if status:
             query = query.where(Invoice.status == status)
 
+        # Apply environment filter (auto-filter based on user's available tokens)
+        if environment:
+            query = query.where(Invoice.environment == environment)
+
         # Order by created_at descending (newest first)
         query = query.order_by(Invoice.created_at.desc())
 
@@ -456,6 +508,8 @@ class InvoiceService:
             count_query = count_query.where(Invoice.created_at <= datetime.combine(date_to, datetime.max.time()))
         if status:
             count_query = count_query.where(Invoice.status == status)
+        if environment:
+            count_query = count_query.where(Invoice.environment == environment)
 
         from sqlalchemy import func
         total = db.exec(select(func.count()).select_from(count_query.subquery())).one()
@@ -490,6 +544,7 @@ class InvoiceService:
                 "status": normalized_status,
                 "created_at": invoice.created_at,
                 "environment": invoice.environment if invoice.environment else None,
+                "fbr_reference_number": invoice.fbr_reference_number,
                 "income_tax": invoice.income_tax if invoice.income_tax else "236G",
                 "scheduled_date": None,
                 "scheduled_time": None

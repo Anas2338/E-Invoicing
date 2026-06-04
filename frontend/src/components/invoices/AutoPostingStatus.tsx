@@ -174,7 +174,7 @@ export default function AutoPostingStatus() {
       {/* Quick Link to Settings */}
       <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
         <a
-          href="/profile"
+          href="/settings"
           className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
         >
           Configure auto-posting settings →

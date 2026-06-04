@@ -7,6 +7,8 @@ import logging
 
 from src.database.session import get_db
 from src.models.invoice import Invoice, InvoiceStatus
+from src.models.user import User
+from src.services.invoice_service import get_user_environment_filter
 from src.api.middleware.auth_middleware import require_authentication
 from src.utils.rate_limits import RateLimits
 from slowapi import Limiter
@@ -36,15 +38,21 @@ def get_dashboard_stats(
     """
     user_uuid = UUID(user_id)
 
+    # Determine environment filter based on user's available FBR tokens
+    user = db.get(User, user_uuid)
+    env_filter = get_user_environment_filter(user) if user else None
+
     # Query 1: Get manual invoice counts by status (single query with GROUP BY)
-    manual_counts_query = (
-        select(
-            Invoice.status,
-            func.count(Invoice.id).label('count')
-        )
-        .where(Invoice.user_id == user_uuid)
-        .group_by(Invoice.status)
-    )
+    manual_counts_base = select(
+        Invoice.status,
+        func.count(Invoice.id).label('count')
+    ).where(Invoice.user_id == user_uuid)
+
+    # Apply environment filter
+    if env_filter:
+        manual_counts_base = manual_counts_base.where(Invoice.environment == env_filter)
+
+    manual_counts_query = manual_counts_base.group_by(Invoice.status)
     manual_counts_result = db.execute(manual_counts_query).all()
 
     # Convert to dict
@@ -59,10 +67,15 @@ def get_dashboard_stats(
         if status_lower in manual_stats:
             manual_stats[status_lower] = count
 
-    # Query 2: Get recent 10 manual invoices (lightweight - only needed fields)
+    # Query 2: Get recent 10 invoices (lightweight - only needed fields)
+    recent_invoices_base = select(Invoice).where(Invoice.user_id == user_uuid)
+
+    # Apply environment filter
+    if env_filter:
+        recent_invoices_base = recent_invoices_base.where(Invoice.environment == env_filter)
+
     recent_invoices_query = (
-        select(Invoice)
-        .where(Invoice.user_id == user_uuid)
+        recent_invoices_base
         .order_by(Invoice.created_at.desc())
         .limit(10)
     )
@@ -88,8 +101,10 @@ def get_dashboard_stats(
             'id': str(invoice.id),
             'number': invoice.external_id,
             'date': invoice_date_str,
+            'fbrInvoiceNumber': invoice.fbr_reference_number or '',
             'amount': total_amount,
-            'status': invoice.status.lower()
+            'status': invoice.status.lower(),
+            'buyerName': invoice.buyer_business_name or 'N/A'
         })
 
     return {

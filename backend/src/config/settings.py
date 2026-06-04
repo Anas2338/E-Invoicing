@@ -88,6 +88,9 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
     max_invoice_size: int = Field(default=1048576, validation_alias="MAX_INVOICE_SIZE")  # 1MB in bytes
 
+    # SSL enforcement for database connections — set to false for VPS/local databases without SSL
+    db_ssl_required: bool = Field(default=True, validation_alias="DB_SSL_REQUIRED")
+
     # Database logging - Set to true to log all SQL queries (useful for debugging)
     db_echo: bool = Field(default=False, validation_alias="DB_ECHO")
 

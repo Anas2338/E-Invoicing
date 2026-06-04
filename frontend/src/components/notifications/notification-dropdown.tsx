@@ -197,7 +197,7 @@ export function NotificationDropdown({ isOpen, onClose, onCountChange }: Notific
       ref={dropdownRef}
       onClick={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
-      className="fixed sm:absolute inset-x-2 sm:inset-x-auto sm:right-0 mt-2 sm:w-96 bg-white dark:bg-[#1a1a1a] rounded-lg shadow-2xl border border-gray-200 dark:border-gray-700 z-50 max-h-[80vh] sm:max-h-[600px] flex flex-col"
+      className="fixed right-4 top-16 w-[calc(100vw-2rem)] sm:w-96 bg-white dark:bg-[#1a1a1a] rounded-lg shadow-2xl border border-gray-200 dark:border-gray-700 z-[100] max-h-[70vh] sm:max-h-[500px] flex flex-col"
     >
       {/* Header */}
       <div className="p-3 sm:p-4 border-b border-gray-200 dark:border-gray-700">

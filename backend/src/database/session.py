@@ -45,6 +45,10 @@ def validate_database_url_security(url: str) -> None:
             logger.info("Database connection uses local Unix socket — SSL not required")
             return
 
+        if not settings.db_ssl_required:
+            logger.info("Database SSL check skipped (DB_SSL_REQUIRED=false)")
+            return
+
         if 'sslmode=' not in url_lower:
             raise ValueError(
                 "SECURITY ERROR: Database connection must use SSL/TLS encryption. "

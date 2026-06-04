@@ -1,60 +1,164 @@
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Eye, Calendar, User, Hash } from 'lucide-react';
 
 interface Invoice {
   id: string;
   number: string;
   date: string;
+  fbrInvoiceNumber?: string;
   amount: number;
   status: 'draft' | 'validated' | 'posted' | 'failed';
+  buyerName?: string;
 }
 
 interface RecentInvoicesProps {
   invoices: Invoice[];
+  onView?: (id: string) => void;
 }
 
-export function RecentInvoices({ invoices }: RecentInvoicesProps) {
+export function RecentInvoices({
+  invoices,
+  onView,
+}: RecentInvoicesProps) {
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'draft': return 'bg-[#fef3c7] text-[#92400e] dark:bg-[#451a03]/30 dark:text-[#fbbf24]';
-      case 'validated': return 'bg-[#dbeafe] text-[#1e40af] dark:bg-[#1e3a8a]/30 dark:text-[#60a5fa]';
-      case 'posted': return 'bg-[#d1fae5] text-[#065f46] dark:bg-[#064e3b]/30 dark:text-[#34d399]';
-      case 'failed': return 'bg-[#fee2e2] text-[#991b1b] dark:bg-[#7f1d1d]/30 dark:text-[#f87171]';
-      default: return 'bg-[#f6f6f7] text-[#6d7175] dark:bg-[#2e2e2e] dark:text-[#8c9196]';
+      case 'draft': return 'px-2.5 py-0.5 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-blue-400 via-blue-500 to-blue-600 border border-blue-400/40 shadow-[0_5px_12px_-3px_rgba(59,130,246,0.4),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)]';
+      case 'validated': return 'px-2.5 py-0.5 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-sky-400 via-sky-500 to-sky-600 border border-sky-400/40 shadow-[0_5px_12px_-3px_rgba(14,165,233,0.4),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)]';
+      case 'posted': return 'px-2.5 py-0.5 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-emerald-400 via-emerald-500 to-emerald-600 border border-emerald-400/40 shadow-[0_5px_12px_-3px_rgba(16,185,129,0.4),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)]';
+      case 'failed': return 'px-2.5 py-0.5 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-rose-400 via-rose-500 to-rose-600 border border-rose-400/40 shadow-[0_5px_12px_-3px_rgba(244,63,94,0.4),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)]';
+      default: return 'px-2.5 py-0.5 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-gray-400 to-gray-500';
     }
   };
 
   return (
-    <div className="overflow-hidden bg-white dark:bg-[#1a1a1a] border border-[#e1e3e5] dark:border-[#2e2e2e] shadow-sm rounded-2xl">
-      <ul className="divide-y divide-[#e1e3e5] dark:divide-[#2e2e2e]">
+    <div className="flex flex-col gap-2">
+
+      {/* ===== MOBILE / TABLET CARD VIEW (< lg) ===== */}
+      <div className="lg:hidden flex flex-col gap-2">
         {invoices.map((invoice) => (
-          <li key={invoice.id}>
-            <div className="block hover:bg-[#f6f6f7] dark:hover:bg-[#2e2e2e] transition-colors duration-150">
-              <div className="flex items-center px-4 py-4 sm:px-6">
-                <div className="min-w-0 flex-1 flex items-center">
-                  <div className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] truncate">
-                    {invoice.number}
-                  </div>
-                  <div className="ml-2 flex-shrink-0 flex">
-                    <Badge className={`${getStatusColor(invoice.status)} capitalize`}>
-                      {invoice.status}
-                    </Badge>
-                  </div>
+          <div
+            key={invoice.id}
+            className="bg-[#cfd4e7] dark:bg-neutral-900 rounded-2xl p-3 sm:p-4 shadow-sm border border-slate-200/60 dark:border-neutral-800 space-y-2.5"
+          >
+            {/* Top row: Invoice number + Status */}
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="text-sm sm:text-base font-bold text-slate-800 dark:text-neutral-200 tracking-tight">
+                  {invoice.number}
                 </div>
-                <div className="hidden md:block">
-                  <div className="text-sm text-[#202223] dark:text-[#e3e3e3]">
-                    {new Date(invoice.date).toLocaleDateString('en-US', { timeZone: 'Asia/Karachi' })}
+                {invoice.fbrInvoiceNumber && (
+                  <div className="text-xs font-medium text-slate-500 dark:text-neutral-400 mt-0.5">
+                    FBR: {invoice.fbrInvoiceNumber}
                   </div>
-                </div>
-                <div className="hidden md:block">
-                  <div className="text-sm text-[#6d7175] dark:text-[#8c9196]">
-                    PKR {invoice.amount.toLocaleString()}
-                  </div>
-                </div>
+                )}
+              </div>
+              <Badge className={`${getStatusColor(invoice.status)}`}>
+                {invoice.status}
+              </Badge>
+            </div>
+
+            {/* Details row */}
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs sm:text-sm">
+              <div className="flex items-center gap-1.5 text-slate-500 dark:text-neutral-400">
+                <Calendar className="h-3 w-3 sm:h-3.5 sm:w-3.5 flex-shrink-0" />
+                <span className="font-medium text-slate-700 dark:text-neutral-300">
+                  {new Date(invoice.date).toLocaleDateString('en-US', { timeZone: 'Asia/Karachi' })}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 text-slate-500 dark:text-neutral-400">
+                <User className="h-3 w-3 sm:h-3.5 sm:w-3.5 flex-shrink-0" />
+                <span className="font-medium text-slate-700 dark:text-neutral-300 truncate">
+                  {invoice.buyerName || 'N/A'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 text-slate-500 dark:text-neutral-400">
+                <Hash className="h-3 w-3 sm:h-3.5 sm:w-3.5 flex-shrink-0" />
+                <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                  {invoice.amount.toLocaleString()}
+                </span>
               </div>
             </div>
-          </li>
+
+            {/* Action row */}
+            {onView && (
+              <div className="flex justify-end pt-1 border-t border-slate-200/60 dark:border-neutral-700/50">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onView(invoice.id)}
+                  className="h-8 rounded-xl text-xs font-semibold gap-1.5"
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                  View
+                </Button>
+              </div>
+            )}
+          </div>
         ))}
-      </ul>
+      </div>
+
+      {/* ===== DESKTOP TABLE VIEW (≥ lg) ===== */}
+      <div className="hidden lg:flex lg:flex-col gap-2">
+        <div className='rounded-4xl bg-[#7c97f0] py-1'>
+          <table className='w-full'>
+            <thead>
+              <tr>
+                <th className="pl-2 py-0.5 text-left text-xs font-bold text-black uppercase w-[140px]">Invoice Number</th>
+                <th className="py-0.5 text-centre text-xs font-bold text-black uppercase tracking-wider w-[172px]">FBR Ref Number</th>
+                <th className="px-2 py-2 text-left text-xs font-bold text-black uppercase tracking-wider w-[113px]">Date</th>
+                <th className="px-2 py-2 text-centre text-xs font-bold text-black uppercase tracking-wider w-[400px]">Buyer Name</th>
+                <th className="px-2 py-2 text-centre text-xs font-bold text-black uppercase tracking-wider w-[125px]">Amount</th>
+                <th className="py-2 text-centre text-xs font-bold text-black uppercase tracking-widerw-[120px]">Status</th>
+                <th className="px-2 py-2 text-centre text-xs font-bold text-black uppercase tracking-wider w-[85px]">Actions</th>
+              </tr>
+            </thead>
+          </table>
+        </div>
+
+        <div className='rounded-4xl bg-[#cfd4e7]'>
+          <table className="w-full">
+            <tbody className="divide-y divide-slate-100">
+              {invoices.map((invoice) => (
+                <tr key={invoice.id} className="hover:bg-slate-50/60 transition-colors duration-150">
+                  <td className="pl-2 py-0.5">
+                    <div className="text-sm font-medium text-slate-700 truncate">{invoice.number}</div>
+                  </td>
+                  <td className="px-0.5 py-0.5 w-[150px]">
+                    <div className="text-sm font-medium text-slate-700 truncate">{invoice.fbrInvoiceNumber || '—'}</div>
+                  </td>
+                  <td className="px-2 py-0.5">
+                    <div className="text-sm font-medium text-slate-700 truncate">
+                      {new Date(invoice.date).toLocaleDateString('en-US', { timeZone: 'Asia/Karachi' })}
+                    </div>
+                  </td>
+                  <td className="px-2 py-0.5 w-[400px]">
+                    <div className="text-sm font-medium text-slate-700">{invoice.buyerName || 'N/A'}</div>
+                  </td>
+                  <td className="px-2 py-0.5">
+                    <div className="text-sm font-medium text-slate-700 text-right">
+                      {invoice.amount.toLocaleString()}
+                    </div>
+                  </td>
+                  <td className="px-2 py-0.5 text-center">
+                    <Badge className={`${getStatusColor(invoice.status)}`}>
+                      {invoice.status}
+                    </Badge>
+                  </td>
+                  <td className="px-2 py-0.5 text-center">
+                    {onView && (
+                      <Button variant="outline" size="icon" onClick={() => onView(invoice.id)} className="h-8 w-8" title="View">
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
     </div>
   );
 }

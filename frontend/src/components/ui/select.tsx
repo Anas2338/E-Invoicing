@@ -12,6 +12,7 @@ interface SelectTriggerProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 
 interface SelectContentProps {
   children: React.ReactNode;
+  className?: string;
 }
 
 interface SelectItemProps extends React.LiHTMLAttributes<HTMLLIElement> {
@@ -101,7 +102,7 @@ export function SelectTrigger({ className, children, ...props }: SelectTriggerPr
   );
 }
 
-export function SelectContent({ children }: SelectContentProps) {
+export function SelectContent({ children, className }: SelectContentProps) {
   const context = React.useContext(SelectContext);
 
   if (!context?.open) {
@@ -109,7 +110,7 @@ export function SelectContent({ children }: SelectContentProps) {
   }
 
   return (
-    <div className="absolute z-50 min-w-[8rem] overflow-hidden rounded-xl border-2 border-[#e1e3e5] bg-white text-[#202223] shadow-lg animate-in fade-in-0 zoom-in-95 mt-1 w-full max-h-60 overflow-y-auto dark:bg-[#1a1a1a] dark:border-[#2e2e2e] dark:text-[#e3e3e3]">
+    <div className={`absolute z-50 min-w-[8rem] overflow-hidden rounded-xl border-2 border-[#e1e3e5] bg-white text-[#202223] shadow-lg animate-in fade-in-0 zoom-in-95 mt-1 w-full max-h-60 overflow-y-auto dark:bg-[#1a1a1a] dark:border-[#2e2e2e] dark:text-[#e3e3e3] ${className || ''}`}>
       <ul className="p-1">
         {children}
       </ul>

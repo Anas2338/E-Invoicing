@@ -1,7 +1,11 @@
+'use client';
+
+import { useState, useRef, useEffect } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Eye, Edit, CheckCircle, Send, Trash2, Loader2, RefreshCw } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Eye, CheckCircle, Send, Trash2, Loader2, RefreshCw, Calendar } from 'lucide-react';
 import { PrintInvoiceButton } from '@/components/invoices/PrintInvoiceButton';
 
 interface Invoice {
@@ -13,6 +17,8 @@ interface Invoice {
   totalAmount: number;
   status: string;
   environment: string;
+  fbrReferenceNumber?: string;
+  incomeTax?: string;
   invoiceType: string;
   createdAt: string;
   scheduledDate?: string;
@@ -30,7 +36,37 @@ interface InvoiceTableProps {
   onDelete?: (id: string) => void;
   validatingInvoiceId?: string | null;
   postingInvoiceId?: string | null;
+  invoiceNumberFilter?: string;
+  onInvoiceNumberFilterChange?: (value: string) => void;
+  dateFromFilter?: string;
+  onDateFromFilterChange?: (value: string) => void;
+  dateToFilter?: string;
+  onDateToFilterChange?: (value: string) => void;
+  buyerNameFilter?: string;
+  onBuyerNameFilterChange?: (value: string) => void;
+  amountFilter?: string;
+  onAmountFilterChange?: (value: string) => void;
+  statusFilter?: string;
+  onStatusFilterChange?: (value: string) => void;
+  incomeTaxFilter?: string;
+  onIncomeTaxFilterChange?: (value: string) => void;
+  fbrRefFilter?: string;
+  onFbrRefFilterChange?: (value: string) => void;
 }
+
+const statusOptions = [
+  { value: 'all', label: 'All' },
+  { value: 'DRAFT', label: 'Draft' },
+  { value: 'VALIDATED', label: 'Validated' },
+  { value: 'POSTED', label: 'Posted' },
+  { value: 'FAILED', label: 'Failed' },
+];
+
+const incomeTaxOptions = [
+  { value: 'all', label: 'All' },
+  { value: '236G', label: '236G' },
+  { value: '236H', label: '236H' },
+];
 
 export function InvoiceTable({
   invoices,
@@ -42,33 +78,63 @@ export function InvoiceTable({
   onPost,
   onDelete,
   validatingInvoiceId = null,
-  postingInvoiceId = null
+  postingInvoiceId = null,
+  invoiceNumberFilter = '',
+  onInvoiceNumberFilterChange = () => {},
+  dateFromFilter = '',
+  onDateFromFilterChange = () => {},
+  dateToFilter = '',
+  onDateToFilterChange = () => {},
+  buyerNameFilter = '',
+  onBuyerNameFilterChange = () => {},
+  amountFilter = '',
+  onAmountFilterChange = () => {},
+  statusFilter = 'all',
+  onStatusFilterChange = () => {},
+  incomeTaxFilter = 'all',
+  onIncomeTaxFilterChange = () => {},
+  fbrRefFilter = '',
+  onFbrRefFilterChange = () => {},
 }: InvoiceTableProps) {
-  const getStatusColor = (status: string) => {
-    switch (status.toUpperCase()) {
-      case 'DRAFT':
-      case 'PENDING':
-        return 'bg-[#fef3c7] text-[#92400e] border-[#fde68a] dark:bg-[#451a03]/30 dark:text-[#fbbf24] dark:border-[#451a03]';
-      case 'VALIDATED':
-      case 'TRANSFERRED':
-        return 'bg-[#dbeafe] text-[#1e40af] border-[#bfdbfe] dark:bg-[#1e3a8a]/30 dark:text-[#60a5fa] dark:border-[#1e3a8a]';
-      case 'POSTED':
-      case 'SUBMITTED':
-        return 'bg-[#d1fae5] text-[#065f46] border-[#a7f3d0] dark:bg-[#064e3b]/30 dark:text-[#34d399] dark:border-[#065f46]';
-      case 'FAILED':
-        return 'bg-[#fee2e2] text-[#991b1b] border-[#fecaca] dark:bg-[#7f1d1d]/30 dark:text-[#f87171] dark:border-[#7f1d1d]';
-      case 'EXPIRED':
-        return 'bg-[#f3f4f6] text-[#4b5563] border-[#d1d5db] dark:bg-[#374151]/30 dark:text-[#9ca3af] dark:border-[#4b5563]';
-      default:
-        return 'bg-[#f6f6f7] text-[#6d7175] border-[#e1e3e5] dark:bg-[#2e2e2e] dark:text-[#8c9196] dark:border-[#404040]';
-    }
-  };
+  const [datePopoverOpen, setDatePopoverOpen] = useState(false);
+  const datePopoverRef = useRef<HTMLDivElement>(null);
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
 
-  const getEnvironmentColor = (env: string) => {
-    return env === 'PRODUCTION'
-      ? 'bg-[#fee2e2] text-[#991b1b] border-[#fecaca] dark:bg-[#7f1d1d]/30 dark:text-[#f87171] dark:border-[#7f1d1d]'
-      : 'bg-[#dbeafe] text-[#1e40af] border-[#bfdbfe] dark:bg-[#1e3a8a]/30 dark:text-[#60a5fa] dark:border-[#1e3a8a]';
-  };
+  const activeFilterCount = [
+    invoiceNumberFilter, dateFromFilter, dateToFilter, buyerNameFilter, amountFilter, fbrRefFilter,
+  ].filter(v => v !== '').length + (statusFilter !== 'all' ? 1 : 0) + (incomeTaxFilter !== 'all' ? 1 : 0);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (datePopoverRef.current && !datePopoverRef.current.contains(e.target as Node)) {
+        setDatePopoverOpen(false);
+      }
+    };
+    if (datePopoverOpen) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [datePopoverOpen]);
+
+  const hasDateFilter = dateFromFilter || dateToFilter;
+
+  const getStatusColor = (status: string) => {
+  switch (status.toUpperCase()) {
+    case 'DRAFT':
+    case 'PENDING':
+      return 'px-5 py-2 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-blue-400 via-blue-500 to-blue-600 border border-blue-400/40 shadow-[0_5px_12px_-3px_rgba(59,130,246,0.4),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)] transition-all duration-200 hover:brightness-110 active:scale-[0.97] cursor-pointer select-none';
+    case 'VALIDATED':
+    case 'TRANSFERRED':
+      return 'px-5 py-2 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-sky-400 via-sky-500 to-sky-600 border border-sky-400/40 shadow-[0_5px_12px_-3px_rgba(14,165,233,0.4),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)] transition-all duration-200 hover:brightness-110 active:scale-[0.97] cursor-pointer select-none';
+    case 'POSTED':
+    case 'SUBMITTED':
+      return 'px-5 py-2 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-emerald-400 via-emerald-500 to-emerald-600 border border-emerald-400/40 shadow-[0_5px_12px_-3px_rgba(16,185,129,0.4),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)] transition-all duration-200 hover:brightness-110 active:scale-[0.97] cursor-pointer select-none';
+    case 'FAILED':
+      return 'px-5 py-2 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-rose-400 via-rose-500 to-rose-600 border border-rose-400/40 shadow-[0_5px_12px_-3px_rgba(244,63,94,0.4),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)] transition-all duration-200 hover:brightness-110 active:scale-[0.97] cursor-pointer select-none';
+    case 'EXPIRED':
+      return 'px-5 py-2 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-slate-400 via-slate-500 to-slate-600 border border-slate-400/40 shadow-[0_5px_12px_-3px_rgba(100,116,139,0.3),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)] transition-all duration-200 hover:brightness-110 active:scale-[0.97] cursor-pointer select-none';
+    default:
+      return 'px-5 py-2 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-gray-400 to-gray-500';
+  }
+};
 
   const formatStatus = (status: string) => {
     return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
@@ -112,11 +178,14 @@ export function InvoiceTable({
     selectableInvoices.every(inv => selectedInvoices.has(inv.id));
   const someSelectableSelected = selectableInvoices.some(inv => selectedInvoices.has(inv.id));
 
+  // High-performance focused input styling with adjusted colors and clean borders
+  const filterInputClass = "w-full h-8 text-xs px-2.5 py-1 border border-blue-600 dark:border-neutral-800 rounded-lg bg-white dark:bg-neutral-900 text-slate-900 dark:text-neutral-100 placeholder:text-slate-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-150 shadow-sm";
+
   if (invoices.length === 0) {
     return (
-      <div className="text-center py-12">
+      <div className="text-center py-16 bg-white dark:bg-neutral-950 rounded-2xl border border-slate-100 dark:border-neutral-900 shadow-sm">
         <svg
-          className="mx-auto h-12 w-12 text-[#8c9196] dark:text-[#6d7175]"
+          className="mx-auto h-14 w-14 text-slate-300 dark:text-neutral-700 stroke-[1.5]"
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -124,13 +193,12 @@ export function InvoiceTable({
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
-            strokeWidth={2}
             d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
           />
         </svg>
-        <h3 className="mt-2 text-sm font-semibold text-[#202223] dark:text-[#e3e3e3]">No invoices found</h3>
-        <p className="mt-1 text-sm text-[#6d7175] dark:text-[#8c9196]">
-          Try adjusting your filters or create a new invoice.
+        <h3 className="mt-4 text-base font-semibold text-slate-900 dark:text-neutral-100 tracking-tight">No invoices found</h3>
+        <p className="mt-1 text-sm text-slate-500 dark:text-neutral-400 max-w-xs mx-auto">
+          Try adjusting your filters or create a new invoice to populate this space.
         </p>
       </div>
     );
@@ -138,8 +206,138 @@ export function InvoiceTable({
 
   return (
     <>
-      {/* Mobile Card View */}
-      <div className="block lg:hidden space-y-4">
+      {/* Mobile/Tablet Card View */}
+      <div className="block lg:hidden p-0.5 space-y-3">
+
+        {/* Mobile Filter Toggle & Panel */}
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowMobileFilters(!showMobileFilters)}
+            className={`w-full flex items-center justify-between gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all duration-200 ${
+              showMobileFilters
+                ? 'bg-blue-600 text-white shadow-lg'
+                : 'bg-white dark:bg-neutral-900 border-2 border-blue-600 text-blue-600 dark:text-blue-400'
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
+              Filters
+            </span>
+            {activeFilterCount > 0 && (
+              <span className="bg-red-500 text-white text-xs font-black px-2 py-0.5 rounded-full leading-none">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+
+          {showMobileFilters && (
+            <div className="mt-2 bg-white dark:bg-neutral-950 rounded-2xl border border-slate-200 dark:border-neutral-800 p-3 shadow-sm space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  placeholder="Invoice #..."
+                  value={invoiceNumberFilter}
+                  onChange={(e) => onInvoiceNumberFilterChange(e.target.value)}
+                  className={filterInputClass}
+                />
+                <input
+                  type="text"
+                  placeholder="FBR Ref..."
+                  value={fbrRefFilter}
+                  onChange={(e) => onFbrRefFilterChange(e.target.value)}
+                  className={filterInputClass}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="date"
+                  value={dateFromFilter}
+                  onChange={(e) => onDateFromFilterChange(e.target.value)}
+                  placeholder="From date"
+                  className={filterInputClass}
+                />
+                <input
+                  type="date"
+                  value={dateToFilter}
+                  onChange={(e) => onDateToFilterChange(e.target.value)}
+                  placeholder="To date"
+                  className={filterInputClass}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="text"
+                  placeholder="Buyer name..."
+                  value={buyerNameFilter}
+                  onChange={(e) => onBuyerNameFilterChange(e.target.value)}
+                  className={filterInputClass}
+                />
+                <input
+                  type="text"
+                  placeholder="Amount..."
+                  value={amountFilter}
+                  onChange={(e) => onAmountFilterChange(e.target.value)}
+                  className={filterInputClass}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Select value={statusFilter} onValueChange={onStatusFilterChange}>
+                  <SelectTrigger
+                    className="text-xs"
+                    style={{ height: '32px', padding: '4px 10px', borderRadius: '8px', fontSize: '12px', borderWidth: '1px', borderColor: '#2563eb' }}
+                  >
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl border-blue-600 dark:border-neutral-800">
+                    {statusOptions.map(option => (
+                      <SelectItem key={option.value} value={option.value} className="text-xs rounded-md">
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={incomeTaxFilter} onValueChange={onIncomeTaxFilterChange}>
+                  <SelectTrigger
+                    className="text-xs"
+                    style={{ height: '32px', padding: '4px 10px', borderRadius: '8px', fontSize: '12px', borderWidth: '1px', borderColor: '#2563eb' }}
+                  >
+                    <SelectValue placeholder="Tax" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl border-blue-600 dark:border-neutral-800">
+                    {incomeTaxOptions.map(option => (
+                      <SelectItem key={option.value} value={option.value} className="text-xs rounded-md">
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {activeFilterCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onInvoiceNumberFilterChange('');
+                    onDateFromFilterChange('');
+                    onDateToFilterChange('');
+                    onBuyerNameFilterChange('');
+                    onAmountFilterChange('');
+                    onStatusFilterChange('all');
+                    onIncomeTaxFilterChange('all');
+                    onFbrRefFilterChange('');
+                  }}
+                  className="w-full text-center text-xs font-semibold text-red-500 hover:text-red-600 py-1.5"
+                >
+                  Clear all filters
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
         {invoices.map((invoice) => {
           const canDelete = isDeletable(invoice.status);
           const isSelected = selectedInvoices.has(invoice.id);
@@ -147,371 +345,475 @@ export function InvoiceTable({
           return (
             <div
               key={invoice.id}
-              className={`bg-white dark:bg-[#1a1a1a] rounded-xl border-2 p-4 transition-all duration-150 ${
-                isSelected ? 'border-[#008060] bg-[#f1f8f5] dark:border-[#00a876] dark:bg-[#0d3d2f]/20' : 'border-[#e1e3e5] dark:border-[#2e2e2e]'
+              className={`bg-white dark:bg-neutral-950 rounded-2xl border transition-all duration-200 shadow-sm hover:shadow-md ${
+                isSelected 
+                  ? 'border-emerald-500 ring-1 ring-emerald-500/30 bg-emerald-50/10 dark:bg-emerald-500/[0.02]' 
+                  : 'border-slate-200/80 dark:border-neutral-900 hover:border-slate-300 dark:hover:border-neutral-800'
               }`}
             >
-              {/* Header with checkbox and invoice number */}
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-start gap-3 flex-1">
-                  {onSelectionChange && (
-                    <Checkbox
-                      checked={isSelected}
-                      onCheckedChange={(checked) => handleSelectInvoice(invoice.id, checked as boolean)}
-                      disabled={!isSelectable(invoice.status)}
-                      aria-label={`Select invoice ${invoice.invoiceNumber}`}
-                      className="mt-1"
-                    />
-                  )}
-                  <div className="flex-1">
-                    <div className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3]">{invoice.invoiceNumber}</div>
-                    <div className="text-xs text-[#6d7175] dark:text-[#8c9196]">{invoice.invoiceType}</div>
+              <div className="p-4">
+                {/* Header with checkbox and invoice number */}
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-start gap-3 flex-1">
+                    {onSelectionChange && (
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={(checked) => handleSelectInvoice(invoice.id, checked as boolean)}
+                        disabled={!isSelectable(invoice.status)}
+                        aria-label={`Select invoice ${invoice.invoiceNumber}`}
+                        className="mt-1 data-[state=checked]:bg-emerald-500 data-[state=checked]:border-emerald-500"
+                      />
+                    )}
+                    <div className="flex-1">
+                      <div className="text-sm font-bold text-slate-900 dark:text-neutral-100 tracking-tight">{invoice.invoiceNumber}</div>
+                      <div className="text-xs font-medium text-slate-400 dark:text-neutral-500 mt-0.5">{invoice.invoiceType}</div>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 flex-wrap justify-end">
+                    <Badge className={`${getStatusColor(invoice.status)} border px-2.5 py-0.5 text-xs font-semibold tracking-wide rounded-full shadow-sm`}>
+                      {formatStatus(invoice.status)}
+                    </Badge>
                   </div>
                 </div>
-                <div className="flex gap-2 flex-wrap justify-end">
-                  <Badge className={`${getStatusColor(invoice.status)} border text-xs font-semibold`}>
-                    {formatStatus(invoice.status)}
-                  </Badge>
-                </div>
-              </div>
 
-              {/* Invoice Details */}
-              <div className="space-y-2 mb-3 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-[#6d7175] dark:text-[#8c9196]">Date:</span>
-                  <span className="text-[#202223] dark:text-[#e3e3e3] font-medium">
-                    {new Date(invoice.date).toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'short',
-                      day: 'numeric',
-                      timeZone: 'Asia/Karachi'
-                    })}
-                  </span>
+                {/* Invoice Details */}
+                <div className="space-y-2.5 mb-4 text-xs font-medium">
+                  <div className="flex justify-between items-center py-0.5 border-b border-slate-50 dark:border-neutral-900/50">
+                    <span className="text-slate-400 dark:text-neutral-500">Date</span>
+                    <span className="text-slate-700 dark:text-neutral-300 font-semibold">
+                      {new Date(invoice.date).toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                        timeZone: 'Asia/Karachi'
+                      })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-0.5 border-b border-slate-50 dark:border-neutral-900/50">
+                    <span className="text-slate-400 dark:text-neutral-500">Buyer</span>
+                    <span className="text-slate-800 dark:text-neutral-200 truncate ml-4 max-w-[180px] font-semibold">{invoice.buyerName}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-0.5 border-b border-slate-50 dark:border-neutral-900/50">
+                    <span className="text-slate-400 dark:text-neutral-500">Amount</span>
+                    <span className="text-emerald-600 dark:text-emerald-400 font-bold text-sm">
+                      PKR {invoice.totalAmount.toLocaleString('en-US', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                      })}
+                    </span>
+                  </div>
+                  {invoice.fbrReferenceNumber && (
+                    <div className="flex justify-between items-center py-0.5">
+                      <span className="text-slate-400 dark:text-neutral-500">FBR Ref</span>
+                      <span className="text-slate-600 dark:text-neutral-400 font-mono text-[11px] bg-slate-50 dark:bg-neutral-900 px-1.5 py-0.5 rounded border border-slate-100 dark:border-neutral-800/60">{invoice.fbrReferenceNumber}</span>
+                    </div>
+                  )}
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-[#6d7175] dark:text-[#8c9196]">Buyer:</span>
-                  <span className="text-[#202223] dark:text-[#e3e3e3] truncate ml-2">{invoice.buyerName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#6d7175] dark:text-[#8c9196]">Seller:</span>
-                  <span className="text-[#202223] dark:text-[#e3e3e3] truncate ml-2">{invoice.sellerName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#6d7175] dark:text-[#8c9196]">Amount:</span>
-                  <span className="text-[#202223] dark:text-[#e3e3e3] font-semibold">
-                    PKR {invoice.totalAmount.toLocaleString('en-US', {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2
-                    })}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[#6d7175] dark:text-[#8c9196]">Environment:</span>
-                  <Badge className={`${getEnvironmentColor(invoice.environment)} border text-xs font-semibold`}>
-                    {invoice.environment}
-                  </Badge>
-                </div>
-              </div>
 
-              {/* Actions */}
-              <div className="flex flex-wrap gap-2 pt-3 border-t border-[#e1e3e5] dark:border-[#2e2e2e]">
-                {onView && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onView(invoice.id)}
-                    className="flex-1 min-w-[80px] h-9"
-                  >
-                    <Eye className="h-4 w-4 mr-1" />
-                    View
-                  </Button>
-                )}
-                {onEdit && (invoice.status === 'DRAFT' || invoice.status === 'VALIDATED' || invoice.status === 'FAILED' || invoice.status === 'TRANSFERRED') && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onEdit(invoice.id)}
-                    className="flex-1 min-w-[80px] h-9"
-                  >
-                    <Edit className="h-4 w-4 mr-1" />
-                    Edit
-                  </Button>
-                )}
-                {onValidate && invoice.status === 'DRAFT' && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onValidate(invoice.id)}
-                    disabled={validatingInvoiceId === invoice.id}
-                    className="flex-1 min-w-[80px] h-9"
-                  >
-                    {validatingInvoiceId === invoice.id ? (
-                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                    ) : (
-                      <CheckCircle className="h-4 w-4 mr-1" />
-                    )}
-                    {validatingInvoiceId === invoice.id ? 'Validating...' : 'Validate'}
-                  </Button>
-                )}
-                {onValidate && invoice.status === 'FAILED' && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onValidate(invoice.id)}
-                    disabled={validatingInvoiceId === invoice.id}
-                    className="flex-1 min-w-[80px] h-9 border-[#008060] text-[#008060] hover:bg-[#008060] hover:text-white"
-                  >
-                    {validatingInvoiceId === invoice.id ? (
-                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-4 w-4 mr-1" />
-                    )}
-                    {validatingInvoiceId === invoice.id ? 'Retrying...' : 'Retry'}
-                  </Button>
-                )}
-                {onPost && (invoice.status === 'VALIDATED' || invoice.status === 'TRANSFERRED') && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onPost(invoice.id)}
-                    disabled={postingInvoiceId === invoice.id}
-                    className="flex-1 min-w-[80px] h-9"
-                  >
-                    {postingInvoiceId === invoice.id ? (
-                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                    ) : (
-                      <Send className="h-4 w-4 mr-1" />
-                    )}
-                    {postingInvoiceId === invoice.id ? 'Posting...' : 'Post'}
-                  </Button>
-                )}
-                <div className="flex-1 min-w-[80px]">
-                  <PrintInvoiceButton
-                    invoiceId={invoice.id}
-                    invoiceNumber={invoice.invoiceNumber}
-                    status={invoice.status}
-                    className="w-full h-9"
-                  />
-                </div>
-                {onDelete && canDelete && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onDelete(invoice.id)}
-                    className="flex-1 min-w-[80px] h-9"
-                  >
-                    <Trash2 className="h-4 w-4 mr-1" />
-                    Delete
-                  </Button>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Desktop Table View */}
-      <div className="hidden lg:block overflow-x-auto">
-        <table className="min-w-full divide-y divide-[#e1e3e5] dark:divide-[#2e2e2e]">
-        <thead className="bg-[#f6f6f7] dark:bg-[#2e2e2e]">
-          <tr>
-            {onSelectionChange && (
-              <th scope="col" className="px-6 py-3 text-left">
-                <Checkbox
-                  checked={allSelectableSelected}
-                  onCheckedChange={handleSelectAll}
-                  aria-label="Select all invoices"
-                  className={someSelectableSelected && !allSelectableSelected ? 'data-[state=checked]:bg-gray-400' : ''}
-                />
-              </th>
-            )}
-            <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
-              Invoice #
-            </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
-              Date
-            </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
-              Buyer
-            </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
-              Seller
-            </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
-              Amount
-            </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
-              Status
-            </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
-              Environment
-            </th>
-            <th scope="col" className="px-6 py-3 text-left text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] uppercase tracking-wider">
-              Actions
-            </th>
-          </tr>
-        </thead>
-        <tbody className="bg-white dark:bg-[#1a1a1a] divide-y divide-[#e1e3e5] dark:divide-[#2e2e2e]">
-          {invoices.map((invoice) => {
-            const canDelete = isDeletable(invoice.status);
-            const isSelected = selectedInvoices.has(invoice.id);
-
-            return (
-            <tr key={invoice.id} className={`hover:bg-[#f6f6f7] dark:hover:bg-[#2e2e2e] transition-colors duration-150 ${isSelected ? 'bg-[#f1f8f5] dark:bg-[#0d3d2f]/20' : ''}`}>
-              {onSelectionChange && (
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <Checkbox
-                    checked={isSelected}
-                    onCheckedChange={(checked) => handleSelectInvoice(invoice.id, checked as boolean)}
-                    disabled={!isSelectable(invoice.status)}
-                    aria-label={`Select invoice ${invoice.invoiceNumber}`}
-                  />
-                </td>
-              )}
-              <td className="px-6 py-4 whitespace-nowrap">
-                <div className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3]">{invoice.invoiceNumber}</div>
-                <div className="text-xs text-[#6d7175] dark:text-[#8c9196]">{invoice.invoiceType}</div>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-[#6d7175] dark:text-[#8c9196]">
-                {new Date(invoice.date).toLocaleDateString('en-US', {
-                  year: 'numeric',
-                  month: 'short',
-                  day: 'numeric'
-                })}
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                <div className="text-sm text-[#202223] dark:text-[#e3e3e3]">{invoice.buyerName}</div>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                <div className="text-sm text-[#202223] dark:text-[#e3e3e3]">{invoice.sellerName}</div>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                <div className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3]">
-                  PKR {invoice.totalAmount.toLocaleString('en-US', {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2
-                  })}
-                </div>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                <Badge className={`${getStatusColor(invoice.status)} border font-semibold`}>
-                  {formatStatus(invoice.status)}
-                </Badge>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap">
-                <Badge className={`${getEnvironmentColor(invoice.environment)} border font-semibold`}>
-                  {invoice.environment}
-                </Badge>
-              </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                <div className="flex items-center gap-2">
-                  {/* View Button - Always visible */}
+                {/* Actions */}
+                <div className="flex flex-wrap gap-2 pt-3 border-t border-slate-100 dark:border-neutral-900">
                   {onView && (
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => onView(invoice.id)}
-                      className="h-8 px-3"
-                      title="View Details"
+                      className="flex-1 min-w-[80px] h-9 text-xs rounded-xl font-semibold border-slate-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-slate-700 dark:text-neutral-300 hover:bg-slate-50 dark:hover:bg-neutral-800"
                     >
-                      <Eye className="h-4 w-4" />
+                      <Eye className="h-3.5 w-3.5 mr-1.5 opacity-80" />
+                      View
                     </Button>
                   )}
-
-                  {/* Edit Button - For DRAFT, VALIDATED, and FAILED */}
-                  {onEdit && (invoice.status === 'DRAFT' || invoice.status === 'VALIDATED' || invoice.status === 'FAILED' || invoice.status === 'TRANSFERRED') && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onEdit(invoice.id)}
-                      className="h-8 px-3"
-                      title="Edit Invoice"
-                    >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                  )}
-
-                  {/* Validate Button - Only for DRAFT */}
                   {onValidate && invoice.status === 'DRAFT' && (
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => onValidate(invoice.id)}
                       disabled={validatingInvoiceId === invoice.id}
-                      className="h-8 px-3"
-                      title="Validate with FBR"
+                      className="flex-1 min-w-[80px] h-9 text-xs rounded-xl font-semibold border-amber-200 text-amber-700 bg-amber-50/50 hover:bg-amber-50 dark:border-amber-500/30 dark:text-amber-400 dark:bg-amber-500/5 dark:hover:bg-amber-500/10"
                     >
                       {validatingInvoiceId === invoice.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
                       ) : (
-                        <CheckCircle className="h-4 w-4" />
+                        <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
                       )}
+                      {validatingInvoiceId === invoice.id ? 'Validating...' : 'Validate'}
                     </Button>
                   )}
-
-                  {/* Retry Button - Only for FAILED */}
                   {onValidate && invoice.status === 'FAILED' && (
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => onValidate(invoice.id)}
                       disabled={validatingInvoiceId === invoice.id}
-                      className="h-8 px-3 border-[#008060] text-[#008060] hover:bg-[#008060] hover:text-white"
-                      title="Retry Validation"
+                      className="flex-1 min-w-[80px] h-9 text-xs rounded-xl font-semibold border-emerald-500/40 text-emerald-600 bg-emerald-50/40 hover:bg-emerald-500 hover:text-white dark:border-emerald-500/30 dark:text-emerald-400 dark:bg-emerald-500/5 dark:hover:bg-emerald-500 dark:hover:text-neutral-950 transition-all"
                     >
                       {validatingInvoiceId === invoice.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
                       ) : (
-                        <RefreshCw className="h-4 w-4" />
+                        <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
                       )}
+                      {validatingInvoiceId === invoice.id ? 'Retrying...' : 'Retry'}
                     </Button>
                   )}
-
-                  {/* Post Button - Only for VALIDATED */}
                   {onPost && (invoice.status === 'VALIDATED' || invoice.status === 'TRANSFERRED') && (
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => onPost(invoice.id)}
                       disabled={postingInvoiceId === invoice.id}
-                      className="h-8 px-3"
-                      title="Post to FBR"
+                      className="flex-1 min-w-[80px] h-9 text-xs rounded-xl font-semibold border-blue-200 text-blue-700 bg-blue-50/50 hover:bg-blue-50 dark:border-blue-500/30 dark:text-blue-400 dark:bg-blue-500/5 dark:hover:bg-blue-500/10"
                     >
                       {postingInvoiceId === invoice.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
                       ) : (
-                        <Send className="h-4 w-4" />
+                        <Send className="h-3.5 w-3.5" />
                       )}
+                      {postingInvoiceId === invoice.id ? 'Posting...' : 'Post'}
                     </Button>
                   )}
-
-                  {/* Print Button - Available for all invoices */}
-                  <PrintInvoiceButton
-                    invoiceId={invoice.id}
-                    invoiceNumber={invoice.invoiceNumber}
-                    status={invoice.status}
-                  />
-
-                  {/* Delete Button - Only for DRAFT or FAILED */}
+                  {invoice.status === 'POSTED' && (
+                    <div className="flex-1 min-w-[80px]">
+                      <PrintInvoiceButton
+                        invoiceId={invoice.id}
+                        invoiceNumber={invoice.invoiceNumber}
+                        status={invoice.status}
+                        className="w-full h-9 text-xs rounded-xl font-semibold shadow-sm"
+                      />
+                    </div>
+                  )}
                   {onDelete && canDelete && (
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => onDelete(invoice.id)}
-                      className="h-8 px-3"
-                      title="Delete Invoice"
+                      className="flex-1 min-w-[80px] h-9 text-xs rounded-xl font-semibold border-rose-100 text-rose-600 bg-rose-50/30 hover:bg-rose-50 dark:border-rose-950 dark:text-rose-400 dark:bg-rose-950/20 dark:hover:bg-rose-950/40"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                      Delete
                     </Button>
                   )}
                 </div>
-              </td>
+              </div>
+            </div>
+          );
+        })}
+        </div>
+      </div>
+
+      {/* Desktop Table View */}
+      <div className="hidden lg:flex lg:flex-col lg:gap-2 h-full">
+
+        {/*table 1 heading*/}
+        <table className="w-full table-auto bg-[#7c97f0] rounded-4xl flex-shrink-0">
+          <thead>
+            {/* Column Headers */}
+            <tr>
+              {onSelectionChange && (
+                <th className="w-[50px] px-3.5 pt-3.5 pb-2"></th>
+              )}
+              <th className="w-[150px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+                Invoice Number
+              </th>
+              <th className="w-[160px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+                FBR Ref Number
+              </th>
+              <th className="w-[120px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+                Date
+              </th>
+              <th className="w-[200px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+                Buyer Name
+              </th>
+              <th className="w-[130px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+                Amount
+              </th>
+              <th className="w-[120px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+                Status
+              </th>
+              <th className="w-[180px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+                Actions
+              </th>
             </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+        </table>
+
+        {/*table 2 heading*/}
+        <table className="w-full table-auto bg-[#FFFFFF] rounded-4xl flex-shrink-0 border-2 border-[#7c97f0] border-separate border-spacing-0">
+            <thead>
+              {/* Filter Inputs Row */}
+              <tr>
+                {onSelectionChange && (
+                  <th scope="col" className="w-[50px] px-3.5 py-2 text-center">
+                    <Checkbox
+                      checked={allSelectableSelected}
+                      onCheckedChange={handleSelectAll}
+                      aria-label="Select all invoices"
+                      className={`data-[state=checked]:bg-emerald-500 data-[state=checked]:border-emerald-500 ${someSelectableSelected && !allSelectableSelected ? 'data-[state=checked]:bg-slate-400 dark:data-[state=checked]:bg-neutral-600' : ''}`}
+                    />
+                  </th>
+                )}
+                <th scope="col" className="w-[150px] px-3 py-2">
+                  <input
+                    type="text"
+                    placeholder="Filter ID..."
+                    value={invoiceNumberFilter}
+                    onChange={(e) => onInvoiceNumberFilterChange(e.target.value)}
+                    className={filterInputClass}
+                  />
+                </th>
+                <th scope="col" className="w-[160px] px-3 py-2">
+                  <input
+                    type="text"
+                    placeholder="Filter FBR..."
+                    value={fbrRefFilter}
+                    onChange={(e) => onFbrRefFilterChange(e.target.value)}
+                    className={filterInputClass}
+                  />
+                </th>
+                <th scope="col" className="w-[120px] px-3 py-2">
+                  <div className="relative" ref={datePopoverRef}>
+                    <button
+                      type="button"
+                      onClick={() => setDatePopoverOpen(!datePopoverOpen)}
+                      className={`${filterInputClass} flex items-center gap-1.5 text-left`}
+                      style={hasDateFilter ? undefined : { color: '#94a3b8' }}
+                    >
+                      <Calendar className="h-3 w-3 shrink-0" />
+                      <span className="truncate">
+                        {hasDateFilter
+                          ? `${dateFromFilter || '...'} – ${dateToFilter || '...'}`
+                          : 'Date'}
+                      </span>
+                    </button>
+                    {datePopoverOpen && (
+                      <div className="absolute top-full left-0 mt-1 z-50 bg-white dark:bg-neutral-900 rounded-xl shadow-xl p-3 w-[260px]">
+                        <div className="space-y-2">
+                          <div>
+                            <label className="block text-[10px] font-semibold text-slate-500 dark:text-neutral-400 uppercase mb-0.5">From</label>
+                            <input
+                              type="date"
+                              value={dateFromFilter}
+                              onChange={(e) => onDateFromFilterChange(e.target.value)}
+                              className={filterInputClass}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-semibold text-slate-500 dark:text-neutral-400 uppercase mb-0.5">To</label>
+                            <input
+                              type="date"
+                              value={dateToFilter}
+                              onChange={(e) => onDateToFilterChange(e.target.value)}
+                              className={filterInputClass}
+                            />
+                          </div>
+                          {hasDateFilter && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onDateFromFilterChange('');
+                                onDateToFilterChange('');
+                              }}
+                              className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-neutral-300 underline w-full text-left"
+                            >
+                              Clear dates
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </th>
+                <th scope="col" className="w-[200px] px-3 py-2">
+                  <input
+                    type="text"
+                    placeholder="Filter buyer..."
+                    value={buyerNameFilter}
+                    onChange={(e) => onBuyerNameFilterChange(e.target.value)}
+                    className={filterInputClass}
+                  />
+                </th>
+                <th scope="col" className="w-[130px] px-3 py-2">
+                  <input
+                    type="text"
+                    placeholder="Filter amount..."
+                    value={amountFilter}
+                    onChange={(e) => onAmountFilterChange(e.target.value)}
+                    className={filterInputClass}
+                  />
+                </th>
+                <th scope="col" className="w-[120px] px-3 py-2">
+                  <Select value={statusFilter} onValueChange={onStatusFilterChange}>
+                    <SelectTrigger
+                      className="text-xs text-slate-400"
+                      style={{ height: '32px', padding: '4px 10px', borderRadius: '8px', fontSize: '12px', borderWidth: '1px', color: '#94a3b8', borderColor: '#2563eb' }}
+                    >
+                      <SelectValue placeholder="All" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl border-blue-600 dark:border-neutral-800">
+                      {statusOptions.map(option => (
+                        <SelectItem key={option.value} value={option.value} className="text-xs rounded-md">
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </th>
+                <th scope="col" className="w-[180px] pl-2 pr-0 py-2"></th>
+              </tr>
+              </thead>
+        </table>
+
+        {/*table 3 body — scrollable*/}
+        <div className="flex-1 min-h-0 overflow-auto rounded-4xl bg-[#cfd4e7]">
+        <table className="w-full table-fixed">
+          <tbody>
+            
+            {invoices.map((invoice) => {
+              const canDelete = isDeletable(invoice.status);
+              const isSelected = selectedInvoices.has(invoice.id);
+
+              return (
+                <tr 
+                  key={invoice.id} 
+                  className={`group transition-colors duration-150 ${
+                    isSelected 
+                      ? 'bg-emerald-50/20' 
+                      : 'hover:bg-slate-50/60'
+                  }`}
+                >
+                  {onSelectionChange && (
+                    <td className="px-3 py-3 align-middle w-[50px] border-b">
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={(checked) => handleSelectInvoice(invoice.id, checked as boolean)}
+                        disabled={!isSelectable(invoice.status)}
+                        aria-label={`Select invoice ${invoice.invoiceNumber}`}
+                        className="data-[state=checked]:bg-emerald-500 data-[state=checked]:border-emerald-500"
+                      />
+                    </td>
+                  )}
+                  <td className="px-3 py-3 align-middle w-[14%] border-b">
+                    <div className=" text-sm font-medium text-slate-700  break-all">{invoice.invoiceNumber}</div>
+                    <div className="text-sm font-medium text-slate-700  mt-0.5">{invoice.invoiceType}</div>
+                  </td>
+                  <td className="px-3 py-3 align-middle border-b w-[14%]">
+                    <div className="text-sm font-medium text-slate-700 dark:text-neutral-300 break-all">
+                      {invoice.fbrReferenceNumber || '—'}
+                    </div>
+                  </td>
+                  <td className="border-b border-gray-200 w-[11%] px-3 py-3 text-sm font-medium text-slate-700 whitespace-nowrap align-middle">
+                    {new Date(invoice.date).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric'
+                    })}
+                  </td>
+                  <td className="px-3 py-3 align-middle w-[18%] border-b">
+                    <div className="text-sm font-medium text-slate-700 break-words line-clamp-2">{invoice.buyerName}</div>
+                  </td>
+                  <td className="px-3 py-3 align-middle w-[12%] border-b">
+                    <div className="text-sm font-medium text-slate-700 dark:text-neutral-300 whitespace-nowrap text-right">
+                       {invoice.totalAmount.toLocaleString('en-US', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                      })}
+                    </div>
+                  </td>
+                  <td className="px-3 py-3 align-right w-[11%] border-b">
+                    <Badge className={`${getStatusColor(invoice.status)} border font-semibold text-[11px] tracking-wide px-2.5 py-0.5 rounded-full shadow-sm`}>
+                      {formatStatus(invoice.status)}
+                    </Badge>
+                  </td>
+                  <td className="pl-2 pr-0 py-3 text-center align-middle w-auto border-b">
+                    <div className="flex items-center justify-center gap-1.5">
+                      {onView && (
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => onView(invoice.id)}
+                          className="h-8 w-8 rounded-lg border-slate-200 dark:border-neutral-800 hover:text-emerald-500 dark:hover:text-emerald-400 shadow-sm transition-all duration-100"
+                          title="View"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {onValidate && invoice.status === 'DRAFT' && (
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => onValidate(invoice.id)}
+                          disabled={validatingInvoiceId === invoice.id}
+                          className="h-8 w-8 rounded-lg border-amber-200 text-amber-600 bg-amber-50/30 hover:bg-amber-50 dark:border-amber-500/30 dark:text-amber-400 dark:bg-amber-500/5 dark:hover:bg-amber-500/20 shadow-sm"
+                          title="Validate"
+                        >
+                          {validatingInvoiceId === invoice.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <CheckCircle className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                      )}
+                      {onValidate && invoice.status === 'FAILED' && (
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => onValidate(invoice.id)}
+                          disabled={validatingInvoiceId === invoice.id}
+                          className="h-8 w-8 rounded-lg border-emerald-500/30 text-emerald-600 bg-emerald-50/20 hover:bg-emerald-500 hover:text-white dark:border-emerald-500/30 dark:text-emerald-400 dark:bg-emerald-500/5 dark:hover:bg-emerald-500 dark:hover:text-neutral-950 shadow-sm transition-all"
+                          title="Retry"
+                        >
+                          {validatingInvoiceId === invoice.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <RefreshCw className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                      )}
+                      {onPost && (invoice.status === 'VALIDATED' || invoice.status === 'TRANSFERRED') && (
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => onPost(invoice.id)}
+                          disabled={postingInvoiceId === invoice.id}
+                          className="h-8 w-8 rounded-lg border-blue-200 text-blue-600 bg-blue-50/30 hover:bg-blue-50 dark:border-blue-500/30 dark:text-blue-400 dark:bg-blue-500/5 dark:hover:bg-blue-500/20 shadow-sm"
+                          title="Post to FBR"
+                        >
+                          {postingInvoiceId === invoice.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Send className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                      )}
+                      {invoice.status === 'POSTED' && (
+                        <PrintInvoiceButton
+                          invoiceId={invoice.id}
+                          invoiceNumber={invoice.invoiceNumber}
+                          status={invoice.status}
+                          variant="outline"
+                          size="icon"
+                          className="h-8 w-8 rounded-lg border-slate-200 dark:border-neutral-800 shadow-sm"
+                        />
+                      )}
+                      {onDelete && canDelete && (
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => onDelete(invoice.id)}
+                          className="h-8 w-8 rounded-lg border-rose-100 text-rose-500 hover:text-rose-600 bg-rose-50/20 dark:border-rose-950/60 dark:text-rose-400 dark:bg-rose-950/20 dark:hover:bg-rose-900/40 shadow-sm transition-all"
+                          title="Delete"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        </div>
+      </div>
     </>
   );
 }

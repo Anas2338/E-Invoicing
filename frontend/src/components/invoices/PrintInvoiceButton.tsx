@@ -10,6 +10,8 @@ interface PrintInvoiceButtonProps {
   invoiceNumber: string;
   status: string;
   className?: string;
+  variant?: 'outline' | 'ghost';
+  size?: 'default' | 'sm' | 'lg' | 'icon';
 }
 
 export function PrintInvoiceButton({
@@ -17,6 +19,8 @@ export function PrintInvoiceButton({
   invoiceNumber,
   status,
   className = '',
+  variant = 'outline',
+  size = 'sm',
 }: PrintInvoiceButtonProps) {
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -86,8 +90,8 @@ export function PrintInvoiceButton({
 
   return (
     <Button
-      variant="outline"
-      size="sm"
+      variant={variant}
+      size={size}
       onClick={handleDownload}
       disabled={isGenerating}
       className={className}

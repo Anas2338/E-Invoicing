@@ -51,7 +51,7 @@ export default function HelpPage() {
   ];
 
   return (
-    <div className="space-y-6 pb-8 max-w-4xl">
+    <div className="space-y-4 pb-8 max-w-7xl">
       {/* Back to Dashboard Button */}
       <div className="flex items-center gap-4">
         <Button
@@ -73,8 +73,12 @@ export default function HelpPage() {
         </p>
       </div>
 
-      {/* Contact Support */}
-      <Card>
+      {/* 2-column grid on large screens */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        {/* Left Column */}
+        <div className="space-y-4">
+          {/* Contact Support */}
+          <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
             <HelpCircle className="h-5 w-5" />
@@ -149,36 +153,34 @@ export default function HelpPage() {
         </CardContent>
       </Card>
 
-      {/* Resources */}
-      <Card>
+        </div>
+
+        {/* Right Column */}
+        <div className="space-y-4">
+          {/* Resources */}
+          <Card>
         <CardHeader>
           <CardTitle className="text-lg sm:text-xl">Helpful Resources</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="flex flex-col gap-3">
             {resources.map((resource, index) => (
               <a
                 key={index}
                 href={resource.link}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-start gap-4 p-4 rounded-xl border-2 border-[#e1e3e5] dark:border-[#2e2e2e] hover:border-[#008060] dark:hover:border-[#00a876] hover:bg-[#f1f8f5] dark:hover:bg-[#0d3d2f]/20 transition-all duration-150"
+                className="flex items-center gap-4 p-4 rounded-xl border border-[#e1e3e5] dark:border-[#2e2e2e] hover:border-[#008060] dark:hover:border-[#00a876] hover:bg-[#f1f8f5] dark:hover:bg-[#0d3d2f]/20 transition-all duration-150 group"
               >
-                <div className="flex-shrink-0">
-                  <div className="w-12 h-12 bg-[#f1f8f5] dark:bg-[#0d3d2f]/30 rounded-xl flex items-center justify-center text-[#008060] dark:text-[#00a876]">
-                    {resource.icon}
-                  </div>
+                <div className="w-10 h-10 bg-[#f1f8f5] dark:bg-[#0d3d2f]/30 rounded-lg flex items-center justify-center text-[#008060] dark:text-[#00a876] flex-shrink-0">
+                  {resource.icon}
                 </div>
-                <div className="flex-1">
-                  <h3 className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] mb-1">
-                    {resource.title}
-                  </h3>
-                  <p className="text-xs text-[#6d7175] dark:text-[#8c9196]">
-                    {resource.description}
-                  </p>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3]">{resource.title}</h3>
+                  <p className="text-xs text-[#6d7175] dark:text-[#8c9196] truncate">{resource.description}</p>
                 </div>
                 <svg
-                  className="h-5 w-5 text-[#8c9196] dark:text-[#6d7175] flex-shrink-0"
+                  className="h-4 w-4 text-[#8c9196] dark:text-[#6d7175] flex-shrink-0 group-hover:translate-x-0.5 transition-transform"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -238,6 +240,8 @@ export default function HelpPage() {
           </ul>
         </CardContent>
       </Card>
+        </div>
+      </div>
     </div>
   );
 }
