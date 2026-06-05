@@ -57,7 +57,7 @@ interface InvoiceTableProps {
 const statusOptions = [
   { value: 'all', label: 'All' },
   { value: 'DRAFT', label: 'Draft' },
-  { value: 'VALIDATED', label: 'Validated' },
+  { value: 'VALIDATED', label: 'Valid' },
   { value: 'POSTED', label: 'Posted' },
   { value: 'FAILED', label: 'Failed' },
 ];
@@ -120,23 +120,24 @@ export function InvoiceTable({
   switch (status.toUpperCase()) {
     case 'DRAFT':
     case 'PENDING':
-      return 'px-5 py-2 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-blue-400 via-blue-500 to-blue-600 border border-blue-400/40 shadow-[0_5px_12px_-3px_rgba(59,130,246,0.4),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)] transition-all duration-200 hover:brightness-110 active:scale-[0.97] cursor-pointer select-none';
+      return 'px-2.5 py-0.5 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-blue-400 via-blue-500 to-blue-600 border border-blue-400/40 shadow-[0_5px_12px_-3px_rgba(59,130,246,0.4),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)]';
     case 'VALIDATED':
     case 'TRANSFERRED':
-      return 'px-5 py-2 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-sky-400 via-sky-500 to-sky-600 border border-sky-400/40 shadow-[0_5px_12px_-3px_rgba(14,165,233,0.4),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)] transition-all duration-200 hover:brightness-110 active:scale-[0.97] cursor-pointer select-none';
+      return 'px-2.5 py-0.5 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-sky-400 via-sky-500 to-sky-600 border border-sky-400/40 shadow-[0_5px_12px_-3px_rgba(14,165,233,0.4),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)]';
     case 'POSTED':
     case 'SUBMITTED':
-      return 'px-5 py-2 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-emerald-400 via-emerald-500 to-emerald-600 border border-emerald-400/40 shadow-[0_5px_12px_-3px_rgba(16,185,129,0.4),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)] transition-all duration-200 hover:brightness-110 active:scale-[0.97] cursor-pointer select-none';
+      return 'px-2.5 py-0.5 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-emerald-400 via-emerald-500 to-emerald-600 border border-emerald-400/40 shadow-[0_5px_12px_-3px_rgba(16,185,129,0.4),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)]';
     case 'FAILED':
-      return 'px-5 py-2 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-rose-400 via-rose-500 to-rose-600 border border-rose-400/40 shadow-[0_5px_12px_-3px_rgba(244,63,94,0.4),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)] transition-all duration-200 hover:brightness-110 active:scale-[0.97] cursor-pointer select-none';
+      return 'px-2.5 py-0.5 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-rose-400 via-rose-500 to-rose-600 border border-rose-400/40 shadow-[0_5px_12px_-3px_rgba(244,63,94,0.4),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)]';
     case 'EXPIRED':
-      return 'px-5 py-2 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-slate-400 via-slate-500 to-slate-600 border border-slate-400/40 shadow-[0_5px_12px_-3px_rgba(100,116,139,0.3),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)] transition-all duration-200 hover:brightness-110 active:scale-[0.97] cursor-pointer select-none';
+      return 'px-2.5 py-2 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-slate-400 via-slate-500 to-slate-600 border border-slate-400/40 shadow-[0_5px_12px_-3px_rgba(100,116,139,0.3),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)] transition-all duration-200 hover:brightness-110 active:scale-[0.97] cursor-pointer select-none';
     default:
-      return 'px-5 py-2 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-gray-400 to-gray-500';
+      return 'px-2.5 py-0.5 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-gray-400 to-gray-500';
   }
 };
 
   const formatStatus = (status: string) => {
+    if (status.toUpperCase() === 'VALIDATED') return 'Valid';
     return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
   };
 
@@ -181,28 +182,26 @@ export function InvoiceTable({
   // High-performance focused input styling with adjusted colors and clean borders
   const filterInputClass = "w-full h-8 text-xs px-2.5 py-1 border border-blue-600 dark:border-neutral-800 rounded-lg bg-white dark:bg-neutral-900 text-slate-900 dark:text-neutral-100 placeholder:text-slate-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-150 shadow-sm";
 
-  if (invoices.length === 0) {
-    return (
-      <div className="text-center py-16 bg-white dark:bg-neutral-950 rounded-2xl border border-slate-100 dark:border-neutral-900 shadow-sm">
-        <svg
-          className="mx-auto h-14 w-14 text-slate-300 dark:text-neutral-700 stroke-[1.5]"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-          />
-        </svg>
-        <h3 className="mt-4 text-base font-semibold text-slate-900 dark:text-neutral-100 tracking-tight">No invoices found</h3>
-        <p className="mt-1 text-sm text-slate-500 dark:text-neutral-400 max-w-xs mx-auto">
-          Try adjusting your filters or create a new invoice to populate this space.
-        </p>
-      </div>
-    );
-  }
+  const EmptyStateContent = () => (
+    <div className="text-center py-12 sm:py-16">
+      <svg
+        className="mx-auto h-12 w-12 sm:h-14 sm:w-14 text-slate-300 dark:text-neutral-700 stroke-[1.5]"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+        />
+      </svg>
+      <h3 className="mt-4 text-sm sm:text-base font-semibold text-slate-900 dark:text-neutral-100 tracking-tight">No invoices found</h3>
+      <p className="mt-1 text-xs sm:text-sm text-slate-500 dark:text-neutral-400 max-w-xs mx-auto">
+        Try adjusting your filters or create a new invoice to populate this space.
+      </p>
+    </div>
+  );
 
   return (
     <>
@@ -337,6 +336,12 @@ export function InvoiceTable({
           )}
         </div>
 
+        {invoices.length === 0 && (
+          <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-slate-100 dark:border-neutral-900 shadow-sm">
+            <EmptyStateContent />
+          </div>
+        )}
+        {invoices.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
         {invoices.map((invoice) => {
           const canDelete = isDeletable(invoice.status);
@@ -498,38 +503,39 @@ export function InvoiceTable({
           );
         })}
         </div>
+        )}
       </div>
 
       {/* Desktop Table View */}
       <div className="hidden lg:flex lg:flex-col lg:gap-2 h-full">
 
         {/*table 1 heading*/}
-        <table className="w-full table-auto bg-[#7c97f0] rounded-4xl flex-shrink-0">
+        <table className="w-full table-fixed bg-[#7c97f0] rounded-4xl flex-shrink-0 border-separate border-spacing-0">
           <thead>
             {/* Column Headers */}
             <tr>
               {onSelectionChange && (
                 <th className="w-[50px] px-3.5 pt-3.5 pb-2"></th>
               )}
-              <th className="w-[150px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+              <th className=" w-[125px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
                 Invoice Number
               </th>
-              <th className="w-[160px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+              <th className=" w-[185px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
                 FBR Ref Number
               </th>
-              <th className="w-[120px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+              <th className=" w-[95px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
                 Date
               </th>
-              <th className="w-[200px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+              <th className=" w-[340px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
                 Buyer Name
               </th>
-              <th className="w-[130px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+              <th className=" w-[115px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
                 Amount
               </th>
-              <th className="w-[120px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+              <th className=" w-[100px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
                 Status
               </th>
-              <th className="w-[180px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+              <th className=" w-[180px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
                 Actions
               </th>
             </tr>
@@ -537,12 +543,12 @@ export function InvoiceTable({
         </table>
 
         {/*table 2 heading*/}
-        <table className="w-full table-auto bg-[#FFFFFF] rounded-4xl flex-shrink-0 border-2 border-[#7c97f0] border-separate border-spacing-0">
+        <table className="w-full table-fixed bg-[#FFFFFF] rounded-4xl flex-shrink-0 border-2 border-[#7c97f0] border-separate border-spacing-0">
             <thead>
               {/* Filter Inputs Row */}
               <tr>
                 {onSelectionChange && (
-                  <th scope="col" className="w-[50px] px-3.5 py-2 text-center">
+                  <th scope="col" className="w-[50px] px-3.5 py-2">
                     <Checkbox
                       checked={allSelectableSelected}
                       onCheckedChange={handleSelectAll}
@@ -551,7 +557,7 @@ export function InvoiceTable({
                     />
                   </th>
                 )}
-                <th scope="col" className="w-[150px] px-3 py-2">
+                <th scope="col" className="w-[125px] px-2 py-2">
                   <input
                     type="text"
                     placeholder="Filter ID..."
@@ -560,7 +566,7 @@ export function InvoiceTable({
                     className={filterInputClass}
                   />
                 </th>
-                <th scope="col" className="w-[160px] px-3 py-2">
+                <th scope="col" className="w-[185px] px-3 py-2">
                   <input
                     type="text"
                     placeholder="Filter FBR..."
@@ -569,7 +575,7 @@ export function InvoiceTable({
                     className={filterInputClass}
                   />
                 </th>
-                <th scope="col" className="w-[120px] px-3 py-2">
+                <th scope="col" className="w-[95px] px-3 py-2">
                   <div className="relative" ref={datePopoverRef}>
                     <button
                       type="button"
@@ -622,7 +628,7 @@ export function InvoiceTable({
                     )}
                   </div>
                 </th>
-                <th scope="col" className="w-[200px] px-3 py-2">
+                <th scope="col" className="w-[340px] px-3 py-2">
                   <input
                     type="text"
                     placeholder="Filter buyer..."
@@ -631,7 +637,7 @@ export function InvoiceTable({
                     className={filterInputClass}
                   />
                 </th>
-                <th scope="col" className="w-[130px] px-3 py-2">
+                <th scope="col" className="w-[115px] px-3 py-2">
                   <input
                     type="text"
                     placeholder="Filter amount..."
@@ -640,7 +646,7 @@ export function InvoiceTable({
                     className={filterInputClass}
                   />
                 </th>
-                <th scope="col" className="w-[120px] px-3 py-2">
+                <th scope="col" className="w-[100px] px-3 py-2">
                   <Select value={statusFilter} onValueChange={onStatusFilterChange}>
                     <SelectTrigger
                       className="text-xs text-slate-400"
@@ -657,16 +663,43 @@ export function InvoiceTable({
                     </SelectContent>
                   </Select>
                 </th>
-                <th scope="col" className="w-[180px] pl-2 pr-0 py-2"></th>
+                <th scope="col" className="w-[180px] pl-2 pr-0 py-2">
+                  {activeFilterCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onInvoiceNumberFilterChange('');
+                        onDateFromFilterChange('');
+                        onDateToFilterChange('');
+                        onBuyerNameFilterChange('');
+                        onAmountFilterChange('');
+                        onStatusFilterChange('all');
+                        onIncomeTaxFilterChange('all');
+                        onFbrRefFilterChange('');
+                      }}
+                      className="text-xs font-semibold text-red-500 hover:text-red-600 transition-colors px-2 py-1"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </th>
               </tr>
               </thead>
         </table>
 
         {/*table 3 body — scrollable*/}
-        <div className="flex-1 min-h-0 overflow-auto rounded-4xl bg-[#cfd4e7]">
+        <div className="flex-1 min-h-0 overflow-auto rounded-4xl bg-[#e7eaf1] border-2  border-blue-200">
         <table className="w-full table-fixed">
-          <tbody>
-            
+          <tbody className='divide-y divide-[#FFFFFF]'>
+            {invoices.length === 0 && (
+              <tr>
+                <td colSpan={onSelectionChange ? 8 : 7} className="py-0">
+                  <div className="bg-white dark:bg-neutral-950 rounded-2xl m-2">
+                    <EmptyStateContent />
+                  </div>
+                </td>
+              </tr>
+            )}
             {invoices.map((invoice) => {
               const canDelete = isDeletable(invoice.status);
               const isSelected = selectedInvoices.has(invoice.id);
@@ -681,7 +714,7 @@ export function InvoiceTable({
                   }`}
                 >
                   {onSelectionChange && (
-                    <td className="px-3 py-3 align-middle w-[50px] border-b">
+                    <td className="px-3 py-3 align-middle w-[50px]">
                       <Checkbox
                         checked={isSelected}
                         onCheckedChange={(checked) => handleSelectInvoice(invoice.id, checked as boolean)}
@@ -691,26 +724,24 @@ export function InvoiceTable({
                       />
                     </td>
                   )}
-                  <td className="px-3 py-3 align-middle w-[14%] border-b">
+                  <td className="px-3 py-3 align-middle w-[125px]">
                     <div className=" text-sm font-medium text-slate-700  break-all">{invoice.invoiceNumber}</div>
                     <div className="text-sm font-medium text-slate-700  mt-0.5">{invoice.invoiceType}</div>
                   </td>
-                  <td className="px-3 py-3 align-middle border-b w-[14%]">
-                    <div className="text-sm font-medium text-slate-700 dark:text-neutral-300 break-all">
+                  <td className="px-2 py-3 align-middle w-[185px]">
+                    <div className="text-sm font-medium text-slate-700 dark:text-neutral-300">
                       {invoice.fbrReferenceNumber || '—'}
                     </div>
                   </td>
-                  <td className="border-b border-gray-200 w-[11%] px-3 py-3 text-sm font-medium text-slate-700 whitespace-nowrap align-middle">
-                    {new Date(invoice.date).toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'short',
-                      day: 'numeric'
+                  <td className=" w-[95px] px-2 py-3 text-sm font-medium text-slate-700 whitespace-nowrap align-middle">
+                    {new Date(invoice.date).toLocaleDateString('en-GB', {
+                      timeZone: 'Asia/Karachi'
                     })}
                   </td>
-                  <td className="px-3 py-3 align-middle w-[18%] border-b">
-                    <div className="text-sm font-medium text-slate-700 break-words line-clamp-2">{invoice.buyerName}</div>
+                  <td className="px-2 py-3 w-[340px]">
+                    <div className="text-sm font-medium text-slate-700 text-left">{invoice.buyerName}</div>
                   </td>
-                  <td className="px-3 py-3 align-middle w-[12%] border-b">
+                  <td className="px-2 py-3 align-middle w-[115px]">
                     <div className="text-sm font-medium text-slate-700 dark:text-neutral-300 whitespace-nowrap text-right">
                        {invoice.totalAmount.toLocaleString('en-US', {
                         minimumFractionDigits: 2,
@@ -718,13 +749,13 @@ export function InvoiceTable({
                       })}
                     </div>
                   </td>
-                  <td className="px-3 py-3 align-right w-[11%] border-b">
-                    <Badge className={`${getStatusColor(invoice.status)} border font-semibold text-[11px] tracking-wide px-2.5 py-0.5 rounded-full shadow-sm`}>
+                  <td className="px-2 py-0.5 text-center w-[100px]">
+                    <Badge className={`${getStatusColor(invoice.status)}`}>
                       {formatStatus(invoice.status)}
                     </Badge>
                   </td>
-                  <td className="pl-2 pr-0 py-3 text-center align-middle w-auto border-b">
-                    <div className="flex items-center justify-center gap-1.5">
+                  <td className="pl-2 pr-0 py-3 text-center align-middle w-[180px]">
+                    <div className="flex items-center justify-center gap-2">
                       {onView && (
                         <Button
                           variant="outline"

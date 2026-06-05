@@ -1,6 +1,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Eye, Calendar, User, Hash } from 'lucide-react';
+import { PrintInvoiceButton } from '@/components/invoices/PrintInvoiceButton';
 
 interface Invoice {
   id: string;
@@ -83,15 +84,26 @@ export function RecentInvoices({
             {/* Action row */}
             {onView && (
               <div className="flex justify-end pt-1 border-t border-slate-200/60 dark:border-neutral-700/50">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onView(invoice.id)}
-                  className="h-8 rounded-xl text-xs font-semibold gap-1.5"
-                >
-                  <Eye className="h-3.5 w-3.5" />
-                  View
-                </Button>
+                {invoice.status === 'posted' ? (
+                  <PrintInvoiceButton
+                    invoiceId={invoice.id}
+                    invoiceNumber={invoice.number}
+                    status={invoice.status}
+                    variant="outline"
+                    size="sm"
+                    className="h-8 rounded-xl text-xs font-semibold gap-1.5"
+                  />
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onView(invoice.id)}
+                    className="h-8 rounded-xl text-xs font-semibold gap-1.5"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    View
+                  </Button>
+                )}
               </div>
             )}
           </div>
@@ -99,66 +111,84 @@ export function RecentInvoices({
       </div>
 
       {/* ===== DESKTOP TABLE VIEW (≥ lg) ===== */}
-      <div className="hidden lg:flex lg:flex-col gap-2">
-        <div className='rounded-4xl bg-[#7c97f0] py-1'>
-          <table className='w-full'>
-            <thead>
-              <tr>
-                <th className="pl-2 py-0.5 text-left text-xs font-bold text-black uppercase w-[140px]">Invoice Number</th>
-                <th className="py-0.5 text-centre text-xs font-bold text-black uppercase tracking-wider w-[172px]">FBR Ref Number</th>
-                <th className="px-2 py-2 text-left text-xs font-bold text-black uppercase tracking-wider w-[113px]">Date</th>
-                <th className="px-2 py-2 text-centre text-xs font-bold text-black uppercase tracking-wider w-[400px]">Buyer Name</th>
-                <th className="px-2 py-2 text-centre text-xs font-bold text-black uppercase tracking-wider w-[125px]">Amount</th>
-                <th className="py-2 text-centre text-xs font-bold text-black uppercase tracking-widerw-[120px]">Status</th>
-                <th className="px-2 py-2 text-centre text-xs font-bold text-black uppercase tracking-wider w-[85px]">Actions</th>
-              </tr>
-            </thead>
-          </table>
-        </div>
+<div className="hidden lg:flex lg:flex-col gap-2">
+  <div className='rounded-4xl bg-[#7c97f0] py-1'>
+    <table className='w-full table-fixed'>
+      <thead>
+        <tr>
+          <th className="pl-2 py-0.5 text-centre text-xs font-bold text-black uppercase w-[125px]">Invoice No.</th>
+          <th className="py-0.5 text-center text-xs font-bold text-black uppercase tracking-wider w-[185px]">FBR Ref Number</th>
+          <th className="px-2 py-2 text-center text-xs font-bold text-black uppercase tracking-wider w-[95px]">Date</th>
+          <th className="px-2 py-2 text-center text-xs font-bold text-black uppercase tracking-wider w-[340px]">Buyer Name</th>
+          <th className="px-2 py-2 text-center text-xs font-bold text-black uppercase tracking-wider w-[115px]">Amount</th>
+          <th className="py-2 text-center text-xs font-bold text-black uppercase tracking-wider w-[100px]">Status</th>
+          <th className="px-2 py-2 text-center text-xs font-bold text-black uppercase tracking-wider w-[180px]">Actions</th>
+        </tr>
+      </thead>
+    </table>
+  </div>
 
-        <div className='rounded-4xl bg-[#cfd4e7]'>
-          <table className="w-full">
-            <tbody className="divide-y divide-slate-100">
-              {invoices.map((invoice) => (
-                <tr key={invoice.id} className="hover:bg-slate-50/60 transition-colors duration-150">
-                  <td className="pl-2 py-0.5">
-                    <div className="text-sm font-medium text-slate-700 truncate">{invoice.number}</div>
-                  </td>
-                  <td className="px-0.5 py-0.5 w-[150px]">
-                    <div className="text-sm font-medium text-slate-700 truncate">{invoice.fbrInvoiceNumber || '—'}</div>
-                  </td>
-                  <td className="px-2 py-0.5">
-                    <div className="text-sm font-medium text-slate-700 truncate">
-                      {new Date(invoice.date).toLocaleDateString('en-US', { timeZone: 'Asia/Karachi' })}
-                    </div>
-                  </td>
-                  <td className="px-2 py-0.5 w-[400px]">
-                    <div className="text-sm font-medium text-slate-700">{invoice.buyerName || 'N/A'}</div>
-                  </td>
-                  <td className="px-2 py-0.5">
-                    <div className="text-sm font-medium text-slate-700 text-right">
-                      {invoice.amount.toLocaleString()}
-                    </div>
-                  </td>
-                  <td className="px-2 py-0.5 text-center">
-                    <Badge className={`${getStatusColor(invoice.status)}`}>
-                      {invoice.status}
-                    </Badge>
-                  </td>
-                  <td className="px-2 py-0.5 text-center">
-                    {onView && (
-                      <Button variant="outline" size="icon" onClick={() => onView(invoice.id)} className="h-8 w-8" title="View">
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+  <div className='rounded-4xl bg-[#e7eaf1] border-2  border-blue-200'>
+    <table className="w-full table-fixed">
+      <tbody className="divide-y divide-[#FFFFFF]">
+        {invoices.map((invoice) => (
+          <tr key={invoice.id} className="hover:bg-slate-50/60 transition-colors duration-150">
+            <td className="pl-2 py-0.5 w-[125px]">
+              <div className="text-sm font-medium text-slate-700 truncate">{invoice.number}</div>
+            </td>
+            <td className="px-1 py-0.5 w-[185px]">
+              <div className="text-sm font-medium text-slate-700 truncate">{invoice.fbrInvoiceNumber || '—'}</div>
+            </td>
+            <td className="px-2 py-0.5 w-[95px]">
+              <div className="text-sm font-medium text-slate-700">
+                {new Date(invoice.date).toLocaleDateString('en-GB', { timeZone: 'Asia/Karachi' })}
+              </div>
+            </td>
+            <td className="px-2 py-0.5 w-[340px]">
+              <div className="text-sm font-medium text-slate-700">{invoice.buyerName || 'N/A'}</div>
+            </td>
+            <td className="px-2 py-0.5 w-[115px]">
+              <div className="text-sm font-medium text-slate-700 text-right">
+                {invoice.amount.toLocaleString(
+                  'en-US', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                })}
+              </div>
+            </td>
+            <td className="px-2 py-0.5 text-center w-[100px]">
+              <Badge className={`${getStatusColor(invoice.status)}`}>
+                {invoice.status === 'validated' ? 'valid' : invoice.status}
+              </Badge>
+            </td>
+            {/* REMOVED 'flex gap-2' from this td tag to fix alignment */}
+            <td className="px-2 py-0.5 w-[180px]">
+              <div className="flex items-center justify-center gap-2">
+                {onView && (
+                  invoice.status === 'posted' ? (
+                    <PrintInvoiceButton
+                      invoiceId={invoice.id}
+                      invoiceNumber={invoice.number}
+                      status={invoice.status}
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                    />
+                  ) : (
+                    <Button variant="outline" size="icon" onClick={() => onView(invoice.id)} className="h-8 w-8" title="View">
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                  )
+                )}
+              </div>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+</div>
       </div>
 
-    </div>
   );
 }

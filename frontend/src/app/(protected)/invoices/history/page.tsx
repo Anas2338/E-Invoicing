@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { InvoiceTable } from '@/components/invoices/invoice-table';
 import { ValidationResultDialog } from '@/components/invoices/validation-result-dialog';
 import { api, ApiError } from '@/lib/api';
-import { Trash2, CheckCircle, RefreshCw, Printer, Loader2, X } from 'lucide-react';
+import { Trash2, CheckCircle, RefreshCw, Printer, Loader2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 interface Invoice {
@@ -568,27 +568,7 @@ export default function InvoiceHistoryPage() {
       {/* Table + Actions Sidebar */}
       <div className="flex gap-0 flex-1 min-h-0">
         {/* Action Bar — vertical, left of table */}
-        <div className="flex flex-col items-center gap-1 sm:gap-1.5 pt-2 sm:pt-3 pr-1 sm:pr-1.5 flex-shrink-0">
-          {(invoiceNumberFilter || dateFromFilter || dateToFilter || buyerNameFilter || amountFilter || statusFilter !== 'all' || incomeTaxFilter !== 'all' || fbrRefFilter) && (
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => {
-                setInvoiceNumberFilter('');
-                setDateFromFilter('');
-                setDateToFilter('');
-                setBuyerNameFilter('');
-                setAmountFilter('');
-                setStatusFilter('all');
-                setIncomeTaxFilter('all');
-                setFbrRefFilter('');
-              }}
-              className="h-8 w-8 text-[#6d7175] hover:text-[#202223]"
-              title="Clear Filters"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          )}
+        <div className="flex flex-col items-center gap-1 sm:gap-1.5 pt-2 sm:pt-32 pr-1 sm:pr-1.5 flex-shrink-0">
           {(() => {
             const hasPostedSelected = selectedInvoices.size > 0 && Array.from(selectedInvoices).some(
               id => invoices.find(inv => inv.id === id)?.status === 'POSTED'
