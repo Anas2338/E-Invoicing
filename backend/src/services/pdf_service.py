@@ -139,7 +139,7 @@ SECTION_HEADER_Y = 121.3   # "Seller Information" / "Buyer Information" / "Invoi
 FIELD_ROW1_Y = 140.5       # Business Name / FBR Invoice No.
 FIELD_ROW2_Y = 155.7       # Registration No. / Invoice Date
 FIELD_ROW3_Y = 171.7       # Province / Invoice Type
-FIELD_ROW4_Y = 188.9       # Tax Period (summary only)
+FIELD_ROW4_Y = 188.9       # Invoice Type (summary only)
 
 # Header column X positions
 SELLER_LABEL_X = 54.8
@@ -490,23 +490,18 @@ class PDFService:
                                 invoice.buyer_province or '')
 
         # INVOICE SUMMARY column
-        tax_period = ''
-        if invoice.invoice_date:
-            parts = invoice.invoice_date.split('-')
-            if len(parts) >= 2:
-                tax_period = parts[0] + parts[1]
-
         self._draw_header_field(c, font, SUMMARY_LABEL_X, SUMMARY_VALUE_X,
                                 FIELD_ROW1_Y, "FBR Invoice No.:",
+                                invoice.fbr_reference_number or '')
+        self._draw_header_field(c, font, SUMMARY_LABEL_X, SUMMARY_VALUE_X,
+                                FIELD_ROW2_Y, "Local Invoice No.:",
                                 invoice.external_id or '')
         self._draw_header_field(c, font, SUMMARY_LABEL_X, SUMMARY_VALUE_X,
-                                FIELD_ROW2_Y, "Invoice Date:",
+                                FIELD_ROW3_Y, "Invoice Date:",
                                 invoice.invoice_date or '')
         self._draw_header_field(c, font, SUMMARY_LABEL_X, SUMMARY_VALUE_X,
-                                FIELD_ROW3_Y, "Invoice Type:",
+                                FIELD_ROW4_Y, "Invoice Type:",
                                 invoice.invoice_type or '')
-        self._draw_header_field(c, font, SUMMARY_LABEL_X, SUMMARY_VALUE_X,
-                                FIELD_ROW4_Y, "Tax Period:", tax_period)
 
     def _draw_header_field(
         self, c: canvas_module.Canvas, font: str,
