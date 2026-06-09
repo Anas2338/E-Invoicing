@@ -1,15 +1,17 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Trash2, Plus, Loader2, AlertCircle, Info, Building2, MapPin, FileText } from 'lucide-react';
+import { Trash2, Plus, Loader2, AlertCircle, Info, Building2, MapPin, FileText, Pencil, Check, X, CheckCircle, Send, Save } from 'lucide-react';
 import { masterDataService, fbrIntegrationService, type AllMasterData } from '@/lib/api/api-client';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
+import { ValidationResultDialog } from '@/components/invoices/validation-result-dialog';
 
 interface InvoiceItem {
   hsCode: string;
@@ -48,6 +50,8 @@ export function SaleInvoiceForm({
   initialData,
   isEditMode = false
 }: SaleInvoiceFormProps) {
+  const router = useRouter();
+
   // Master data state
   const [masterData, setMasterData] = useState<AllMasterData | null>(null);
   const [masterDataLoading, setMasterDataLoading] = useState(true);
@@ -86,18 +90,31 @@ export function SaleInvoiceForm({
   const [savedBuyers, setSavedBuyers] = useState<Array<any>>([]);
   const [buyerSearchResults, setBuyerSearchResults] = useState<Array<any>>([]);
   const [showBuyerSuggestions, setShowBuyerSuggestions] = useState(false);
+  const [buyerHighlightedIndex, setBuyerHighlightedIndex] = useState(-1);
   const [loadingSavedBuyers, setLoadingSavedBuyers] = useState(false);
 
   // Income Tax state
   const [incomeTax, setIncomeTax] = useState<'236G' | '236H'>('236G');
 
   // Invoice items state
-  const [items, setItems] = useState<InvoiceItem[]>([{
+  const [items, setItems] = useState<InvoiceItem[]>([]);
+
+  // Saved items state
+  const [savedItems, setSavedItems] = useState<Array<any>>([]);
+  const [selectedSavedItems, setSelectedSavedItems] = useState<{ [key: number]: string }>({});
+  const [loadingSavedData, setLoadingSavedData] = useState(false);
+  const [manualFurtherTax, setManualFurtherTax] = useState<Set<number>>(new Set());
+
+  // Item modal state
+  const [isItemModalOpen, setIsItemModalOpen] = useState(false);
+  const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null);
+  // Temporary item state for the modal form
+  const [modalItem, setModalItem] = useState<InvoiceItem>({
     hsCode: '',
     productDescription: '',
     rate: '',
     uoM: 'NOS',
-    quantity: 0,
+    quantity: 1,
     totalValues: 0,
     valueSalesExcludingST: 0,
     fixedNotifiedValueOrRetailPrice: '0',
@@ -110,21 +127,30 @@ export function SaleInvoiceForm({
     discount: 0,
     saleType: '01',
     sroItemSerialNo: ''
-  }]);
+  });
+  // Track saved item selection in modal
+  const [modalSelectedSavedItem, setModalSelectedSavedItem] = useState<string>('');
+  // Item entry mode: 'saved' = select from saved items (auto-fill), 'temporary' = manual entry
+  const [itemEntryMode, setItemEntryMode] = useState<'saved' | 'temporary'>('saved');
 
-  // Dynamic tax rate fetching state
-  const [dynamicTaxRates, setDynamicTaxRates] = useState<Array<{rate: string, name: string}>>([]);
-  const [fetchingTaxRates, setFetchingTaxRates] = useState(false);
-  const [taxRateError, setTaxRateError] = useState<string | null>(null);
-  const [hasSelectedTransactionType, setHasSelectedTransactionType] = useState(false);
+  // Validate/Post workflow state
+  const [isValidating, setIsValidating] = useState(false);
+  const [isPosting, setIsPosting] = useState(false);
+  const [savedInvoiceId, setSavedInvoiceId] = useState<string | null>(null);
+  const [isValidated, setIsValidated] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  // Saved items state
-  const [savedItems, setSavedItems] = useState<Array<any>>([]);
-  const [selectedSavedItems, setSelectedSavedItems] = useState<{ [key: number]: string }>({});
-  const [loadingSavedData, setLoadingSavedData] = useState(false);
-
-  // Track which items have manually edited furtherTax (user explicitly typed a value)
-  const [manualFurtherTax, setManualFurtherTax] = useState<Set<number>>(new Set());
+  // Validation/Post result dialog
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogData, setDialogData] = useState<{
+    success: boolean;
+    title: string;
+    message: string;
+    invoiceNumber?: string;
+    fbrNumber?: string;
+    errors?: any[];
+    invoiceId?: string;
+  }>({ success: false, title: '', message: '' });
 
   // Fetch master data on component mount
   useEffect(() => {
@@ -309,7 +335,7 @@ export function SaleInvoiceForm({
 
       // If transaction type exists (either from data or resolved), mark as selected
       if (resolvedTransactionTypeId) {
-        setHasSelectedTransactionType(true);
+
       }
 
       // Populate seller information
@@ -462,58 +488,6 @@ export function SaleInvoiceForm({
   //   return () => clearTimeout(timeoutId);
   // }, [buyerNTNCNIC, verifyBuyerRegistration]);
 
-  // Fetch dynamic tax rates from FBR API
-  const fetchTaxRates = useCallback(async () => {
-    // Only fetch if user has explicitly selected a transaction type
-    if (!hasSelectedTransactionType) {
-      return;
-    }
-
-    // Only fetch if all required fields are present
-    if (!transactionTypeId || !invoiceDate || !sellerProvinceCode) {
-      setDynamicTaxRates([]);
-      setTaxRateError(null);
-      return;
-    }
-
-    setFetchingTaxRates(true);
-    setTaxRateError(null);
-
-    try {
-      // Convert date format: YYYY-MM-DD to DD-MMM-YYYY
-      const [year, month, day] = invoiceDate.split('-');
-      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      const formattedDate = `${day}-${monthNames[parseInt(month) - 1]}-${year}`;
-
-      const rates = await masterDataService.getSaleTypeToRate(
-        formattedDate,
-        parseInt(transactionTypeId),
-        parseInt(sellerProvinceCode)
-      );
-
-      if (rates && rates.length > 0) {
-        setDynamicTaxRates(rates);
-        setTaxRateError(null);
-      } else {
-        // Use fallback rates
-        setDynamicTaxRates([]);
-        setTaxRateError('Using default tax rates');
-      }
-    } catch (error) {
-      console.error('Error fetching tax rates:', error);
-      setDynamicTaxRates([]);
-      setTaxRateError('Failed to fetch tax rates, using defaults');
-    } finally {
-      setFetchingTaxRates(false);
-    }
-  }, [transactionTypeId, invoiceDate, sellerProvinceCode, hasSelectedTransactionType]);
-
-  // Trigger tax rate fetching when required fields change
-  useEffect(() => {
-    fetchTaxRates();
-  }, [fetchTaxRates]);
-
   // Auto-calculate Further Tax for all items when buyer registration type changes
   useEffect(() => {
     setItems(prevItems => {
@@ -556,7 +530,7 @@ export function SaleInvoiceForm({
     const selectedTransactionType = masterData?.transaction_types.find(t => t.code === transactionTypeId);
     const transactionTypeName = selectedTransactionType?.name?.trim() || 'Goods at standard rate (default)';
 
-    setItems([...items, {
+    const newItem: InvoiceItem = {
       hsCode: '',
       productDescription: '',
       rate: '',
@@ -572,15 +546,206 @@ export function SaleInvoiceForm({
       sroScheduleNo: '',
       fedPayable: 0,
       discount: 0,
-      saleType: transactionTypeName, // Use current Transaction Type NAME
+      saleType: transactionTypeName,
       sroItemSerialNo: ''
-    }]);
+    };
+    setModalItem(newItem);
+    setModalSelectedSavedItem('');
+    setItemEntryMode('saved');
+    setEditingItemIndex(null); // null = adding new
+    setIsItemModalOpen(true);
+  };
+
+  const openEditModal = (index: number) => {
+    setModalItem({ ...items[index] });
+    setModalSelectedSavedItem(selectedSavedItems[index] || '');
+    setItemEntryMode(selectedSavedItems[index] ? 'saved' : 'temporary');
+    setEditingItemIndex(index);
+    setIsItemModalOpen(true);
+  };
+
+  const handleModalSave = () => {
+    // Validate required fields
+    if (!modalItem.hsCode.trim()) {
+      toast.error('HS Code is required');
+      return;
+    }
+    if (!modalItem.productDescription.trim()) {
+      toast.error('Product Description is required');
+      return;
+    }
+    if (!modalItem.rate.trim()) {
+      toast.error('Tax Rate is required');
+      return;
+    }
+    if (!modalItem.uoM.trim()) {
+      toast.error('Unit of Measurement is required');
+      return;
+    }
+    if (!modalItem.quantity || Number(modalItem.quantity) <= 0) {
+      toast.error('Quantity must be greater than 0');
+      return;
+    }
+    if (!modalItem.valueSalesExcludingST || Number(modalItem.valueSalesExcludingST) <= 0) {
+      toast.error('Value Excl. Sales Tax is required');
+      return;
+    }
+    if (!modalItem.fixedNotifiedValueOrRetailPrice || modalItem.fixedNotifiedValueOrRetailPrice.trim() === '') {
+      toast.error('Fixed/Retail Price is required');
+      return;
+    }
+    if (modalItem.salesTaxWithheldAtSource.trim() === '') {
+      toast.error('Sales Tax Withheld is required');
+      return;
+    }
+    if (buyerRegistrationType === 'Unregistered' && String(modalItem.furtherTax ?? '').trim() === '') {
+      toast.error('Further Tax is required when buyer is Unregistered');
+      return;
+    }
+
+    // Restrict non-first items to match the invoice's transaction type
+    const isNonFirstItem = (editingItemIndex !== null && editingItemIndex > 0) || (editingItemIndex === null && items.length > 0);
+    if (isNonFirstItem && transactionTypeId) {
+      const ttName = masterData?.transaction_types.find(t => t.code === transactionTypeId)?.name;
+      if (ttName && modalItem.saleType !== ttName) {
+        toast.error(`Sale Type must match the invoice's Transaction Type: "${ttName}"`);
+        return;
+      }
+    }
+
+    if (editingItemIndex !== null) {
+      // Update existing item — apply all modalItem fields
+      const idx = editingItemIndex;
+      setItems(prevItems => {
+        const updatedItems = [...prevItems];
+        updatedItems[idx] = { ...modalItem };
+        return updatedItems;
+      });
+      // If saved item was selected, update that tracking too
+      if (modalSelectedSavedItem) {
+        setSelectedSavedItems(prev => ({ ...prev, [idx]: modalSelectedSavedItem }));
+        // Also handle item select logic for transaction type on item 0
+        if (idx === 0) {
+          const selectedItem = savedItems.find(si => si.id.toString() === modalSelectedSavedItem);
+          if (selectedItem) {
+            const ttCode = selectedItem.transaction_type
+              ? (masterData?.transaction_types.find(t => t.code === selectedItem.transaction_type)?.code ||
+                 masterData?.transaction_types.find(t => t.name === selectedItem.transaction_type)?.code ||
+                 selectedItem.transaction_type)
+              : '';
+            if (ttCode) {
+              setTransactionTypeId(ttCode);
+      
+            }
+          }
+        }
+      }
+    } else {
+      // Add new item
+      setItems(prevItems => [...prevItems, modalItem]);
+      if (modalSelectedSavedItem) {
+        const newIndex = items.length;
+        setSelectedSavedItems(prev => ({ ...prev, [newIndex]: modalSelectedSavedItem }));
+        // Handle transaction type for first item
+        if (newIndex === 0) {
+          const selectedItem = savedItems.find(si => si.id.toString() === modalSelectedSavedItem);
+          if (selectedItem) {
+            const ttCode = selectedItem.transaction_type
+              ? (masterData?.transaction_types.find(t => t.code === selectedItem.transaction_type)?.code ||
+                 masterData?.transaction_types.find(t => t.name === selectedItem.transaction_type)?.code ||
+                 selectedItem.transaction_type)
+              : '';
+            if (ttCode) {
+              setTransactionTypeId(ttCode);
+      
+              setItems(prev =>
+                prev.map(item => ({ ...item, saleType: selectedItem.transaction_type || item.saleType }))
+              );
+            }
+          }
+        }
+      }
+    }
+    setIsItemModalOpen(false);
+    setEditingItemIndex(null);
+  };
+
+  const handleModalItemSelect = (itemId: string) => {
+    const selectedItem = savedItems.find(item => item.id.toString() === itemId);
+    if (!selectedItem) return;
+
+    const ttCode = selectedItem.transaction_type
+      ? (masterData?.transaction_types.find(t => t.code === selectedItem.transaction_type)?.code ||
+         masterData?.transaction_types.find(t => t.name === selectedItem.transaction_type)?.code ||
+         selectedItem.transaction_type)
+      : '';
+    const ttName = selectedItem.transaction_type || '';
+
+    // Validate transaction type for non-first items
+    if (editingItemIndex !== null && editingItemIndex > 0 && ttCode && transactionTypeId && ttCode !== transactionTypeId) {
+      toast.error(`Cannot select this item. Transaction type mismatch. Please select an item with matching transaction type.`);
+      return;
+    }
+
+    setModalSelectedSavedItem(itemId);
+
+    const uomCode = selectedItem.default_uom || 'NOS';
+    const uomObj = masterData?.uom.find(u => u.code === uomCode);
+
+    setModalItem(prev => ({
+      ...prev,
+      hsCode: selectedItem.hs_code,
+      productDescription: selectedItem.product_description,
+      rate: selectedItem.default_rate || '',
+      uoM: uomObj?.name || uomCode,
+      saleType: ttName || prev.saleType,
+      sroScheduleNo: selectedItem.sro_schedule_no || '',
+      sroItemSerialNo: selectedItem.sro_item_serial_no || '',
+    }));
+
+    toast.success(`Item "${selectedItem.item_name}" loaded successfully`);
+  };
+
+  const updateModalItem = (field: keyof InvoiceItem, value: any) => {
+    setModalItem(prev => {
+      const updated = { ...prev, [field]: value };
+
+      // Auto-calculate when dependent fields change
+      if (field === 'valueSalesExcludingST' || field === 'fixedNotifiedValueOrRetailPrice' || field === 'furtherTax' || field === 'discount' || field === 'extraTax' || field === 'rate') {
+        const valueExclTax = Number(updated.valueSalesExcludingST) || 0;
+        const fixedPrice = Number(updated.fixedNotifiedValueOrRetailPrice) || 0;
+        const taxRate = parseFloat(updated.rate) || 0;
+        const discount = Number(updated.discount) || 0;
+        const baseValue = Math.max(valueExclTax, fixedPrice);
+
+        if (baseValue > 0 && taxRate >= 0) {
+          const salesTax = baseValue * (taxRate / 100);
+          let furtherTax = Number(updated.furtherTax) || 0;
+          if (field === 'furtherTax') {
+            // Mark this item as manually edited to prevent auto-override by buyer type change
+            const idx = editingItemIndex !== null ? editingItemIndex : items.length;
+            setManualFurtherTax(prev => new Set(prev).add(idx));
+          }
+          if (field !== 'furtherTax' && field !== 'discount' && buyerRegistrationType === 'Unregistered') {
+            furtherTax = baseValue * 0.04;
+          }
+          const extraTax = Number(updated.extraTax) || 0;
+          const totalValue = baseValue + salesTax + furtherTax + extraTax - discount;
+
+          if (field !== 'discount') {
+            updated.salesTaxApplicable = parseFloat(salesTax.toFixed(2));
+            updated.furtherTax = parseFloat(furtherTax.toFixed(2));
+          }
+          updated.totalValues = parseFloat(totalValue.toFixed(2));
+        }
+      }
+
+      return updated;
+    });
   };
 
   const removeItem = (index: number) => {
-    if (items.length > 1) {
-      setItems(items.filter((_, i) => i !== index));
-    }
+    setItems(items.filter((_, i) => i !== index));
   };
 
   const handleItemSelect = (index: number, itemId: string) => {
@@ -598,7 +763,6 @@ export function SaleInvoiceForm({
     // If this is the first item (index 0), set the Transaction Type from the item
     if (index === 0 && ttCode) {
       setTransactionTypeId(ttCode);
-      setHasSelectedTransactionType(true);
 
       // Auto-set Sale Type for all items to the Transaction Type name
       setItems(prevItems =>
@@ -646,6 +810,7 @@ export function SaleInvoiceForm({
   // Handle buyer business name input with autocomplete
   const handleBuyerBusinessNameChange = (value: string) => {
     setBuyerBusinessName(value);
+    setBuyerHighlightedIndex(-1);
 
     // Filter saved buyers based on input
     if (value.trim().length > 0) {
@@ -678,6 +843,7 @@ export function SaleInvoiceForm({
     }
 
     setShowBuyerSuggestions(false);
+    setBuyerHighlightedIndex(-1);
     toast.success(`Buyer "${buyer.buyer_business_name}" loaded successfully`);
   };
 
@@ -725,97 +891,42 @@ export function SaleInvoiceForm({
     });
   }, [buyerRegistrationType, manualFurtherTax]);
 
-  // State to track which items are fetching HS code descriptions
-  const [fetchingHSCode, setFetchingHSCode] = useState<{ [key: number]: boolean }>({});
-
-  // State for dynamically fetched data based on user selections
-  const [filteredUoms, setFilteredUoms] = useState<{ [key: number]: Array<{code: string, name: string}> }>({});
-  const [sroSchedules, setSroSchedules] = useState<{ [key: number]: Array<{id: string, description: string}> }>({});
-  const [fetchingDynamicData, setFetchingDynamicData] = useState<{ [key: number]: boolean }>({});
-
-  // Function to fetch valid UOMs for a specific HS code
-  const fetchValidUomsForHsCode = useCallback(async (index: number, hsCode: string) => {
-    if (!hsCode || hsCode.length < 4) return;
-
-    setFetchingDynamicData(prev => ({ ...prev, [index]: true }));
-
-    try {
-      // Assuming annexure_id = 3 (you may need to make this dynamic based on your requirements)
-      const validUoms = await masterDataService.getHsUom(hsCode, 3);
-
-      if (validUoms && validUoms.length > 0) {
-        setFilteredUoms(prev => ({ ...prev, [index]: validUoms }));
-      } else {
-        // If no specific UOMs returned, use all UOMs from master data
-        setFilteredUoms(prev => ({ ...prev, [index]: [] }));
-      }
-    } catch (error) {
-      console.error('Error fetching valid UOMs for HS code:', error);
-      // On error, allow all UOMs
-      setFilteredUoms(prev => ({ ...prev, [index]: [] }));
-    } finally {
-      setFetchingDynamicData(prev => ({ ...prev, [index]: false }));
+  const validateFormFields = (): boolean => {
+    if (items.length === 0) {
+      toast.error('Please add at least one item to the invoice');
+      return false;
     }
-  }, []);
-
-  // Function to fetch SRO schedules based on tax rate
-  const fetchSroSchedules = useCallback(async (index: number, rateId: string) => {
-    if (!rateId || !invoiceDate) return;
-
-    setFetchingDynamicData(prev => ({ ...prev, [index]: true }));
-
-    try {
-      // Format date as DD-MMM-YYYY (e.g., "04-Feb-2024")
-      const formattedDate = new Date(invoiceDate).toLocaleDateString('en-GB', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-        timeZone: 'Asia/Karachi'
-      }).replace(/ /g, '-');
-
-      // Assuming origination_supplier_csv = 1 (you may need to make this dynamic)
-      const schedules = await masterDataService.getSroSchedule(
-        parseInt(rateId),
-        formattedDate,
-        1
-      );
-
-      if (schedules && schedules.length > 0) {
-        setSroSchedules(prev => ({ ...prev, [index]: schedules }));
-      } else {
-        setSroSchedules(prev => ({ ...prev, [index]: [] }));
-      }
-    } catch (error) {
-      console.error('Error fetching SRO schedules:', error);
-      setSroSchedules(prev => ({ ...prev, [index]: [] }));
-    } finally {
-      setFetchingDynamicData(prev => ({ ...prev, [index]: false }));
+    if (!invoiceNo.trim()) {
+      toast.error('Invoice No is required');
+      return false;
     }
-  }, [invoiceDate]);
-
-  // Function to handle tax rate change
-  const handleTaxRateChange = useCallback((index: number, rateValue: string) => {
-    updateItem(index, 'rate', rateValue);
-
-    // Fetch SRO schedules for this tax rate
-    if (rateValue && invoiceDate) {
-      fetchSroSchedules(index, rateValue);
+    if (!invoiceDate) {
+      toast.error('Invoice Date is required');
+      return false;
     }
-  }, [updateItem, fetchSroSchedules, invoiceDate]);
-
-  const handleFormSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    // Validate Further Tax for Unregistered buyers (0 is allowed if user explicitly sets it)
+    if (!buyerBusinessName.trim()) {
+      toast.error('Buyer Business Name is required');
+      return false;
+    }
+    if (!buyerProvince) {
+      toast.error('Buyer Province is required');
+      return false;
+    }
+    if (!buyerAddress.trim()) {
+      toast.error('Buyer Address is required');
+      return false;
+    }
     if (buyerRegistrationType === 'Unregistered') {
       const itemsWithoutFurtherTax = items.filter(item => String(item.furtherTax ?? '').trim() === '');
       if (itemsWithoutFurtherTax.length > 0) {
         toast.error('Further Tax is required for all items when buyer is Unregistered');
-        return;
+        return false;
       }
     }
+    return true;
+  };
 
-    // Convert items from camelCase to snake_case for backend
+  const buildInvoiceData = () => {
     const formattedItems = items.map(item => ({
       hs_code: item.hsCode,
       product_description: item.productDescription,
@@ -836,8 +947,8 @@ export function SaleInvoiceForm({
       sro_item_serial_no: item.sroItemSerialNo || undefined
     }));
 
-    const invoiceData = {
-      external_id: invoiceNo || `INV-${Date.now()}`, // Use user-provided invoice no or auto-generate
+    return {
+      external_id: invoiceNo || `INV-${Date.now()}`,
       invoice_type: invoiceType,
       invoice_date: invoiceDate,
       transaction_type_id: transactionTypeId || undefined,
@@ -856,12 +967,143 @@ export function SaleInvoiceForm({
       items: formattedItems,
       environment: environment
     };
+  };
 
-    onSubmit(invoiceData);
+  const handleSaveDraft = async () => {
+    if (!validateFormFields()) return;
+
+    setIsSaving(true);
+    try {
+      const invoiceData = buildInvoiceData();
+
+      let invoiceResponse: any;
+      if (isEditMode && initialData?.id) {
+        invoiceResponse = await api.invoices.update(initialData.id, invoiceData);
+      } else {
+        invoiceResponse = await api.invoices.create(invoiceData);
+      }
+
+      const invoiceId = invoiceResponse.id || invoiceResponse.invoice?.id;
+      if (invoiceId) {
+        setSavedInvoiceId(invoiceId);
+      }
+
+      toast.success('Invoice saved as draft');
+      router.push('/invoices/history');
+    } catch (error) {
+      console.error('Save draft error:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      toast.error(`Failed to save: ${errorMessage}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleValidate = async () => {
+    if (!validateFormFields()) return;
+
+    setIsValidating(true);
+    try {
+      const invoiceData = buildInvoiceData();
+
+      // Save invoice to database
+      let invoiceResponse: any;
+      if (isEditMode && initialData?.id) {
+        invoiceResponse = await api.invoices.update(initialData.id, invoiceData);
+      } else {
+        invoiceResponse = await api.invoices.create(invoiceData);
+      }
+
+      // Extract invoice ID from response
+      const invoiceId = invoiceResponse.id || invoiceResponse.invoice?.id;
+      if (!invoiceId) {
+        toast.error('Failed to get invoice ID from server');
+        setIsValidating(false);
+        return;
+      }
+      setSavedInvoiceId(invoiceId);
+
+      // Validate with FBR
+      toast.info('Validating invoice with FBR...');
+      const validateResponse = await api.invoices.validate(invoiceId);
+
+      if (validateResponse.success) {
+        setIsValidated(true);
+      }
+
+      setDialogData({
+        success: validateResponse.success,
+        title: validateResponse.success ? 'Validation Successful' : 'Validation Failed',
+        message: validateResponse.message || (validateResponse.success ? 'Invoice validated successfully' : 'Validation failed'),
+        invoiceNumber: invoiceNo,
+        errors: validateResponse.errors || [],
+        invoiceId: invoiceId
+      });
+      setDialogOpen(true);
+    } catch (error) {
+      console.error('Validation error:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setDialogData({
+        success: false,
+        title: 'Validation Error',
+        message: errorMessage,
+        invoiceNumber: invoiceNo,
+        errors: [],
+        invoiceId: savedInvoiceId || undefined
+      });
+      setDialogOpen(true);
+    } finally {
+      setIsValidating(false);
+    }
+  };
+
+  const handlePost = async () => {
+    if (!savedInvoiceId) {
+      toast.error('No invoice to post. Please validate first.');
+      return;
+    }
+
+    setIsPosting(true);
+    try {
+      toast.info('Posting invoice to FBR...');
+      const postResponse = await api.invoices.post(savedInvoiceId);
+
+      if (postResponse.success) {
+        toast.success(`Invoice posted successfully! FBR Number: ${postResponse.fbr_invoice_number || 'N/A'}`);
+      }
+
+      setDialogData({
+        success: postResponse.success,
+        title: postResponse.success ? 'Invoice Posted Successfully' : 'Posting Failed',
+        message: postResponse.message || (postResponse.success ? 'Invoice posted successfully' : 'Posting failed'),
+        invoiceNumber: invoiceNo,
+        fbrNumber: postResponse.fbr_invoice_number,
+        errors: []
+      });
+      setDialogOpen(true);
+    } catch (error) {
+      console.error('Post error:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setDialogData({
+        success: false,
+        title: 'Posting Error',
+        message: errorMessage,
+        invoiceNumber: invoiceNo,
+        errors: []
+      });
+      setDialogOpen(true);
+    } finally {
+      setIsPosting(false);
+    }
+  };
+
+  const handleFormSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    handleValidate();
   };
 
   return (
-    <form onSubmit={handleFormSubmit} className="space-y-6">
+    <form onSubmit={handleFormSubmit} className="space-y-6 h-full">
       {/* Loading state */}
       {/* Error state */}
       {masterDataError && (
@@ -873,68 +1115,103 @@ export function SaleInvoiceForm({
       )}
 
       {/* Form content - show immediately, disable fields until master data loads */}
-      <>
-          {/* Seller Info Bar — auto-filled from profile, displayed at top right */}
-          {(sellerNTNCNIC || sellerBusinessName || sellerProvince || sellerAddress) && (
-            <div className="flex justify-end">
-              <div className="flex flex-wrap items-center gap-3 text-sm bg-white dark:bg-[#1a1a1a] border border-[#e1e3e5] dark:border-[#2e2e2e] rounded-xl px-4 py-3 shadow-sm">
-                {sellerBusinessName && (
-                  <span className="font-semibold text-[#202223] dark:text-[#e3e3e3] flex items-center gap-1.5">
-                    <Building2 className="h-4 w-4 text-[#008060] dark:text-[#00a876]" />
-                    {sellerBusinessName}
-                  </span>
-                )}
-                {sellerNTNCNIC && (
-                  <span className="bg-[#f1f8f5] dark:bg-[#0d3d2f]/30 px-2.5 py-1 rounded-md font-mono text-sm text-[#008060] dark:text-[#00a876] flex items-center gap-1.5">
-                    <FileText className="h-3.5 w-3.5" />
-                    NTN: {sellerNTNCNIC}
-                  </span>
-                )}
-                {sellerProvince && (
-                  <span className="text-[#6d7175] dark:text-[#8c9196] flex items-center gap-1.5">
-                    <MapPin className="h-3.5 w-3.5" />
-                    {sellerProvince}
-                  </span>
-                )}
-                {sellerAddress && (
-                  <span className="text-[#6d7175] dark:text-[#8c9196] text-xs max-w-[200px] truncate" title={sellerAddress}>
-                    {sellerAddress}
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
+      <div className="flex flex-col md:flex-row gap-4">
+          {/* Action Sidebar — Left (stacks horizontally on mobile, vertical sidebar on desktop) */}
+          <div className="shrink-0 flex md:flex-col gap-2 md:sticky top-4 self-start order-1 md:order-none pt-0 md:pt-18 justify-center md:justify-start">
+            {/* Save Draft Button */}
+            <Button
+              variant="outline"
+              size="icon"
+              type="button"
+              onClick={handleSaveDraft}
+              disabled={isLoading || isSubmitting || isSaving || isValidating || isPosting}
+              className="h-8 w-8 border border-amber-200 disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Save as Draft"
+            >
+              {isSaving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+            </Button>
 
+            {/* Validate / Post Button */}
+            {!isValidated ? (
+              <Button
+                variant="outline"
+                size="icon"
+                type="button"
+                onClick={handleValidate}
+                disabled={isLoading || isSubmitting || isValidating || isPosting || isSaving}
+                className="h-8 w-8 border border-green-400 disabled:opacity-30 disabled:cursor-not-allowed"
+                title="Validate with FBR"
+              >
+                {isValidating ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle className="h-4 w-4" />
+                )}
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="icon"
+                type="button"
+                onClick={handlePost}
+                disabled={isLoading || isSubmitting || isPosting || isValidating}
+                className="h-8 w-8 border-[#1e40af] text-[#1e40af]  disabled:opacity-30 disabled:cursor-not-allowed"
+                title="Post to FBR"
+              >
+                {isPosting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </Button>
+            )}
+
+            {/* Cancel Button */}
+            <Button
+              variant="outline"
+              size="icon"
+              type="button"
+              onClick={onCancel}
+              disabled={isLoading || isSubmitting || isSaving || isValidating || isPosting}
+              className="h-8 w-8 text-red-500 hover:text-red-600 border-red-300 dark:border-red-800 disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Cancel"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {/* Main Form Content */}
+          <div className="flex-1 min-w-0 space-y-1">
           {/* Invoice Header */}
           <Card>
-            <CardHeader>
-              <CardTitle>Invoice Information</CardTitle>
-              {masterDataLoading && (
-                <div className="flex items-center space-x-2 text-sm text-gray-500">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Loading form options...</span>
-                </div>
-              )}
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <Label htmlFor="invoiceNo">Invoice No *</Label>
+            <CardContent>
+              <div className="flex flex-wrap gap-2 xl:flex-nowrap xl:gap-0 xl:justify-between px-2">
+                <div className='w-full min-w-[140px] sm:w-[48%] md:w-[23%] xl:w-[150px]'>
+                  <Label className='pl-3 text-[14px] font-bold' htmlFor="invoiceNo">Invoice No *</Label>
                   <Input
                     id="invoiceNo"
                     value={invoiceNo}
                     onChange={(e) => setInvoiceNo(e.target.value)}
                     placeholder="e.g., INV-2024-001"
                     required
+                    className='w-full xl:w-[150px] text-[12px] h-[30px]'
                   />
-                  <p className="text-xs text-gray-500 mt-1">Unique invoice number for your records</p>
                 </div>
 
-                <div>
-                  <Label htmlFor="invoiceType">Invoice Type *</Label>
+                <div className='w-full min-w-[140px] sm:w-[48%] md:w-[23%] xl:w-[150px]'>
+                  <Label className='pl-3 text-[14px] font-bold' htmlFor="invoiceType">Invoice Type *</Label>
                   <Select value={invoiceType} onValueChange={(val) => setInvoiceType(val as 'Sale Invoice' | 'Debit Note')}>
-                    <SelectTrigger disabled={(masterData?.invoice_types.length ?? 0) === 0}>
-                      <SelectValue placeholder={(masterData?.invoice_types.length ?? 0) === 0 ? "Configure FBR token in profile" : "Select invoice type"} />
+                    <SelectTrigger disabled={(masterData?.invoice_types.length ?? 0) === 0} className="text-[12px] h-[30px]">
+                      <span className="flex-1 text-left">
+                        {invoiceType
+                          ? (masterData?.invoice_types.find(t => t.code === invoiceType)?.name || invoiceType)
+                          : ((masterData?.invoice_types.length ?? 0) === 0 ? "Configure FBR token in profile" : "Select invoice type")
+                        }
+                      </span>
                     </SelectTrigger>
                     <SelectContent>
                       {(masterData?.invoice_types.length ?? 0) === 0 ? (
@@ -948,11 +1225,23 @@ export function SaleInvoiceForm({
                   </Select>
                 </div>
 
-                <div>
-                  <Label htmlFor="transactionType">Transaction Type *</Label>
+                <div className='w-full min-w-[140px] sm:w-[48%] md:w-[23%] xl:w-[150px]'>
+                  <Label className='pl-3 text-[14px] font-bold' htmlFor="invoiceDate">Invoice Date *</Label>
+                  <Input
+                    className='w-full xl:w-[150px] text-[12px] h-[30px]'
+                    id="invoiceDate"
+                    type="date"
+                    value={invoiceDate}
+                    onChange={(e) => setInvoiceDate(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className='w-full min-w-[180px] sm:w-[48%] md:w-[23%] xl:w-[210px]'>
+                  <Label className='pl-3 text-[14px] font-bold' htmlFor="transactionType">Transaction Type *</Label>
                   <Select value={transactionTypeId} onValueChange={(val) => {
                     setTransactionTypeId(val);
-                    setHasSelectedTransactionType(true);
+
 
                     // Find the transaction type name from the code
                     const selectedTransactionType = masterData?.transaction_types.find(t => t.code === val);
@@ -964,10 +1253,10 @@ export function SaleInvoiceForm({
                     );
                   }}>
                     <SelectTrigger disabled={true} className="bg-gray-50 dark:bg-gray-800">
-                      <span className="flex-1 text-left">
+                      <span className="flex-1 text-left text-[11px]">
                         {transactionTypeId
                           ? masterData?.transaction_types.find(t => t.code === transactionTypeId)?.name || transactionTypeId
-                          : "Will be set by first item selection"
+                          : "Will be set by item selection"
                         }
                       </span>
                     </SelectTrigger>
@@ -981,253 +1270,470 @@ export function SaleInvoiceForm({
                       )}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
-                    Transaction type is automatically set when you select the first item
-                  </p>
                 </div>
 
-            <div>
-              <Label htmlFor="invoiceDate">Invoice Date *</Label>
-              <Input
-                id="invoiceDate"
-                type="date"
-                value={invoiceDate}
-                onChange={(e) => setInvoiceDate(e.target.value)}
-                required
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="environment">Environment *</Label>
-              <Input
-                id="environment"
-                value={environment}
-                readOnly
-                disabled
-                className="bg-gray-50 dark:bg-gray-800 cursor-not-allowed"
-              />
-              <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
-                Environment is automatically set based on your configured FBR tokens
-              </p>
-            </div>
-          </div>
-
-          {invoiceType === 'Debit Note' && (
-            <div>
-              <Label htmlFor="invoiceRefNo">Invoice Reference Number *</Label>
-              <Input
-                id="invoiceRefNo"
-                value={invoiceRefNo}
-                onChange={(e) => setInvoiceRefNo(e.target.value)}
-                placeholder="Reference invoice number (22 or 28 digits)"
-                required
-              />
-              <p className="text-xs text-gray-500 mt-1">22 digits for NTN, 28 digits for CNIC</p>
-            </div>
-          )}
-
-          {environment === 'SANDBOX' && (
-            <div>
-              <Label htmlFor="scenarioId">Scenario ID *</Label>
-              <Input
-                id="scenarioId"
-                value={scenarioId}
-                onChange={(e) => setScenarioId(e.target.value)}
-                placeholder="e.g., SN001"
-                required
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Required for sandbox testing. Default: SN001 (Goods at standard rate to registered buyers)
-              </p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Buyer Information */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Buyer Information</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-            <div className="relative">
-              <Label htmlFor="buyerBusinessName">Business Name *</Label>
-              <Input
-                id="buyerBusinessName"
-                value={buyerBusinessName}
-                onChange={(e) => handleBuyerBusinessNameChange(e.target.value)}
-                onFocus={() => {
-                  // Show all saved buyers when field is focused
-                  if (savedBuyers.length > 0) {
-                    if (buyerBusinessName.trim().length > 0) {
-                      // Filter based on current input
-                      const filtered = savedBuyers.filter(buyer =>
-                        buyer.buyer_business_name.toLowerCase().includes(buyerBusinessName.toLowerCase())
-                      );
-                      setBuyerSearchResults(filtered);
-                      setShowBuyerSuggestions(filtered.length > 0);
-                    } else {
-                      // Show all saved buyers when input is empty
-                      setBuyerSearchResults(savedBuyers);
-                      setShowBuyerSuggestions(true);
-                    }
-                  }
-                }}
-                onBlur={() => {
-                  // Delay hiding to allow click on suggestion
-                  setTimeout(() => setShowBuyerSuggestions(false), 200);
-                }}
-                placeholder="Enter business name"
-                required
-              />
-              {showBuyerSuggestions && buyerSearchResults.length > 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                  {buyerSearchResults.map((buyer, index) => (
-                    <div
-                      key={`${buyer.buyer_ntn_cnic}-${buyer.buyer_business_name}-${index}`}
-                      className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
-                      onClick={() => handleSelectSavedBuyer(buyer)}
-                    >
-                      <div className="font-medium text-sm">{buyer.buyer_business_name}</div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400">
-                        NTN/CNIC: {buyer.buyer_ntn_cnic}
-                        {buyer.buyer_province && ` • ${buyer.buyer_province}`}
-                      </div>
+                {environment === 'SANDBOX' && (
+                  <>
+                    <div className='w-full min-w-[110px] sm:w-[48%] md:w-[23%] xl:w-[120px]'>
+                      <Label className='pl-3 text-[14px] font-bold' htmlFor="environment">Environment</Label>
+                      <Input
+                        id="environment"
+                        value={environment}
+                        readOnly
+                        disabled
+                        className='w-full xl:w-[120px] text-[12px] h-[30px] bg-gray-50 dark:bg-gray-800 cursor-not-allowed'
+                      />
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
+                    <div className='w-full min-w-[110px] sm:w-[48%] md:w-[23%] xl:w-[120px]'>
+                      <Label className='pl-3 text-[14px] font-bold' htmlFor="scenarioId">Scenario ID *</Label>
+                      <Input
+                        id="scenarioId"
+                        value={scenarioId}
+                        onChange={(e) => setScenarioId(e.target.value)}
+                        placeholder="e.g., SN001"
+                        required
+                        className='w-full xl:w-[120px] text-[12px] h-[30px]'
+                      />
+                    </div>
+                  </>
+                )}
 
-            <div>
-              <Label htmlFor="buyerRegistrationType">Registration Type *</Label>
-              <Select value={buyerRegistrationType} onValueChange={(val) => setBuyerRegistrationType(val as 'Registered' | 'Unregistered')}>
-                <SelectTrigger disabled={isVerifyingBuyer}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {masterData?.registration_types.map((type) => (
-                    <SelectItem key={type.code} value={type.name}>{type.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label htmlFor="buyerNTNCNIC">
-                Buyer NTN/CNIC {buyerRegistrationType === 'Registered' ? '*' : '(Optional)'}
-              </Label>
-              <div className="relative">
-                <Input
-                  id="buyerNTNCNIC"
-                  value={buyerNTNCNIC}
-                  onChange={(e) => setBuyerNTNCNIC(e.target.value)}
-                  placeholder="Enter NTN or CNIC"
-                  required={buyerRegistrationType === 'Registered'}
-                  className={isVerifyingBuyer ? 'pr-10' : ''}
-                />
-                {isVerifyingBuyer && (
-                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
-                    <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                {(() => {
+                  const resolvedName = masterData?.invoice_types.find(t => t.code === invoiceType)?.name || invoiceType;
+                  return resolvedName === 'Debit Note';
+                })() && (
+                  <div className='w-full min-w-[160px] sm:w-[48%] md:w-[23%] xl:w-[180px]'>
+                    <Label className='pl-3 text-[14px] font-bold' htmlFor="invoiceRefNo">Invoice Ref No *</Label>
+                    <Input
+                      id="invoiceRefNo"
+                      value={invoiceRefNo}
+                      onChange={(e) => setInvoiceRefNo(e.target.value)}
+                      placeholder="22 or 28 digits"
+                      required
+                      className='w-full xl:w-[180px] text-[12px] h-[30px]'
+                    />
                   </div>
                 )}
               </div>
-              {buyerVerificationMessage && (
-                <p className={`text-xs mt-1 ${buyerVerificationMessage.startsWith('✓') ? 'text-green-600' : 'text-amber-600'}`}>
-                  {buyerVerificationMessage}
-                </p>
-              )}
-            </div>
+            </CardContent>
+          </Card>
 
-            <div>
-              <Label htmlFor="buyerProvince">Province *</Label>
-              <Select value={buyerProvince} onValueChange={(val) => {
-                setBuyerProvince(val);
-                // Find and store province code
-                const province = masterData?.provinces.find(p => p.name === val);
-                if (province) {
-                  setBuyerProvinceCode(province.code);
-                }
-              }}>
-                <SelectTrigger disabled={(masterData?.provinces.length ?? 0) === 0}>
-                  <SelectValue placeholder={(masterData?.provinces.length ?? 0) === 0 ? "Configure FBR token in profile" : "Select province"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {(masterData?.provinces.length ?? 0) === 0 ? (
-                    <SelectItem value="none" disabled>No options available - Configure FBR token</SelectItem>
-                  ) : (
-                    masterData?.provinces.map((province) => (
-                      <SelectItem key={province.code} value={province.name}>{province.name}</SelectItem>
-                    ))
+          {/* <div className='text-black font-extrabold px-2 flex justify-center'>
+            Buyer Information
+          </div> */}
+          
+          {/* Buyer Information */}
+          <Card className='w-full mt-2'>
+            {/* <CardHeader> */}
+              {/* <CardTitle>Buyer Information</CardTitle> */}
+            {/* </CardHeader> */}
+            <CardContent>
+              <div className='flex flex-wrap gap-2 xl:flex-nowrap xl:gap-0 xl:justify-between px-2 mb-2'>
+                {/* Buyer Business Name */}
+                <div className="relative w-full sm:w-[48%] md:w-[48%] xl:w-[490px]">
+                  <Label className='pl-3 text-[14px] font-bold' htmlFor="buyerBusinessName">Business Name *</Label>
+                  <Input
+                    className='w-full xl:w-[490px] text-[12px] h-[30px]'
+                    id="buyerBusinessName"
+                    value={buyerBusinessName}
+                    onChange={(e) => handleBuyerBusinessNameChange(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (!showBuyerSuggestions || buyerSearchResults.length === 0) {
+                        // Open suggestions on ArrowDown/ArrowUp when closed
+                        if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && savedBuyers.length > 0 && !showBuyerSuggestions) {
+                          e.preventDefault();
+                          const results = buyerBusinessName.trim().length > 0
+                            ? savedBuyers.filter(b => b.buyer_business_name.toLowerCase().includes(buyerBusinessName.toLowerCase()))
+                            : savedBuyers;
+                          setBuyerSearchResults(results);
+                          setShowBuyerSuggestions(true);
+                          setBuyerHighlightedIndex(e.key === 'ArrowDown' ? 0 : results.length - 1);
+                        }
+                        return;
+                      }
+
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setBuyerHighlightedIndex(prev => {
+                          const next = prev + 1;
+                          return next >= buyerSearchResults.length ? 0 : next;
+                        });
+                      } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setBuyerHighlightedIndex(prev => {
+                          const next = prev - 1;
+                          return next < 0 ? buyerSearchResults.length - 1 : next;
+                        });
+                      } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (buyerHighlightedIndex >= 0 && buyerHighlightedIndex < buyerSearchResults.length) {
+                          handleSelectSavedBuyer(buyerSearchResults[buyerHighlightedIndex]);
+                        }
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setShowBuyerSuggestions(false);
+                        setBuyerHighlightedIndex(-1);
+                      }
+                    }}
+                    onFocus={() => {
+                      setBuyerHighlightedIndex(-1);
+                      // Show all saved buyers when field is focused
+                      if (savedBuyers.length > 0) {
+                        if (buyerBusinessName.trim().length > 0) {
+                          // Filter based on current input
+                          const filtered = savedBuyers.filter(buyer =>
+                            buyer.buyer_business_name.toLowerCase().includes(buyerBusinessName.toLowerCase())
+                          );
+                          setBuyerSearchResults(filtered);
+                          setShowBuyerSuggestions(filtered.length > 0);
+                        } else {
+                          // Show all saved buyers when input is empty
+                          setBuyerSearchResults(savedBuyers);
+                          setShowBuyerSuggestions(true);
+                        }
+                      }
+                    }}
+                    onBlur={() => {
+                      // Delay hiding to allow click on suggestion
+                      setTimeout(() => {
+                        setShowBuyerSuggestions(false);
+                        setBuyerHighlightedIndex(-1);
+                      }, 200);
+                    }}
+                    placeholder="Enter business name"
+                    required
+                    autoComplete="off"
+                    role="combobox"
+                    aria-expanded={showBuyerSuggestions}
+                    aria-autocomplete="list"
+                  />
+                  {showBuyerSuggestions && buyerSearchResults.length > 0 && (
+                    <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-y-auto" role="listbox">
+                      {buyerSearchResults.map((buyer, index) => (
+                        <div
+                          key={`${buyer.buyer_ntn_cnic}-${buyer.buyer_business_name}-${index}`}
+                          role="option"
+                          aria-selected={buyerHighlightedIndex === index}
+                          data-highlighted={buyerHighlightedIndex === index ? '' : undefined}
+                          className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer data-[highlighted]:bg-blue-50 data-[highlighted]:dark:bg-blue-900/30"
+                          onClick={() => handleSelectSavedBuyer(buyer)}
+                          onMouseEnter={() => setBuyerHighlightedIndex(index)}
+                        >
+                          <div className="font-medium text-sm">{buyer.buyer_business_name}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            NTN/CNIC: {buyer.buyer_ntn_cnic}
+                            {buyer.buyer_province && ` • ${buyer.buyer_province}`}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
-                </SelectContent>
-              </Select>
-            </div>
+                </div>
+                {/* Buyer Cnic */}
+                <div className='w-full min-w-[120px] sm:w-[48%] md:w-[23%] xl:w-[140px]'>
+                  <Label className='pl-3 text-[14px] font-bold text-nowrap' htmlFor="buyerNTNCNIC">
+                    Ntn/Cnic {buyerRegistrationType === 'Registered' ? '*' : '(Optional)'}
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="buyerNTNCNIC"
+                      value={buyerNTNCNIC}
+                      onChange={(e) => setBuyerNTNCNIC(e.target.value)}
+                      placeholder="Enter Ntn/Cnic"
+                      required={buyerRegistrationType === 'Registered'}
+                      className='w-full xl:w-[140px] text-[12px] h-[30px]'
+                      // className={isVerifyingBuyer ? 'pr-10' : ''}
+                    />
+                    {isVerifyingBuyer && (
+                      <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                        <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                      </div>
+                    )}
+                  </div>
+                  {buyerVerificationMessage && (
+                    <p className={`text-xs mt-1 ${buyerVerificationMessage.startsWith('✓') ? 'text-green-600' : 'text-amber-600'}`}>
+                      {buyerVerificationMessage}
+                    </p>
+                  )}
+                </div>
+                {/* Buyer Type */}
+                <div className='w-full min-w-[100px] sm:w-[48%] md:w-[23%] xl:w-[120px]'>
+                  <Label className='pl-3 text-[14px] font-bold' htmlFor="buyerRegistrationType">Type *</Label>
+                  <Select value={buyerRegistrationType} onValueChange={(val) => setBuyerRegistrationType(val as 'Registered' | 'Unregistered')}>
+                    <SelectTrigger disabled={isVerifyingBuyer}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {masterData?.registration_types.map((type) => (
+                        <SelectItem key={type.code} value={type.name}>{type.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* Buyer Province */}
+                <div className='w-full min-w-[180px] sm:w-[48%] md:w-[23%] xl:w-[220px]'>
+                  <Label className='pl-3 text-[14px] font-bold' htmlFor="buyerProvince">Province *</Label>
+                  <Select  value={buyerProvince} onValueChange={(val) => {
+                    setBuyerProvince(val);
+                    // Find and store province code
+                    const province = masterData?.provinces.find(p => p.name === val);
+                    if (province) {
+                      setBuyerProvinceCode(province.code);
+                    }
+                  }}>
+                    <SelectTrigger disabled={(masterData?.provinces.length ?? 0) === 0}>
+                      <SelectValue placeholder={(masterData?.provinces.length ?? 0) === 0 ? "Configure FBR token in profile" : "Select province"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(masterData?.provinces.length ?? 0) === 0 ? (
+                        <SelectItem value="none" disabled>No options available - Configure FBR token</SelectItem>
+                      ) : (
+                        masterData?.provinces.map((province) => (
+                          <SelectItem key={province.code} value={province.name}>{province.name}</SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+                    
+              {/* Buyer Address */}      
+              <div className='px-2'>
+                <Label className='pl-3 text-[14px] font-bold' htmlFor="buyerAddress">Address *</Label>
+                <textarea
+                  className='w-full text-[12px] h-[60px] resize-none min-h-[60px] rounded-md border-2 border-[#c9cccf] px-3 py-2 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50'
+                  id="buyerAddress"
+                  value={buyerAddress}
+                  onChange={(e) => setBuyerAddress(e.target.value)}
+                  placeholder="Enter business address"
+                  required
+                />
+              </div>
+            </CardContent>
+          </Card>
 
-            <div className="md:col-span-2">
-              <Label htmlFor="buyerAddress">Address *</Label>
-              <Input
-                id="buyerAddress"
-                value={buyerAddress}
-                onChange={(e) => setBuyerAddress(e.target.value)}
-                placeholder="Enter business address"
-                required
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Invoice Items */}
-      <Card>
-        <CardHeader>
+        
+      
+          {/* Item Heading */}
           <div className="flex items-center justify-between">
-            <CardTitle>Invoice Items</CardTitle>
-            <Button
+            <div className="text-black font-extrabold px-2">Item Information</div>
+            {/* <Button
               type="button"
               onClick={addItem}
               size="sm"
-              className="bg-[#008060] hover:bg-[#006e52] dark:bg-[#00a876] dark:hover:bg-[#008f64]"
+              className="h-8 w-8 rounded-lg border-slate-200 dark:border-neutral-800 shadow-sm"
             >
-              <Plus className="h-4 w-4 mr-2" />
-              Add Item
+              <Plus className="h-3.5 w-3.5" />
+              
+            </Button> */}
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={addItem}
+              className="h-8 w-8 rounded-lg border-blue-300 dark:border-neutral-800 hover:text-emerald-500 dark:hover:text-emerald-400 shadow-sm transition-all duration-100"
+              title="Add Item"
+            >
+              <Plus className="h-3.5 w-3.5" />
             </Button>
           </div>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {items.map((item, index) => (
-            <div key={index} className="border rounded-lg p-4 space-y-4">
-              <div className="flex justify-between items-center mb-2">
-                <h4 className="font-medium">Item {index + 1}</h4>
-                {items.length > 1 && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removeItem(index)}
-                  >
-                    <Trash2 className="h-4 w-4 text-red-500" />
-                  </Button>
-                )}
+
+          {/* Invoice Items */}
+
+          {/*table 1 if invoice not exist*/}
+          {items.length === 0 ? (
+            <div className="overflow-x-auto xl:overflow-visible">
+              <table className="w-[720px] xl:w-full table-fixed bg-[#7c97f0] rounded-4xl flex-shrink-0">
+              <thead>
+                  <tr>
+                    <th className="border-r-2 border-[#FFFFFF] w-[155px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Item Name</th>
+                    <th className="border-r-2 border-[#FFFFFF] w-[50px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Qty</th>
+                    <th className="border-r-2 border-[#FFFFFF] w-[85px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Value Excl. Tax</th>
+                    <th className="border-r-2 border-[#FFFFFF] w-[40px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Rate</th>
+                    <th className="border-r-2 border-[#FFFFFF] w-[75px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Sales Tax</th>
+                    <th className="border-r-2 border-[#FFFFFF] w-[70px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Further Tax</th>
+                    <th className="border-r-2 border-[#FFFFFF] w-[85px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Total (Inc. Tax)</th>
+                    <th className=" w-[45px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Actions</th>
+                  </tr>
+                </thead>
+                </table>
+              <div className="text-center py-12 text-[#6d7175] dark:text-[#8c9196]">
+              <p className="text-lg font-medium">No items added yet</p>
+              <p className="text-sm mt-1">Click "+" to add invoice items</p>
+              </div>
+            </div>
+          ) : (
+            <div className="overflow-x-auto xl:overflow-visible">
+              <div className='max-h-50 overflow-y-auto rounded-2xl min-w-[720px] xl:min-w-0'>
+                {/*table 2 if invoice exist*/}
+                <table className='w-[720px] xl:w-full table-fixed'>
+                  <thead className="sticky top-0 bg-[#7c97f0] z-10">
+                    <tr>
+                      <th className="border-r-2 border-[#FFFFFF] w-[155px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Item Name</th>
+                      <th className="border-r-2 border-[#FFFFFF] w-[50px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Qty</th>
+                      <th className="border-r-2 border-[#FFFFFF] w-[85px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Value Excl. Tax</th>
+                      <th className="border-r-2 border-[#FFFFFF] w-[40px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Rate</th>
+                      <th className="border-r-2 border-[#FFFFFF] w-[75px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Sales Tax</th>
+                      <th className="border-r-2 border-[#FFFFFF] w-[70px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Further Tax</th>
+                      <th className="border-r-2 border-[#FFFFFF] w-[85px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Total (Inc. Tax)</th>
+                      <th className="w-[45px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className='divide-y divide-[#FFFFFF]'>
+                    {items.map((item, index) => (
+                      <tr key={index} className="group transition-colors duration-150 text-sm text-black bg-[#e7eaf1]">
+                        <td className="border-r-2 border-[#FFFFFF] py-1 px-2 align-middle w-[155px] " title={item.productDescription}>{item.productDescription || '—'}</td>
+                        <td className="border-r-2 border-[#FFFFFF] py-1 px-2 align-middle w-[50px] text-center">{item.quantity || 0}</td>
+                        <td className="border-r-2 border-[#FFFFFF] py-1 px-2 align-middle w-[85px] text-right">{Number(item.valueSalesExcludingST).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td className="border-r-2 border-[#FFFFFF] py-1 px-2 align-middle w-[40px] text-center">{item.rate || '—'}</td>
+                        <td className="border-r-2 border-[#FFFFFF] py-1 px-2 align-middle w-[75px] text-right">{Number(item.salesTaxApplicable).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td className="border-r-2 border-[#FFFFFF] py-1 px-2 align-middle w-[70px] text-right">{Number(item.furtherTax).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td className="border-r-2 border-[#FFFFFF] py-1 px-2 align-middle w-[85px] text-right">{Number(item.totalValues).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td className="py-1 px-2 align-middle w-[45px]">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(index)}
+                              className="h-8 w-8 rounded-lg border border-[#c9cccf] dark:border-[#3e3e3e] bg-white dark:bg-[#1a1a1a] flex items-center justify-center text-[#6d7175] hover:border-[#008060] hover:text-[#008060] dark:hover:border-[#00a876] dark:hover:text-[#00a876] hover:bg-[#f0f9f6] dark:hover:bg-[#0d3d2f]/30 transition-colors cursor-pointer"
+                              title="Edit item"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeItem(index)}
+                              className="h-8 w-8 rounded-lg border border-[#c9cccf] dark:border-[#3e3e3e] bg-white dark:bg-[#1a1a1a] flex items-center justify-center text-red-500 hover:text-red-600 hover:border-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors cursor-pointer"
+                              title="Remove item"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
 
-              {/* Saved Items Dropdown */}
-              {savedItems.length > 0 && (
-                <div className={`mb-4 p-3 border rounded-lg ${
-                  index > 0 && transactionTypeId && selectedSavedItems[index] && (() => {
-                    const selectedItem = savedItems.find(item => item.id.toString() === selectedSavedItems[index]);
-                    return selectedItem && selectedItem.transaction_type && selectedItem.transaction_type !== transactionTypeId;
+              <div className="overflow-x-auto xl:overflow-visible">
+                {/*table 3 footer*/}
+                <table className="w-[720px] xl:w-full table-fixed border-2 border-blue-300 rounded-2xl border-separate border-spacing-0 bg-[#FFFFFF]">
+                  <tfoot>
+                    <tr className="font-normal text-black text-[15px]">
+                      <td className="py-1 px-2 w-[205px] text-center">Totals:</td>
+                      <td className="py-1 px-2 w-[85px] text-right">
+                        {items.reduce((sum, item) => sum + (Number(item.valueSalesExcludingST) || 0), 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                      <td className='py-1 px-2 w-[40px]'></td>
+                      <td className="py-1 px-2 w-[75px] text-right">
+                        {items.reduce((sum, item) => sum + (Number(item.salesTaxApplicable) || 0), 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="py-1 px-2 w-[70px] text-right">
+                        {items.reduce((sum, item) => sum + (Number(item.furtherTax) || 0), 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                      <td className="py-1 px-2 w-[85px] text-right">
+                        {items.reduce((sum, item) => sum + (Number(item.totalValues) || 0), 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </td>
+                      <td className='py-1 px-2 w-[45px]'></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+        
+
+      {/* Item Modal / Popup */}
+      {isItemModalOpen && (
+        <>
+          <style>{`
+            input[type="number"]::-webkit-outer-spin-button,
+            input[type="number"]::-webkit-inner-spin-button {
+              -webkit-appearance: none;
+              margin: 0;
+            }
+            input[type="number"] {
+              -moz-appearance: textfield;
+            }
+          `}</style>
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-5 overflow-y-auto">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => {
+              setIsItemModalOpen(false);
+              setEditingItemIndex(null);
+            }}
+          />
+          {/* Modal Content */}
+          <div className="relative z-50 w-[95vw] max-w-6xl bg-white dark:bg-[#161616] rounded-2xl shadow-2xl border-2 border-black dark:border-[#2e2e2e] mb-10 mx-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-1 border-b border-[#e1e3e5] dark:border-[#2e2e2e]">
+              <h4 className="text-xl font-bold text-[#202223] dark:text-[#e3e3e3]">
+                {editingItemIndex !== null ? `Edit Item ${editingItemIndex + 1}` : 'Add New Item'}
+              </h4>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsItemModalOpen(false);
+                  setEditingItemIndex(null);
+                }}
+                className="p-2 rounded-lg hover:bg-[#f3f4f6] dark:hover:bg-[#2e2e2e] text-[#6d7175] transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="px-6 pt-5 pb-5 space-y-6">
+              {/* Item Entry Mode Toggle */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] mr-2">Item Type:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setItemEntryMode('saved');
+                    setModalSelectedSavedItem('');
+                  }}
+                  className={`px-4 py-1.5 text-sm font-medium rounded-lg border transition-all duration-150 ${
+                    itemEntryMode === 'saved'
+                      ? 'bg-[#008060] text-white border-[#008060] dark:bg-[#00a876] dark:border-[#00a876] shadow-sm'
+                      : 'bg-white dark:bg-[#1a1a1a] text-[#6d7175] dark:text-[#8c9196] border-[#c9cccf] dark:border-[#3e3e3e] hover:border-[#008060] hover:text-[#008060] dark:hover:border-[#00a876] dark:hover:text-[#00a876]'
+                  }`}
+                >
+                  Existing Saved Items
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setItemEntryMode('temporary');
+                    setModalSelectedSavedItem('');
+                  }}
+                  className={`px-4 py-1.5 text-sm font-medium rounded-lg border transition-all duration-150 ${
+                    itemEntryMode === 'temporary'
+                      ? 'bg-[#008060] text-white border-[#008060] dark:bg-[#00a876] dark:border-[#00a876] shadow-sm'
+                      : 'bg-white dark:bg-[#1a1a1a] text-[#6d7175] dark:text-[#8c9196] border-[#c9cccf] dark:border-[#3e3e3e] hover:border-[#008060] hover:text-[#008060] dark:hover:border-[#00a876] dark:hover:text-[#00a876]'
+                  }`}
+                >
+                  Temporary Item
+                </button>
+              </div>
+
+              {/* Saved Items Quick Select — only when mode is 'saved' */}
+              {itemEntryMode === 'saved' && savedItems.length > 0 && (
+                <div className={`p-2 border rounded-xl ${
+                  editingItemIndex !== null && editingItemIndex > 0 && transactionTypeId && modalSelectedSavedItem && (() => {
+                    const si = savedItems.find(item => item.id.toString() === modalSelectedSavedItem);
+                    return si && si.transaction_type && si.transaction_type !== transactionTypeId;
                   })()
                     ? 'bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-800'
                     : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
                 }`}>
-                  <Label className="text-sm font-medium mb-2 block">Quick Select from Saved Items</Label>
-                  <Select value={selectedSavedItems[index]} onValueChange={(val) => handleItemSelect(index, val)}>
+                  <Label className="text-sm font-semibold mb-2 block">Quick Select from Saved Items</Label>
+                  <Select value={modalSelectedSavedItem} onValueChange={handleModalItemSelect}>
                     <SelectTrigger>
-                      {selectedSavedItems[index] ? (
-                        <span>{savedItems.find(item => item.id.toString() === selectedSavedItems[index])?.item_name || 'Select a saved item to auto-fill...'}</span>
+                      {modalSelectedSavedItem ? (
+                        <span>{savedItems.find(item => item.id.toString() === modalSelectedSavedItem)?.item_name || 'Select a saved item to auto-fill...'}</span>
                       ) : (
                         <span className="text-muted-foreground">Select a saved item to auto-fill...</span>
                       )}
@@ -1245,18 +1751,18 @@ export function SaleInvoiceForm({
                       ))}
                     </SelectContent>
                   </Select>
-                  {index > 0 && transactionTypeId && (
+                  {editingItemIndex !== null && editingItemIndex > 0 && transactionTypeId && (
                     <p className="text-xs text-red-600 dark:text-red-400 mt-2 flex items-center gap-1 font-medium">
                       <AlertCircle className="h-3 w-3" />
                       Only items with matching transaction type can be selected
                     </p>
                   )}
-                  {index === 0 && !transactionTypeId && (
+                  {editingItemIndex === 0 && !transactionTypeId && (
                     <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
                       Select an item to automatically set the transaction type and fill all fields
                     </p>
                   )}
-                  {index === 0 && transactionTypeId && (
+                  {editingItemIndex === 0 && transactionTypeId && (
                     <p className="text-xs text-green-600 dark:text-green-400 mt-1">
                       Transaction type set. All items must match this transaction type.
                     </p>
@@ -1264,302 +1770,395 @@ export function SaleInvoiceForm({
                 </div>
               )}
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <Label>HS Code *</Label>
+              {/* Temporary Item notice */}
+              {itemEntryMode === 'temporary' && (
+                <div className="p-3 border rounded-xl bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800">
+                  <p className="text-sm text-amber-700 dark:text-amber-300 flex items-center gap-2">
+                    <Info className="h-4 w-4" />
+                    Temporary item — please fill all fields manually below.
+                  </p>
+                </div>
+              )}
+
+              {/* Item Fields Grid */}
+              <div>
+
+                <div className='flex flex-wrap gap-2 xl:flex-nowrap xl:justify-between'>
+                <div className='w-full sm:w-[48%] md:w-[23%] xl:w-[115px]'>
+                  <Label className='pl-3 text-[14px] font-bold'>HS Code *</Label>
                   <Input
+                    className='w-full xl:w-[100px] text-[12px] h-[30px]'
                     type="text"
-                    value={item.hsCode}
-                    onChange={(e) => updateItem(index, 'hsCode', e.target.value)}
-                    placeholder="Enter HS Code"
+                    value={modalItem.hsCode}
+                    onChange={(e) => updateModalItem('hsCode', e.target.value)}
+                    placeholder="HS Code"
                     required
                   />
                 </div>
 
-                <div className="md:col-span-2">
-                  <Label>Product Description *</Label>
+                <div className="w-full sm:w-[48%] md:w-[48%] xl:w-[600px]">
+                  <Label className='pl-3 text-[14px] font-bold'>Product Description *</Label>
                   <Input
+                    className='w-full xl:w-[600px] text-[12px] h-[30px]'
                     type="text"
-                    value={item.productDescription}
-                    onChange={(e) => updateItem(index, 'productDescription', e.target.value)}
+                    value={modalItem.productDescription}
+                    onChange={(e) => updateModalItem('productDescription', e.target.value)}
                     placeholder="Enter product description"
                     required
                   />
                 </div>
 
-                <div>
+                <div className='w-full sm:w-[48%] md:w-[23%] xl:w-[100px]'>
                   <Label>Tax Rate *</Label>
                   <Input
+                    className='w-full xl:w-[80px] text-[12px] h-[30px]'
                     type="text"
-                    value={item.rate}
-                    onChange={(e) => updateItem(index, 'rate', e.target.value)}
+                    value={modalItem.rate}
+                    onChange={(e) => updateModalItem('rate', e.target.value)}
                     placeholder="e.g., 18"
                     required
                   />
                 </div>
 
-                <div>
+                <div className='w-full sm:w-[48%] md:w-[23%] xl:w-[180px]'>
                   <Label>Unit of Measurement *</Label>
-                  <Input
-                    type="text"
-                    value={item.uoM}
-                    onChange={(e) => updateItem(index, 'uoM', e.target.value)}
-                    placeholder="e.g., NOS, KG, MT"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <Label>Quantity *</Label>
-                  <Input
-                    type="number"
-                    step="0.0001"
-                    value={item.quantity || ''}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      updateItem(index, 'quantity', val === '' ? 0 : parseFloat(val));
-                    }}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <Label>Value Excl. Sales Tax *</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={item.valueSalesExcludingST || ''}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      updateItem(index, 'valueSalesExcludingST', val === '' ? 0 : parseFloat(val));
-                    }}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <Label>Sales Tax Applicable *</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={item.salesTaxApplicable || ''}
-                    readOnly
-                    className="bg-gray-50 dark:bg-gray-800"
-                    required
-                  />
-                  <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
-                    Auto-calculated from value excl. tax
-                  </p>
-                </div>
-
-                <div>
-                  <Label>Total Value (Inc. Tax) *</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={item.totalValues || ''}
-                    readOnly
-                    className="bg-gray-50 dark:bg-gray-800"
-                    required
-                  />
-                  <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
-                    Auto-calculated (inc. tax + further tax - discount)
-                  </p>
-                </div>
-
-                <div>
-                  <Label>Fixed/Retail Price *</Label>
-                  <Input
-                    type="text"
-                    value={item.fixedNotifiedValueOrRetailPrice ?? '0'}
-                    onChange={(e) => {
-                      updateItem(index, 'fixedNotifiedValueOrRetailPrice', e.target.value);
-                    }}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <Label>Sales Tax Withheld *</Label>
-                  <Input
-                    type="text"
-                    value={item.salesTaxWithheldAtSource}
-                    onChange={(e) => updateItem(index, 'salesTaxWithheldAtSource', e.target.value)}
-                    placeholder="Enter amount (e.g., 0, 100.50)"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <Label>Extra Tax</Label>
-                  <Input
-                    type="text"
-                    value={item.extraTax ?? '0'}
-                    onChange={(e) => {
-                      updateItem(index, 'extraTax', e.target.value);
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <Label>Further Tax {buyerRegistrationType === 'Unregistered' && '*'}</Label>
-                  <Input
-                    type="text"
-                    value={item.furtherTax ?? '0'}
-                    onChange={(e) => {
-                      updateItem(index, 'furtherTax', e.target.value);
-                    }}
-                    required={buyerRegistrationType === 'Unregistered'}
-                  />
-                  {buyerRegistrationType === 'Unregistered' && (
-                    <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
-                      Auto-filled at 4% of Value Excl. Sales Tax (editable)
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <div className="flex items-center gap-2">
-                    <Label>SRO Schedule No</Label>
-                    {fetchingDynamicData[index] && (
-                      <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
-                    )}
-                  </div>
-                  {sroSchedules[index] && sroSchedules[index].length > 0 ? (
-                    <Select value={item.sroScheduleNo} onValueChange={(val) => updateItem(index, 'sroScheduleNo', val)}>
-                      <SelectTrigger>
-                        <span className="flex-1 text-left">
-                          {item.sroScheduleNo
-                            ? sroSchedules[index].find(s => s.id === item.sroScheduleNo)?.description || item.sroScheduleNo
-                            : "Select SRO schedule"
-                          }
-                        </span>
+                  {itemEntryMode === 'temporary' ? (
+                    <Select value={modalItem.uoM} onValueChange={(val) => updateModalItem('uoM', val)}>
+                      <SelectTrigger className="text-[12px] h-[30px] w-full xl:w-[170px]">
+                        <SelectValue placeholder="Select UOM" />
                       </SelectTrigger>
                       <SelectContent>
-                        {sroSchedules[index].map((schedule) => (
-                          <SelectItem key={schedule.id} value={schedule.id}>
-                            {schedule.description}
+                        {(masterData?.uom ?? []).map((uom) => (
+                          <SelectItem key={uom.code} value={uom.name}>
+                            {uom.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   ) : (
                     <Input
-                      value={item.sroScheduleNo}
-                      onChange={(e) => updateItem(index, 'sroScheduleNo', e.target.value)}
-                      placeholder={item.rate ? "No SRO schedules available for selected rate" : "Select tax rate first"}
-                      disabled={!item.rate}
+                      className='w-full xl:w-[170px] text-[12px] h-[30px]'
+                      type="text"
+                      value={modalItem.uoM}
+                      onChange={(e) => updateModalItem('uoM', e.target.value)}
+                      placeholder="e.g., NOS, KG, MT"
+                      required
                     />
                   )}
                 </div>
+                </div>
 
-                <div>
-                  <Label>FED Payable</Label>
+                <div className='flex flex-wrap gap-2 xl:flex-nowrap xl:justify-between'>
+                <div className='w-full sm:w-[48%] lg:w-[18%] xl:w-[180px]'>
+                  <Label>Quantity *</Label>
                   <Input
+                    className='w-full xl:w-[130px] text-[12px] h-[30px]'
                     type="number"
-                    step="0.01"
-                    value={item.fedPayable || ''}
+                    step="0.0001"
+                    value={modalItem.quantity || ''}
                     onChange={(e) => {
                       const val = e.target.value;
-                      updateItem(index, 'fedPayable', val === '' ? 0 : parseFloat(val));
+                      updateModalItem('quantity', val === '' ? 0 : parseFloat(val));
                     }}
+                    required
                   />
                 </div>
 
-                <div>
-                  <Label>Discount</Label>
+                <div className='w-full sm:w-[48%] lg:w-[18%] xl:w-[180px]'>
+                  <Label>Value Excl. Sales Tax *</Label>
                   <Input
+                    className='w-full xl:w-[180px] text-[12px] h-[30px]'
                     type="number"
                     step="0.01"
-                    value={item.discount || ''}
+                    value={modalItem.valueSalesExcludingST || ''}
                     onChange={(e) => {
                       const val = e.target.value;
-                      updateItem(index, 'discount', val === '' ? 0 : parseFloat(val));
+                      updateModalItem('valueSalesExcludingST', val === '' ? 0 : parseFloat(val));
                     }}
+                    required
                   />
                 </div>
 
-                <div>
+                <div className='w-full sm:w-[48%] lg:w-[18%] xl:w-[180px]'>
+                  <Label>Sales Tax Applicable *</Label>
+                  <Input
+                    className='w-full xl:w-[180px] text-[12px] h-[30px]'
+                    type="number"
+                    step="0.01"
+                    value={modalItem.salesTaxApplicable || ''}
+                    readOnly
+                    required
+                  />
+                  {/* <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
+                    Auto-calculated from value excl. tax
+                  </p> */}
+                </div>
+
+                <div className='w-full sm:w-[48%] lg:w-[18%] xl:w-[180px]'>
+                  <Label>Total Value (Inc. Tax) *</Label>
+                  <Input
+                    className='w-full xl:w-[180px] text-[12px] h-[30px]'
+                    type="number"
+                    step="0.01"
+                    value={modalItem.totalValues || ''}
+                    readOnly
+                    required
+                  />
+                  {/* <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
+                    Auto-calculated (inc. tax + further tax - discount)
+                  </p> */}
+                </div>
+
+                <div className='w-full sm:w-[48%] lg:w-[18%] xl:w-[180px]'>
+                  <Label>Fixed/Retail Price *</Label>
+                  <Input
+                    className='w-full xl:w-[180px] text-[12px] h-[30px]'
+                    type="text"
+                    value={modalItem.fixedNotifiedValueOrRetailPrice ?? '0'}
+                    onChange={(e) => {
+                      updateModalItem('fixedNotifiedValueOrRetailPrice', e.target.value);
+                    }}
+                    required
+                  />
+                </div>
+                </div>
+
+                <div className='flex flex-wrap gap-2 xl:flex-nowrap xl:justify-between'>
+                <div className='w-full sm:w-[48%] lg:w-[18%] xl:w-[180px]'>
+                  <Label>Sales Tax Withheld *</Label>
+                  <Input
+                    className='w-full xl:w-[160px] text-[12px] h-[30px]'
+                    type="text"
+                    value={modalItem.salesTaxWithheldAtSource}
+                    onChange={(e) => updateModalItem('salesTaxWithheldAtSource', e.target.value)}
+                    placeholder="Enter amount (e.g., 0, 100.50)"
+                    required
+                  />
+                </div>
+
+                
+
+                <div className='w-full sm:w-[48%] lg:w-[18%] xl:w-[180px]'>
+                  <Label>Further Tax {buyerRegistrationType === 'Unregistered' && '*'}</Label>
+                  <Input
+                    className='w-full xl:w-[120px] text-[12px] h-[30px]'
+                    type="text"
+                    value={modalItem.furtherTax ?? '0'}
+                    onChange={(e) => {
+                      updateModalItem('furtherTax', e.target.value);
+                    }}
+                    required={buyerRegistrationType === 'Unregistered'}
+                  />
+                  {/* {buyerRegistrationType === 'Unregistered' && (
+                    <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
+                      Auto-filled at 4% of Value Excl. Sales Tax (editable)
+                    </p>
+                  )} */}
+                </div>
+
+                <div className='w-full sm:w-[48%] lg:w-[18%] xl:w-[180px]'>
+                  <Label>SRO Schedule No</Label>
+                  <Input
+                    className='w-full xl:w-[180px] text-[12px] h-[30px]'
+                    value={modalItem.sroScheduleNo}
+                    onChange={(e) => updateModalItem('sroScheduleNo', e.target.value)}
+                    placeholder={modalItem.rate ? "No SRO schedules available" : "Select Item"}
+                    disabled={!modalItem.rate}
+                  />
+                </div>
+
+                <div className='w-full sm:w-[48%] lg:w-[18%] xl:w-[180px]'>
                   <Label>SRO Item Serial No</Label>
                   <Input
-                    value={item.sroItemSerialNo}
-                    onChange={(e) => updateItem(index, 'sroItemSerialNo', e.target.value)}
+                    className='w-full xl:w-[150px] text-[12px] h-[30px]'
+                    value={modalItem.sroItemSerialNo}
+                    onChange={(e) => updateModalItem('sroItemSerialNo', e.target.value)}
                     placeholder="Optional"
                   />
                 </div>
 
-                <div>
-                  <Label>Sale Type</Label>
+                <div className='w-full sm:w-[48%] lg:w-[18%] xl:w-[180px]'>
+                  <Label>Discount</Label>
                   <Input
-                    value={(() => {
-                      if (!selectedSavedItems[index]) return '';
-                      const selectedItem = savedItems.find(si => si.id.toString() === selectedSavedItems[index]);
-                      return selectedItem?.transaction_type || '';
-                    })()}
-                    disabled
-                    placeholder="No item selected"
-                    className="bg-gray-100 dark:bg-gray-800 cursor-not-allowed"
+                    className='w-full xl:w-[120px] text-[12px] h-[30px]'
+                    type="number"
+                    step="0.01"
+                    value={modalItem.discount || ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      updateModalItem('discount', val === '' ? 0 : parseFloat(val));
+                    }}
                   />
                 </div>
-              </div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+                </div>
 
-      {/* Income Tax */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Income Tax</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="incomeTax">Income Tax Type *</Label>
-              <Select value={incomeTax} onValueChange={(val) => setIncomeTax(val as '236G' | '236H')}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select income tax type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="236G">236G</SelectItem>
-                  <SelectItem value="236H">236H</SelectItem>
-                </SelectContent>
-              </Select>
+                <div className='flex flex-wrap gap-2 xl:flex-nowrap xl:justify-between'>
+
+
+
+                  <div className='w-full sm:w-[48%] lg:w-[30%] xl:w-[150px]'>
+                    <Label>Extra Tax</Label>
+                    <Input
+                      className='w-full xl:w-[120px] text-[12px] h-[30px]'
+                      type="text"
+                      value={modalItem.extraTax ?? '0'}
+                      onChange={(e) => {
+                        updateModalItem('extraTax', e.target.value);
+                      }}
+                    />
+                  </div>
+
+                  <div className='w-full sm:w-[48%] lg:w-[30%] xl:w-[170px]'>
+                    <Label>Sale Type</Label>
+                    {itemEntryMode === 'temporary' ? (
+                      <Select value={modalItem.saleType} onValueChange={(val) => updateModalItem('saleType', val)}>
+                        <SelectTrigger className="text-[12px] h-[30px] w-full xl:w-[220px]">
+                          <SelectValue placeholder="Select sale type" />
+                        </SelectTrigger>
+                        <SelectContent className='h-[200px]'>
+                          {(masterData?.transaction_types ?? []).map((type) => (
+                            <SelectItem key={type.code} value={type.name}>
+                              {type.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        className='w-full xl:w-[220px] text-[12px] h-[30px] cursor-not-allowed'
+                        value={modalItem.saleType}
+                        disabled
+                      />
+                    )}
+                  </div>
+
+                  <div className='w-full sm:w-[48%] lg:w-[30%] xl:w-[160px]'>
+                    <Label>FED Payable</Label>
+                    <Input
+                      className='w-full xl:w-[120px] text-[12px] h-[30px]'
+                      type="number"
+                      step="0.01"
+                      value={modalItem.fedPayable || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        updateModalItem('fedPayable', val === '' ? 0 : parseFloat(val));
+                      }}
+                    />
+                  </div>
+
+                  {/* <div className='w-[150px]'>
+                      <Label htmlFor="modalIncomeTax">Income Tax Type *</Label>
+                      <Select value={incomeTax} onValueChange={(val) => setIncomeTax(val as '236G' | '236H')}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select income tax type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="236G">236G</SelectItem>
+                          <SelectItem value="236H">236H</SelectItem>
+                        </SelectContent>
+                      </Select>
+                  </div>
+
+                  <div className='w-[180px]'>
+                      <Label>Withholding Tax (Info)</Label>
+                      <Input
+                        type="text"
+                        value={`${(() => {
+                          // Sum all saved items, but swap in modal values for the item being edited
+                          const sumExclTax = items.reduce((sum, item, i) => {
+                            if (i === editingItemIndex) {
+                              return sum + (Number(modalItem.valueSalesExcludingST) || 0);
+                            }
+                            return sum + (Number(item.valueSalesExcludingST) || 0);
+                          }, 0) + (editingItemIndex === null ? (Number(modalItem.valueSalesExcludingST) || 0) : 0);
+                          const rate = incomeTax === '236G' ? 0.001 : 0.005;
+                          return (sumExclTax * rate).toFixed(2);
+                        })()}`}
+                        readOnly
+                        className="w-[160px] text-[12px] h-[30px]"
+                      />
+                  </div> */}
+                </div>
+              
             </div>
-            <div>
-              <Label htmlFor="whtAmount">Withholding Tax Amount (Info)</Label>
-              <Input
-                id="whtAmount"
-                type="text"
-                value={`PKR ${(() => {
-                  const sumExclTax = items.reduce((sum, item) => sum + (Number(item.valueSalesExcludingST) || 0), 0);
-                  const rate = incomeTax === '236G' ? 0.001 : 0.005;
-                  return (sumExclTax * rate).toFixed(2);
-                })()}`}
-                readOnly
-                className="bg-gray-50 dark:bg-gray-800"
-              />
-              <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
-                {incomeTax === '236G' ? '0.1%' : '0.5%'} of sum of Value Excl. Sales Tax from all items
-              </p>
+
+            {/* Income Tax */}
+              {/* <div className="border rounded-xl p-4 bg-[#f9fafb] dark:bg-[#0d0d0d]">
+                <h3 className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] mb-3">Income Tax</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className='w-[220px]'>
+                    <Label htmlFor="modalIncomeTax">Income Tax Type *</Label>
+                    <Select value={incomeTax} onValueChange={(val) => setIncomeTax(val as '236G' | '236H')}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select income tax type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="236G">236G</SelectItem>
+                        <SelectItem value="236H">236H</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className='w-[220px]'>
+                    <Label>Withholding Tax (Info)</Label>
+                    <Input
+                      type="text"
+                      value={`${(() => {
+                        const sumExclTax = items.reduce((sum, item) => sum + (Number(item.valueSalesExcludingST) || 0), 0);
+                        const rate = incomeTax === '236G' ? 0.001 : 0.005;
+                        return (sumExclTax * rate).toFixed(2);
+                      })()}`}
+                      readOnly
+                      className="w-[220px] text-[12px] h-[30px]"
+                    />
+                    <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
+                      {incomeTax === '236G' ? '0.1%' : '0.5%'} of sum of Value Excl. Sales Tax from all items
+                    </p>
+                  </div>
+                </div>
+              </div> */}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[#e1e3e5] dark:border-[#2e2e2e] bg-[#f9fafb] dark:bg-[#0d0d0d] rounded-b-2xl">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsItemModalOpen(false);
+                  setEditingItemIndex(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleModalSave}
+                className="bg-[#008060] hover:bg-[#006e52] dark:bg-[#00a876] dark:hover:bg-[#008f64]"
+              >
+                {editingItemIndex !== null ? 'Save Changes' : 'Add Item'}
+              </Button>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+        </>
+      )}
 
-      {/* Form Actions */}
-      <div className="flex justify-between">
-        <Button type="button" variant="outline" onClick={onCancel} disabled={isLoading || isSubmitting}>
-          Cancel
-        </Button>
-        <Button type="submit" disabled={isLoading || isSubmitting}>
-          {isLoading || isSubmitting
-            ? (isEditMode ? 'Updating Invoice...' : 'Creating Invoice...')
-            : (isEditMode ? 'Update Invoice' : 'Create Invoice')
-          }
-        </Button>
-      </div>
-      </>
+      {/* Validation/Post Result Dialog */}
+      <ValidationResultDialog
+        isOpen={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        success={dialogData.success}
+        title={dialogData.title}
+        message={dialogData.message}
+        invoiceNumber={dialogData.invoiceNumber}
+        fbrNumber={dialogData.fbrNumber}
+        errors={dialogData.errors}
+        invoiceId={dialogData.invoiceId}
+        onRetry={dialogData.invoiceId ? () => handleValidate() : undefined}
+      />
+
+          </div>
+        </div>
     </form>
   );
 }

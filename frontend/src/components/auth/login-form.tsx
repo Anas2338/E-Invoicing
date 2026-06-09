@@ -68,7 +68,7 @@ export function LoginForm({ onSubmit, disabled, error }: LoginFormProps) {
               onChange={(e) => setEmail(e.target.value)}
               disabled={disabled}
               placeholder="Enter your email"
-              className="pl-10"
+              className="pl-10 h-12 w-full"
             />
           </div>
         </div>
@@ -99,7 +99,7 @@ export function LoginForm({ onSubmit, disabled, error }: LoginFormProps) {
               onChange={(e) => setPassword(e.target.value)}
               disabled={disabled}
               placeholder="Enter your password"
-              className="pl-10 pr-10"
+              className="pl-10 pr-10 h-12 w-full"
             />
             <button
               type="button"

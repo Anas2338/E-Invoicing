@@ -580,7 +580,7 @@ export default function InvoiceHistoryPage() {
                   size="icon"
                   onClick={() => fetchInvoices(true, true)}
                   disabled={refreshing || hasPostedSelected}
-                  className="h-8 w-8"
+                  className="h-8 w-8 border-orange-200"
                   title="Refresh"
                 >
                   <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
@@ -590,7 +590,7 @@ export default function InvoiceHistoryPage() {
                   size="icon"
                   onClick={handleBulkValidate}
                   disabled={bulkValidating || selectedInvoices.size === 0 || hasPostedSelected}
-                  className="h-8 w-8 border-[#008060] text-[#008060] hover:bg-[#008060] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="h-8 w-8 border border-green-300 disabled:opacity-30 disabled:cursor-not-allowed"
                   title="Validate selected"
                 >
                   {bulkValidating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
@@ -600,7 +600,7 @@ export default function InvoiceHistoryPage() {
                   size="icon"
                   onClick={handleBulkPrint}
                   disabled={bulkPrinting || selectedInvoices.size === 0}
-                  className="h-8 w-8 border-[#1e40af] text-[#1e40af] hover:bg-[#1e40af] hover:text-white"
+                  className="h-8 w-8 border-[#1e40af] text-[#1e40af] border-blue-300"
                   title="Print selected"
                 >
                   <Printer className="h-4 w-4" />
@@ -610,7 +610,7 @@ export default function InvoiceHistoryPage() {
                   size="icon"
                   onClick={handleBulkDelete}
                   disabled={bulkDeleting || selectedInvoices.size === 0 || hasPostedSelected}
-                  className="h-8 w-8 text-red-500 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="h-8 w-8 text-red-500 border-red-300 disabled:opacity-30 disabled:cursor-not-allowed"
                   title="Delete selected"
                 >
                   <Trash2 className="h-4 w-4" />

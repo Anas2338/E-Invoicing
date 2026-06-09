@@ -149,6 +149,14 @@ BUYER_VALUE_X = 490.1
 SUMMARY_LABEL_X = 799.1
 SUMMARY_VALUE_X = 883.7
 
+# Available width for header value text (with padding to prevent overlap)
+SELLER_VALUE_MAX_W = BUYER_LABEL_X - SELLER_VALUE_X - 6
+BUYER_VALUE_MAX_W = SUMMARY_LABEL_X - BUYER_VALUE_X - 6
+SUMMARY_VALUE_MAX_W = TABLE_RIGHT - SUMMARY_VALUE_X - 6
+
+# Line height for wrapped header values
+HEADER_LINE_HEIGHT = 12  # 10pt font + 2pt leading
+
 # ═══════════════════════════════════════════════════════════════════════
 # CONTENT AREA BOUNDARIES
 # ═══════════════════════════════════════════════════════════════════════
@@ -450,70 +458,137 @@ class PDFService:
     def _draw_first_page_header(
         self, c: canvas_module.Canvas, invoice: Invoice, font: str
     ) -> None:
-        """Draw the company name and three-column header on the first page."""
+        """Draw the company name and three-column header on the first page.
+
+        Text wrapping: long values (e.g. Business Name) wrap within their
+        column, and subsequent rows shift down so nothing overlaps.
+        """
         bold = self._font(bold=True)
         company = invoice.seller_business_name or ''
 
         # Company name — left-aligned, bold 16pt
+        # Wrap if it doesn't fit between left edge and buyer column
+        company_max_w = BUYER_LABEL_X - SELLER_LABEL_X - 4
+        company_lines = self._wrap_text(company, company_max_w, bold, COMPANY_NAME_SIZE)
+        company_y = PAGE_HEIGHT - COMPANY_NAME_Y
         c.setFont(bold, COMPANY_NAME_SIZE)
         c.setFillColor(BLACK)
-        c.drawString(SELLER_LABEL_X, PAGE_HEIGHT - COMPANY_NAME_Y, company)
+        for i, line in enumerate(company_lines):
+            c.drawString(SELLER_LABEL_X, company_y - i * HEADER_LINE_HEIGHT, line)
+
+        # If company name wraps, shift the header section down
+        company_extra = max(0, (len(company_lines) - 1) * HEADER_LINE_HEIGHT)
+        section_header_y = SECTION_HEADER_Y + company_extra
+        row1_y = FIELD_ROW1_Y + company_extra
 
         # Section labels — bold 12pt
         c.setFont(bold, SECTION_HEADER_SIZE)
-        c.drawString(SELLER_LABEL_X, PAGE_HEIGHT - SECTION_HEADER_Y, "Seller Information")
-        c.drawString(BUYER_LABEL_X, PAGE_HEIGHT - SECTION_HEADER_Y, "Buyer Information")
-        c.drawString(SUMMARY_LABEL_X, PAGE_HEIGHT - SECTION_HEADER_Y, "Invoice Summary")
+        c.drawString(SELLER_LABEL_X, PAGE_HEIGHT - section_header_y, "Seller Information")
+        c.drawString(BUYER_LABEL_X, PAGE_HEIGHT - section_header_y, "Buyer Information")
+        c.drawString(SUMMARY_LABEL_X, PAGE_HEIGHT - section_header_y, "Invoice Summary")
 
-        # Field values — regular 10pt
-        c.setFont(font, FIELD_VALUE_SIZE)
+        # ── Pre-calculate wrapped lines for all header fields ──
+        # Each entry: (label_x, value_x, max_value_w, label, value)
+        header_rows = [
+            # Row 1
+            [
+                (SELLER_LABEL_X, SELLER_VALUE_X, SELLER_VALUE_MAX_W,
+                 "Business Name:", company),
+                (BUYER_LABEL_X, BUYER_VALUE_X, BUYER_VALUE_MAX_W,
+                 "Business Name:", invoice.buyer_business_name or ''),
+                (SUMMARY_LABEL_X, SUMMARY_VALUE_X, SUMMARY_VALUE_MAX_W,
+                 "FBR Invoice No.:", invoice.fbr_reference_number or ''),
+            ],
+            # Row 2
+            [
+                (SELLER_LABEL_X, SELLER_VALUE_X, SELLER_VALUE_MAX_W,
+                 "Registration No.:", invoice.seller_ntn_cnic or ''),
+                (BUYER_LABEL_X, BUYER_VALUE_X, BUYER_VALUE_MAX_W,
+                 "Registration No.:", invoice.buyer_ntn_cnic or ''),
+                (SUMMARY_LABEL_X, SUMMARY_VALUE_X, SUMMARY_VALUE_MAX_W,
+                 "Local Invoice No.:", invoice.external_id or ''),
+            ],
+            # Row 3
+            [
+                (SELLER_LABEL_X, SELLER_VALUE_X, SELLER_VALUE_MAX_W,
+                 "Province:", invoice.seller_province or ''),
+                (BUYER_LABEL_X, BUYER_VALUE_X, BUYER_VALUE_MAX_W,
+                 "Province:", invoice.buyer_province or ''),
+                (SUMMARY_LABEL_X, SUMMARY_VALUE_X, SUMMARY_VALUE_MAX_W,
+                 "Invoice Date:", invoice.invoice_date or ''),
+            ],
+        ]
 
-        # SELLER column
-        self._draw_header_field(c, font, SELLER_LABEL_X, SELLER_VALUE_X,
-                                FIELD_ROW1_Y, "Business Name:", company)
-        self._draw_header_field(c, font, SELLER_LABEL_X, SELLER_VALUE_X,
-                                FIELD_ROW2_Y, "Registration No.:",
-                                invoice.seller_ntn_cnic or '')
-        self._draw_header_field(c, font, SELLER_LABEL_X, SELLER_VALUE_X,
-                                FIELD_ROW3_Y, "Province:",
-                                invoice.seller_province or '')
+        # Row 4 (Summary only)
+        header_row4 = [
+            (SUMMARY_LABEL_X, SUMMARY_VALUE_X, SUMMARY_VALUE_MAX_W,
+             "Invoice Type:", invoice.invoice_type or ''),
+        ]
 
-        # BUYER column
-        self._draw_header_field(c, font, BUYER_LABEL_X, BUYER_VALUE_X,
-                                FIELD_ROW1_Y, "Business Name:",
-                                invoice.buyer_business_name or '')
-        self._draw_header_field(c, font, BUYER_LABEL_X, BUYER_VALUE_X,
-                                FIELD_ROW2_Y, "Registration No.:",
-                                invoice.buyer_ntn_cnic or '')
-        self._draw_header_field(c, font, BUYER_LABEL_X, BUYER_VALUE_X,
-                                FIELD_ROW3_Y, "Province:",
-                                invoice.buyer_province or '')
+        # Pre-wrap all values and track max lines per row
+        wrapped_rows = []  # list of (max_lines, list of (label_x, value_x, max_w, label, wrapped_value_lines))
+        for row in header_rows:
+            max_lines = 1
+            wrapped_cols = []
+            for label_x, value_x, max_w, label, value in row:
+                lines = self._wrap_text(value, max_w, font, FIELD_VALUE_SIZE)
+                max_lines = max(max_lines, len(lines))
+                wrapped_cols.append((label_x, value_x, max_w, label, lines))
+            wrapped_rows.append((max_lines, wrapped_cols))
 
-        # INVOICE SUMMARY column
-        self._draw_header_field(c, font, SUMMARY_LABEL_X, SUMMARY_VALUE_X,
-                                FIELD_ROW1_Y, "FBR Invoice No.:",
-                                invoice.fbr_reference_number or '')
-        self._draw_header_field(c, font, SUMMARY_LABEL_X, SUMMARY_VALUE_X,
-                                FIELD_ROW2_Y, "Local Invoice No.:",
-                                invoice.external_id or '')
-        self._draw_header_field(c, font, SUMMARY_LABEL_X, SUMMARY_VALUE_X,
-                                FIELD_ROW3_Y, "Invoice Date:",
-                                invoice.invoice_date or '')
-        self._draw_header_field(c, font, SUMMARY_LABEL_X, SUMMARY_VALUE_X,
-                                FIELD_ROW4_Y, "Invoice Type:",
-                                invoice.invoice_type or '')
+        # Also pre-wrap row 4
+        r4_lines = self._wrap_text(header_row4[0][4], header_row4[0][2], font, FIELD_VALUE_SIZE)
+        r4_max_lines = max(1, len(r4_lines))
 
-    def _draw_header_field(
+        # Calculate dynamic Y positions for rows based on wrapped line counts
+        row_spacing = HEADER_LINE_HEIGHT + 2  # spacing between text baselines of consecutive rows
+        base_y = row1_y
+
+        row_y_positions = [base_y]
+        current_y = base_y
+        for max_ln, _ in wrapped_rows:
+            # Height of this row = max_lines * HEADER_LINE_HEIGHT
+            current_y += max(max_ln * HEADER_LINE_HEIGHT, row_spacing)
+            row_y_positions.append(current_y)
+        # Last entry is the Y after row 3 → used for row 4
+        row4_y_val = current_y + 2  # small extra gap before row 4
+
+        # ── Draw all rows ──
+        for row_idx, (max_ln, cols) in enumerate(wrapped_rows):
+            y_from_top = row_y_positions[row_idx]
+            y_base = PAGE_HEIGHT - y_from_top
+
+            for label_x, value_x, max_w, label, lines in cols:
+                self._draw_header_field_wrapped(
+                    c, font, label_x, value_x, y_base,
+                    label, lines, max_ln, bold
+                )
+
+        # Row 4 (Invoice Type — summary only)
+        y_base_r4 = PAGE_HEIGHT - row4_y_val
+        self._draw_header_field_wrapped(
+            c, font,
+            header_row4[0][0], header_row4[0][1], y_base_r4,
+            header_row4[0][3], r4_lines, r4_max_lines, bold
+        )
+
+    def _draw_header_field_wrapped(
         self, c: canvas_module.Canvas, font: str,
-        label_x: float, value_x: float, y_from_top: float,
-        label: str, value: str
+        label_x: float, value_x: float, y_base: float,
+        label: str, value_lines: list, max_lines: int, bold: str
     ) -> None:
-        """Draw a label:value pair in the header area."""
-        y = PAGE_HEIGHT - y_from_top
+        """Draw a label:value pair in the header area, with value wrapping.
+
+        The label is vertically centered relative to the wrapped value block.
+        """
+        # Draw label — fixed at the first line position (does not move)
         c.setFont(font, FIELD_LABEL_SIZE)
-        c.drawString(label_x, y, label)
+        c.drawString(label_x, y_base, label)
+
+        # Draw each wrapped value line, top-aligned
         c.setFont(font, FIELD_VALUE_SIZE)
-        c.drawString(value_x, y, value)
+        for i, line in enumerate(value_lines):
+            c.drawString(value_x, y_base - i * HEADER_LINE_HEIGHT, line)
 
     # ═══════════════════════════════════════════════════════════════════
     # TABLE DRAWING

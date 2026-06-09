@@ -112,16 +112,16 @@ export function RecentInvoices({
 
       {/* ===== DESKTOP TABLE VIEW (≥ lg) ===== */}
 <div className="hidden lg:flex lg:flex-col gap-2">
-  <div className='rounded-4xl bg-[#7c97f0] py-1'>
+  <div className='rounded-4xl bg-[#7c97f0]'>
     <table className='w-full table-fixed'>
       <thead>
         <tr>
-          <th className="pl-2 py-0.5 text-centre text-xs font-bold text-black uppercase w-[125px]">Invoice No.</th>
-          <th className="py-0.5 text-center text-xs font-bold text-black uppercase tracking-wider w-[185px]">FBR Ref Number</th>
-          <th className="px-2 py-2 text-center text-xs font-bold text-black uppercase tracking-wider w-[95px]">Date</th>
-          <th className="px-2 py-2 text-center text-xs font-bold text-black uppercase tracking-wider w-[340px]">Buyer Name</th>
-          <th className="px-2 py-2 text-center text-xs font-bold text-black uppercase tracking-wider w-[115px]">Amount</th>
-          <th className="py-2 text-center text-xs font-bold text-black uppercase tracking-wider w-[100px]">Status</th>
+          <th className="border-r-2 border-[#FFFFFF] pl-2 py-0.5 text-centre text-xs font-bold text-black uppercase w-[125px]">Invoice No.</th>
+          <th className="border-r-2 border-[#FFFFFF] py-0.5 text-center text-xs font-bold text-black uppercase tracking-wider w-[185px]">FBR Ref Number</th>
+          <th className="border-r-2 border-[#FFFFFF] px-2 py-2 text-center text-xs font-bold text-black uppercase tracking-wider w-[95px]">Date</th>
+          <th className="border-r-2 border-[#FFFFFF] px-2 py-2 text-center text-xs font-bold text-black uppercase tracking-wider w-[340px]">Buyer Name</th>
+          <th className="border-r-2 border-[#FFFFFF] px-2 py-2 text-center text-xs font-bold text-black uppercase tracking-wider w-[115px]">Amount</th>
+          <th className="border-r-2 border-[#FFFFFF] py-2 text-center text-xs font-bold text-black uppercase tracking-wider w-[100px]">Status</th>
           <th className="px-2 py-2 text-center text-xs font-bold text-black uppercase tracking-wider w-[180px]">Actions</th>
         </tr>
       </thead>
@@ -133,21 +133,21 @@ export function RecentInvoices({
       <tbody className="divide-y divide-[#FFFFFF]">
         {invoices.map((invoice) => (
           <tr key={invoice.id} className="hover:bg-slate-50/60 transition-colors duration-150">
-            <td className="pl-2 py-0.5 w-[125px]">
+            <td className="border-r-2 border-[#FFFFFF] pl-2 py-0.5 w-[125px]">
               <div className="text-sm font-medium text-slate-700 truncate">{invoice.number}</div>
             </td>
-            <td className="px-1 py-0.5 w-[185px]">
+            <td className="border-r-2 border-[#FFFFFF] px-1 py-0.5 w-[185px]">
               <div className="text-sm font-medium text-slate-700 truncate">{invoice.fbrInvoiceNumber || '—'}</div>
             </td>
-            <td className="px-2 py-0.5 w-[95px]">
+            <td className="border-r-2 border-[#FFFFFF] px-2 py-0.5 w-[95px]">
               <div className="text-sm font-medium text-slate-700">
                 {new Date(invoice.date).toLocaleDateString('en-GB', { timeZone: 'Asia/Karachi' })}
               </div>
             </td>
-            <td className="px-2 py-0.5 w-[340px]">
+            <td className="border-r-2 border-[#FFFFFF] px-2 py-0.5 w-[340px]">
               <div className="text-sm font-medium text-slate-700">{invoice.buyerName || 'N/A'}</div>
             </td>
-            <td className="px-2 py-0.5 w-[115px]">
+            <td className="border-r-2 border-[#FFFFFF] px-2 py-0.5 w-[115px]">
               <div className="text-sm font-medium text-slate-700 text-right">
                 {invoice.amount.toLocaleString(
                   'en-US', {
@@ -156,7 +156,7 @@ export function RecentInvoices({
                 })}
               </div>
             </td>
-            <td className="px-2 py-0.5 text-center w-[100px]">
+            <td className="border-r-2 border-[#FFFFFF] px-2 py-0.5 text-center w-[100px]">
               <Badge className={`${getStatusColor(invoice.status)}`}>
                 {invoice.status === 'validated' ? 'valid' : invoice.status}
               </Badge>

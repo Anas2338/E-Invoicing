@@ -532,7 +532,7 @@ export default function SavedItemsSection() {
                   value={itemCode}
                   onChange={(e) => setItemCode(e.target.value)}
                   placeholder="e.g., ITEM-001 or SKU-12345"
-                  className="mt-1"
+                  className="mt-1 h-12 w-full"
                   required
                 />
                 <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
@@ -549,7 +549,7 @@ export default function SavedItemsSection() {
                   value={itemName}
                   onChange={(e) => setItemName(e.target.value)}
                   placeholder="e.g., Laptop Computer"
-                  className="mt-1"
+                  className="mt-1 h-12 w-full"
                   required
                 />
               </div>
@@ -573,7 +573,7 @@ export default function SavedItemsSection() {
                     onChange={(e) => setHsCode(e.target.value)}
                     onBlur={(e) => validateHSCode(e.target.value)}
                     placeholder="Enter HS Code"
-                    className="mt-1 pr-10"
+                    className="mt-1 pr-10 h-12 w-full"
                     required
                   />
                   {validatingHSCode && (
@@ -601,7 +601,7 @@ export default function SavedItemsSection() {
                   value={productDescription}
                   onChange={(e) => setProductDescription(e.target.value)}
                   placeholder="Enter product description"
-                  className="mt-1"
+                  className="mt-1 h-12 w-full"
                   required
                 />
               </div>
@@ -610,7 +610,7 @@ export default function SavedItemsSection() {
               <div>
                 <Label htmlFor="defaultUom">Unit of Measurement *</Label>
                 <Select value={defaultUom} onValueChange={setDefaultUom}>
-                  <SelectTrigger className="mt-1">
+                  <SelectTrigger className="mt-1 h-12 w-full">
                     {defaultUom ? (
                       <span>{defaultUom}</span>
                     ) : (
@@ -636,7 +636,7 @@ export default function SavedItemsSection() {
                   value={defaultRate}
                   onChange={(e) => setDefaultRate(e.target.value)}
                   placeholder="e.g., 18"
-                  className="mt-1"
+                  className="mt-1 h-12 w-full"
                   required
                 />
               </div>
@@ -645,7 +645,7 @@ export default function SavedItemsSection() {
               <div>
                 <Label htmlFor="transactionType">Transaction Type *</Label>
                 <Select value={transactionType} onValueChange={setTransactionType}>
-                  <SelectTrigger className="mt-1">
+                  <SelectTrigger className="mt-1 h-12 w-full">
                     {transactionType ? (
                       <span>{transactionType}</span>
                     ) : (
@@ -671,7 +671,7 @@ export default function SavedItemsSection() {
                   value={sroScheduleNo}
                   onChange={(e) => setSroScheduleNo(e.target.value)}
                   placeholder="Enter SRO schedule number"
-                  className="mt-1"
+                  className="mt-1 h-12 w-full"
                 />
               </div>
 
@@ -684,7 +684,7 @@ export default function SavedItemsSection() {
                   value={sroItemSerialNo}
                   onChange={(e) => setSroItemSerialNo(e.target.value)}
                   placeholder="Enter SRO item serial number"
-                  className="mt-1"
+                  className="mt-1 h-12 w-full"
                 />
               </div>
             </div>
@@ -721,7 +721,7 @@ export default function SavedItemsSection() {
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}
                   onKeyPress={handleSearchKeyPress}
-                  className="pl-10"
+                  className="pl-10 h-12 w-full"
                 />
               </div>
               <div className="flex flex-wrap gap-2">

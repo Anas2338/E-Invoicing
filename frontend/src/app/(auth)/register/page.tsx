@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/providers/auth-provider';
@@ -9,10 +9,40 @@ import { UserPlus, Frown, CheckCircle } from 'lucide-react';
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { signUp, loading } = useAuth();
+  const { user, loading: authLoading, signUp, loading } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [pendingApproval, setPendingApproval] = useState(false);
+  const [authorized, setAuthorized] = useState(false);
+
+  // Only allow authenticated admin users to access the register page
+  useEffect(() => {
+    if (authLoading) return;
+
+    if (!user) {
+      router.push('/login');
+      return;
+    }
+
+    if (user.role !== 'admin') {
+      router.push('/dashboard');
+      return;
+    }
+
+    setAuthorized(true);
+  }, [user, authLoading, router]);
+
+  // Show loading while checking auth
+  if (authLoading || !authorized) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#f6f6f7] via-white to-[#f1f8f5] dark:from-[#0a0a0a] dark:via-[#1a1a1a] dark:to-[#0d3d2f]/20">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#008060] dark:border-[#00a876] mx-auto"></div>
+          <p className="mt-4 text-[#6d7175] dark:text-[#8c9196]">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   const handleSubmit = async (email: string, password: string, name: string) => {
     try {
@@ -80,18 +110,6 @@ export default function RegisterPage() {
           </div>
 
           <RegisterForm onSubmit={handleSubmit} disabled={loading} error={error} />
-
-          <div className="mt-6 text-center">
-            <p className="text-sm text-[#6d7175] dark:text-[#8c9196]">
-              Already have an account?{' '}
-              <Link
-                href="/login"
-                className="font-semibold text-[#008060] dark:text-[#00a876] hover:text-[#006e52] dark:hover:text-[#008f64] transition-colors duration-150"
-              >
-                Sign in
-              </Link>
-            </p>
-          </div>
 
           {error && (
             <div className="mt-4 flex items-center p-3 bg-[#fef3f2] dark:bg-[#3d1e1e] rounded-xl border border-[#fecdca] dark:border-[#5c2b2b]">

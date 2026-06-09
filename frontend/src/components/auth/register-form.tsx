@@ -78,7 +78,7 @@ export function RegisterForm({ onSubmit, disabled, error }: RegisterFormProps) {
               onChange={(e) => setName(e.target.value)}
               disabled={disabled}
               placeholder="Enter your full name"
-              className="pl-10"
+              className="pl-10 h-12 w-full"
             />
           </div>
         </div>
@@ -101,7 +101,7 @@ export function RegisterForm({ onSubmit, disabled, error }: RegisterFormProps) {
               onChange={(e) => setEmail(e.target.value)}
               disabled={disabled}
               placeholder="Enter your email"
-              className="pl-10"
+              className="pl-10 h-12 w-full"
             />
           </div>
         </div>
@@ -124,7 +124,7 @@ export function RegisterForm({ onSubmit, disabled, error }: RegisterFormProps) {
               onChange={(e) => setPassword(e.target.value)}
               disabled={disabled}
               placeholder="Enter your password"
-              className="pl-10 pr-10"
+              className="pl-10 pr-10 h-12 w-full"
             />
             <button
               type="button"
@@ -162,7 +162,7 @@ export function RegisterForm({ onSubmit, disabled, error }: RegisterFormProps) {
               onChange={(e) => setConfirmPassword(e.target.value)}
               disabled={disabled}
               placeholder="Confirm your password"
-              className="pl-10 pr-10"
+              className="pl-10 pr-10 h-12 w-full"
             />
             <button
               type="button"

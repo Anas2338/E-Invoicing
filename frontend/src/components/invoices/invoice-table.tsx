@@ -99,6 +99,8 @@ export function InvoiceTable({
   const [datePopoverOpen, setDatePopoverOpen] = useState(false);
   const datePopoverRef = useRef<HTMLDivElement>(null);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [scrollbarWidth, setScrollbarWidth] = useState(0);
+  const bodyScrollRef = useRef<HTMLDivElement>(null);
 
   const activeFilterCount = [
     invoiceNumberFilter, dateFromFilter, dateToFilter, buyerNameFilter, amountFilter, fbrRefFilter,
@@ -113,6 +115,17 @@ export function InvoiceTable({
     if (datePopoverOpen) document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [datePopoverOpen]);
+
+  // Sync scrollbar width to header tables — keeps columns aligned when body scrollbar appears
+  useEffect(() => {
+    const el = bodyScrollRef.current;
+    if (!el) return;
+    const measure = () => setScrollbarWidth(el.offsetWidth - el.clientWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [invoices]);
 
   const hasDateFilter = dateFromFilter || dateToFilter;
 
@@ -509,30 +522,32 @@ export function InvoiceTable({
       {/* Desktop Table View */}
       <div className="hidden lg:flex lg:flex-col lg:gap-2 h-full">
 
+        {/* Header wrapper — right-padding synced to body scrollbar */}
+        <div style={{ paddingRight: scrollbarWidth }}>
         {/*table 1 heading*/}
         <table className="w-full table-fixed bg-[#7c97f0] rounded-4xl flex-shrink-0 border-separate border-spacing-0">
           <thead>
             {/* Column Headers */}
             <tr>
               {onSelectionChange && (
-                <th className="w-[50px] px-3.5 pt-3.5 pb-2"></th>
+                <th className="border-r-2 border-[#FFFFFF] w-[50px] px-3.5 pt-3.5 pb-2"></th>
               )}
-              <th className=" w-[125px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+              <th className="border-r-2 border-[#FFFFFF]  w-[125px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
                 Invoice Number
               </th>
-              <th className=" w-[185px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+              <th className="border-r-2 border-[#FFFFFF]  w-[185px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
                 FBR Ref Number
               </th>
-              <th className=" w-[95px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+              <th className="border-r-2 border-[#FFFFFF]  w-[95px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
                 Date
               </th>
-              <th className=" w-[340px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+              <th className="border-r-2 border-[#FFFFFF]  w-[340px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
                 Buyer Name
               </th>
-              <th className=" w-[115px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+              <th className="border-r-2 border-[#FFFFFF]  w-[115px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
                 Amount
               </th>
-              <th className=" w-[100px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+              <th className="border-r-2 border-[#FFFFFF]  w-[100px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
                 Status
               </th>
               <th className=" w-[180px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
@@ -543,7 +558,8 @@ export function InvoiceTable({
         </table>
 
         {/*table 2 heading*/}
-        <table className="w-full table-fixed bg-[#FFFFFF] rounded-4xl flex-shrink-0 border-2 border-[#7c97f0] border-separate border-spacing-0">
+        {/* <table className="w-full table-fixed bg-[#FFFFFF] rounded-4xl flex-shrink-0 border-2 border-[#7c97f0] border-separate border-spacing-0"> */}
+        <table className="w-full table-fixed rounded-4xl flex-shrink-0">    
             <thead>
               {/* Filter Inputs Row */}
               <tr>
@@ -687,9 +703,11 @@ export function InvoiceTable({
               </thead>
         </table>
 
+        </div>{/* end header wrapper */}
+
         {/*table 3 body — scrollable*/}
-        <div className="flex-1 min-h-0 overflow-auto rounded-4xl bg-[#e7eaf1] border-2  border-blue-200">
-        <table className="w-full table-fixed">
+        <div ref={bodyScrollRef} className="min-h-0 overflow-y-auto overflow-x-hidden rounded-4xl bg-[#e7eaf1] border-2 border-blue-200">
+        <table className="w-full table-fixed border-separate border-spacing-0">
           <tbody className='divide-y divide-[#FFFFFF]'>
             {invoices.length === 0 && (
               <tr>
@@ -714,7 +732,7 @@ export function InvoiceTable({
                   }`}
                 >
                   {onSelectionChange && (
-                    <td className="px-3 py-3 align-middle w-[50px]">
+                    <td className="border-r-2 border-b-1 border-[#FFFFFF] px-3 py-3 align-middle w-[50px]">
                       <Checkbox
                         checked={isSelected}
                         onCheckedChange={(checked) => handleSelectInvoice(invoice.id, checked as boolean)}
@@ -724,24 +742,24 @@ export function InvoiceTable({
                       />
                     </td>
                   )}
-                  <td className="px-3 py-3 align-middle w-[125px]">
+                  <td className="px-3 py-3 align-middle w-[125px] border-r-2 border-b-1 border-[#FFFFFF] ">
                     <div className=" text-sm font-medium text-slate-700  break-all">{invoice.invoiceNumber}</div>
                     <div className="text-sm font-medium text-slate-700  mt-0.5">{invoice.invoiceType}</div>
                   </td>
-                  <td className="px-2 py-3 align-middle w-[185px]">
+                  <td className="px-2 py-3 align-middle w-[185px] border-r-2 border-[#FFFFFF] border-b-1">
                     <div className="text-sm font-medium text-slate-700 dark:text-neutral-300">
                       {invoice.fbrReferenceNumber || '—'}
                     </div>
                   </td>
-                  <td className=" w-[95px] px-2 py-3 text-sm font-medium text-slate-700 whitespace-nowrap align-middle">
+                  <td className="border-r-2 border-[#FFFFFF] border-b-1 w-[95px] px-2 py-3 text-sm font-medium text-slate-700 whitespace-nowrap align-middle">
                     {new Date(invoice.date).toLocaleDateString('en-GB', {
                       timeZone: 'Asia/Karachi'
                     })}
                   </td>
-                  <td className="px-2 py-3 w-[340px]">
+                  <td className="border-r-2 border-b-1 border-[#FFFFFF] px-2 py-3 w-[340px]">
                     <div className="text-sm font-medium text-slate-700 text-left">{invoice.buyerName}</div>
                   </td>
-                  <td className="px-2 py-3 align-middle w-[115px]">
+                  <td className="border-r-2 border-b-1 border-[#FFFFFF] px-2 py-3 align-middle w-[115px]">
                     <div className="text-sm font-medium text-slate-700 dark:text-neutral-300 whitespace-nowrap text-right">
                        {invoice.totalAmount.toLocaleString('en-US', {
                         minimumFractionDigits: 2,
@@ -749,12 +767,12 @@ export function InvoiceTable({
                       })}
                     </div>
                   </td>
-                  <td className="px-2 py-0.5 text-center w-[100px]">
+                  <td className="border-r-2 border-b-1 border-[#FFFFFF] px-2 py-0.5 text-center w-[100px]">
                     <Badge className={`${getStatusColor(invoice.status)}`}>
                       {formatStatus(invoice.status)}
                     </Badge>
                   </td>
-                  <td className="pl-2 pr-0 py-3 text-center align-middle w-[180px]">
+                  <td className="pl-2 pr-0 py-3 text-center align-middle w-[180px] border-b-1 border-[#FFFFFF]">
                     <div className="flex items-center justify-center gap-2">
                       {onView && (
                         <Button

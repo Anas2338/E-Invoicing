@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { useAuth } from '@/providers/auth-provider';
 import { LoginForm } from '@/components/auth/login-form';
 import FeatureHighlights from '@/components/auth/feature-highlights';
@@ -47,18 +46,6 @@ export default function LoginPage() {
               </div>
 
               <LoginForm onSubmit={handleSubmit} disabled={loading} error={error} />
-
-              <div className="mt-6 text-center">
-                <p className="text-sm text-[#6d7175] dark:text-[#8c9196]">
-                  Don't have an account?{' '}
-                  <Link
-                    href="/register"
-                    className="font-semibold text-[#008060] dark:text-[#00a876] hover:text-[#006e52] dark:hover:text-[#008f64] transition-colors duration-150"
-                  >
-                    Sign up
-                  </Link>
-                </p>
-              </div>
 
               {error && (
                 <div className="mt-4 flex items-center p-3 bg-[#fef3f2] dark:bg-[#3d1e1e] rounded-xl border border-[#fecdca] dark:border-[#5c2b2b]">

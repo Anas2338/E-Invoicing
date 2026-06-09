@@ -223,16 +223,7 @@ export default function DashboardPage() {
 
   if (invoiceType === 'sale') {
     return (
-      <div className="space-y-6 w-full max-w-[1600px] mx-auto px-4 md:px-6 py-4">
-        <Button
-          variant="ghost"
-          size="lg"
-          onClick={() => setInvoiceType(null)}
-          className="flex items-center gap-3 text-lg font-black text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors px-0 hover:bg-transparent"
-        >
-          <ArrowLeft className="h-6 w-6 stroke-[3]" />
-          Back to Dashboard
-        </Button>
+      <div className="space-y-6 w-full max-w-[1600px] mx-auto px-4 md:px-6">
         <SaleInvoiceForm
           onSubmit={handleSubmit}
           onCancel={() => setInvoiceType(null)}
@@ -302,13 +293,13 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-3">
 
           {/* Sale Invoice */}
-          <div className="relative group h-28 sm:h-32 lg:h-36 p-[1.5px] rounded-2xl sm:rounded-3xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(37,99,235,0.5)]">
-            <div className="absolute inset-0 bg-gradient-to-br from-blue-400 via-blue-500 to-indigo-600 opacity-80 group-hover:opacity-100 transition-opacity duration-300" />
+          <div className="relative group h-28 sm:h-32 lg:h-36 p-[1.5px] rounded-2xl sm:rounded-3xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(37,99,235,0.5)] focus-within:-translate-y-1 focus-within:shadow-[0_0_30px_rgba(37,99,235,0.5)]">
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-400 via-blue-500 to-indigo-600 opacity-80 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-300" />
             <button
               onClick={() => setInvoiceType('sale')}
-              className="relative h-full w-full flex flex-col items-center justify-center gap-1.5 sm:gap-2 lg:gap-3 rounded-[22px] bg-gradient-to-b from-blue-400 to-blue-500 text-white cursor-pointer px-4 border-2 border-white/90 shadow-lg"
+              className="relative h-full w-full flex flex-col items-center justify-center gap-1.5 sm:gap-2 lg:gap-3 rounded-[22px] bg-gradient-to-b from-blue-400 to-blue-500 text-white cursor-pointer px-4 border-2 border-white/90 shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-1 focus-visible:ring-offset-blue-500"
             >
-              <div className="h-9 w-9 sm:h-10 sm:w-10 lg:h-12 lg:w-12 rounded-xl lg:rounded-2xl bg-white/20 flex items-center justify-center transform group-hover:scale-110 transition-transform duration-300 border-2 border-white/30 shadow-lg">
+              <div className="h-9 w-9 sm:h-10 sm:w-10 lg:h-12 lg:w-12 rounded-xl lg:rounded-2xl bg-white/20 flex items-center justify-center transform group-hover:scale-110 group-focus-within:scale-110 transition-transform duration-300 border-2 border-white/30 shadow-lg">
                 <FileText className="h-5 w-5 lg:h-6 lg:w-6 text-white stroke-[2.5]" />
               </div>
               <span className="text-xs sm:text-sm lg:text-base font-black tracking-wide text-white drop-shadow-md">
@@ -318,13 +309,13 @@ export default function DashboardPage() {
           </div>
 
           {/* Purchase Invoice */}
-          <div className="relative group h-28 sm:h-32 lg:h-36 p-[1.5px] rounded-2xl sm:rounded-3xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(234,88,12,0.5)]">
-            <div className="absolute inset-0 bg-gradient-to-br from-orange-400 via-orange-500 to-red-600 opacity-80 group-hover:opacity-100 transition-opacity duration-300" />
+          <div className="relative group h-28 sm:h-32 lg:h-36 p-[1.5px] rounded-2xl sm:rounded-3xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(234,88,12,0.5)] focus-within:-translate-y-1 focus-within:shadow-[0_0_30px_rgba(234,88,12,0.5)]">
+            <div className="absolute inset-0 bg-gradient-to-br from-orange-400 via-orange-500 to-red-600 opacity-80 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-300" />
             <button
               onClick={() => setInvoiceType('purchase')}
-              className="relative h-full w-full flex flex-col items-center justify-center gap-1.5 sm:gap-2 lg:gap-3 rounded-[22px] bg-gradient-to-b from-orange-400 to-orange-500 text-white cursor-pointer px-4 border-2 border-white/90 shadow-lg"
+              className="relative h-full w-full flex flex-col items-center justify-center gap-1.5 sm:gap-2 lg:gap-3 rounded-[22px] bg-gradient-to-b from-orange-400 to-orange-500 text-white cursor-pointer px-4 border-2 border-white/90 shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-1 focus-visible:ring-offset-orange-500"
             >
-              <div className="h-9 w-9 sm:h-10 sm:w-10 lg:h-12 lg:w-12 rounded-xl lg:rounded-2xl bg-white/20 flex items-center justify-center transform group-hover:scale-110 transition-transform duration-300 border-2 border-white/30 shadow-lg">
+              <div className="h-9 w-9 sm:h-10 sm:w-10 lg:h-12 lg:w-12 rounded-xl lg:rounded-2xl bg-white/20 flex items-center justify-center transform group-hover:scale-110 group-focus-within:scale-110 transition-transform duration-300 border-2 border-white/30 shadow-lg">
                 <ShoppingCart className="h-5 w-5 lg:h-6 lg:w-6 text-white stroke-[2.5]" />
               </div>
               <span className="text-xs sm:text-sm lg:text-base font-black tracking-wide text-white drop-shadow-md">Purchase Invoice</span>
@@ -332,13 +323,13 @@ export default function DashboardPage() {
           </div>
 
           {/* Upload via Excel */}
-          <div className="relative group h-28 sm:h-32 lg:h-36 p-[1.5px] rounded-2xl sm:rounded-3xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(22,163,74,0.5)]">
-            <div className="absolute inset-0 bg-gradient-to-br from-emerald-400 via-green-500 to-teal-600 opacity-80 group-hover:opacity-100 transition-opacity duration-300" />
+          <div className="relative group h-28 sm:h-32 lg:h-36 p-[1.5px] rounded-2xl sm:rounded-3xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(22,163,74,0.5)] focus-within:-translate-y-1 focus-within:shadow-[0_0_30px_rgba(22,163,74,0.5)]">
+            <div className="absolute inset-0 bg-gradient-to-br from-emerald-400 via-green-500 to-teal-600 opacity-80 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-300" />
             <button
               onClick={() => setInvoiceType('excel')}
-              className="relative h-full w-full flex flex-col items-center justify-center gap-1.5 sm:gap-2 lg:gap-3 rounded-[22px] bg-gradient-to-b from-emerald-400 to-emerald-500 text-white cursor-pointer px-4 border-2 border-white/90 shadow-lg"
+              className="relative h-full w-full flex flex-col items-center justify-center gap-1.5 sm:gap-2 lg:gap-3 rounded-[22px] bg-gradient-to-b from-emerald-400 to-emerald-500 text-white cursor-pointer px-4 border-2 border-white/90 shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-1 focus-visible:ring-offset-emerald-500"
             >
-              <div className="h-9 w-9 sm:h-10 sm:w-10 lg:h-12 lg:w-12 rounded-xl lg:rounded-2xl bg-white/20 flex items-center justify-center transform group-hover:scale-110 transition-transform duration-300 border-2 border-white/30 shadow-lg">
+              <div className="h-9 w-9 sm:h-10 sm:w-10 lg:h-12 lg:w-12 rounded-xl lg:rounded-2xl bg-white/20 flex items-center justify-center transform group-hover:scale-110 group-focus-within:scale-110 transition-transform duration-300 border-2 border-white/30 shadow-lg">
                 <FileSpreadsheet className="h-5 w-5 lg:h-6 lg:w-6 text-white stroke-[2.5]" />
               </div>
               <span className="text-xs sm:text-sm lg:text-base font-black tracking-wide text-white drop-shadow-md">Excel Upload</span>
@@ -346,13 +337,13 @@ export default function DashboardPage() {
           </div>
 
           {/* Products */}
-          <div className="relative group h-28 sm:h-32 lg:h-36 p-[1.5px] rounded-2xl sm:rounded-3xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(124,58,237,0.5)]">
-            <div className="absolute inset-0 bg-gradient-to-br from-violet-400 via-purple-500 to-fuchsia-600 opacity-80 group-hover:opacity-100 transition-opacity duration-300" />
+          <div className="relative group h-28 sm:h-32 lg:h-36 p-[1.5px] rounded-2xl sm:rounded-3xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(124,58,237,0.5)] focus-within:-translate-y-1 focus-within:shadow-[0_0_30px_rgba(124,58,237,0.5)]">
+            <div className="absolute inset-0 bg-gradient-to-br from-violet-400 via-purple-500 to-fuchsia-600 opacity-80 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-300" />
             <button
               onClick={() => router.push('/products')}
-              className="relative h-full w-full flex flex-col items-center justify-center gap-1.5 sm:gap-2 lg:gap-3 rounded-[22px] bg-gradient-to-b from-purple-400 to-indigo-500 text-white cursor-pointer px-4"
+              className="relative h-full w-full flex flex-col items-center justify-center gap-1.5 sm:gap-2 lg:gap-3 rounded-[22px] bg-gradient-to-b from-purple-400 to-indigo-500 text-white cursor-pointer px-4 border-2 border-white/90 shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-1 focus-visible:ring-offset-purple-500"
             >
-              <div className="h-9 w-9 sm:h-10 sm:w-10 lg:h-12 lg:w-12 rounded-xl lg:rounded-2xl bg-white/20 flex items-center justify-center transform group-hover:scale-110 transition-transform duration-300 border-2 border-white/30 shadow-lg">
+              <div className="h-9 w-9 sm:h-10 sm:w-10 lg:h-12 lg:w-12 rounded-xl lg:rounded-2xl bg-white/20 flex items-center justify-center transform group-hover:scale-110 group-focus-within:scale-110 transition-transform duration-300 border-2 border-white/30 shadow-lg">
                 <Package className="h-5 w-5 lg:h-6 lg:w-6 text-white stroke-[2.5]" />
               </div>
               <span className="text-xs sm:text-sm lg:text-base font-black tracking-wide text-white drop-shadow-md">Items</span>
@@ -360,8 +351,8 @@ export default function DashboardPage() {
           </div>
 
           {/* Credentials & Dynamic Account Settings Card */}
-          <div className="relative group sm:col-span-2 md:col-span-2 lg:col-span-4 xl:col-span-2 h-28 sm:h-32 lg:h-36 p-[1.5px] rounded-2xl sm:rounded-3xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_35px_rgba(0,128,96,0.35)]">
-            <div className="absolute inset-0 bg-gradient-to-r from-[#008060] via-[#00a876] to-[#3f51b5] opacity-50 group-hover:opacity-100 transition-opacity duration-300" />
+          <div className="relative group sm:col-span-2 md:col-span-2 lg:col-span-4 xl:col-span-2 h-28 sm:h-32 lg:h-36 p-[1.5px] rounded-2xl sm:rounded-3xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_35px_rgba(0,128,96,0.35)] focus-within:-translate-y-1 focus-within:shadow-[0_0_35px_rgba(0,128,96,0.35)]">
+            <div className="absolute inset-0 bg-gradient-to-r from-[#008060] via-[#00a876] to-[#3f51b5] opacity-50 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-300" />
             <div className="relative h-full w-full flex flex-col rounded-[22px] bg-[#008060] dark:bg-[#161616]/95 backdrop-blur-md transition-colors">
               <div className="flex-1 flex flex-col items-center justify-center gap-1 px-5 z-10 text-center">
                 {fbrBusinessName ? (
@@ -378,15 +369,15 @@ export default function DashboardPage() {
                 )}
               </div>
               <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-neutral-200 dark:via-neutral-800 to-transparent" />
-              
+
               {/* Dynamic Action Trigger Zone */}
               <div className="h-10 sm:h-12 lg:h-14 flex overflow-hidden rounded-b-[22px]">
                 <button
                   onClick={() => router.push('/settings')}
-                  className="flex items-center justify-center gap-1.5 sm:gap-2 lg:gap-3 flex-1 bg-gradient-to-b from-neutral-50/50 to-neutral-100/80 dark:from-neutral-900/40 dark:to-neutral-900/90 border-t border-neutral-100 dark:border-neutral-800/50 transition-all duration-300 cursor-pointer px-3 sm:px-4 group/btn"
+                  className="flex items-center justify-center gap-1.5 sm:gap-2 lg:gap-3 flex-1 bg-gradient-to-b from-neutral-50/50 to-neutral-100/80 dark:from-neutral-900/40 dark:to-neutral-900/90 border-t border-neutral-100 dark:border-neutral-800/50 transition-all duration-300 cursor-pointer px-3 sm:px-4 group/btn focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-1 focus-visible:ring-offset-[#008060]"
                 >
                   <div className="relative h-6 w-6 lg:h-7 lg:w-7 rounded-lg lg:rounded-xl bg-gradient-to-br from-[#008060] to-[#00a876] flex items-center justify-center transform transition-all duration-500 shadow-md shadow-emerald-600/20">
-                    <div className="absolute inset-0 rounded-lg lg:rounded-xl bg-emerald-400/40 animate-pulse opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300 scale-125" />
+                    <div className="absolute inset-0 rounded-lg lg:rounded-xl bg-emerald-400/40 animate-pulse opacity-0 group-hover/btn:opacity-100 group-focus-visible/btn:opacity-100 transition-opacity duration-300 scale-125" />
                     <Settings className="h-3.5 w-3.5 lg:h-4 lg:w-4 text-white relative z-10" />
                   </div>
                   <span className="text-xs lg:text-sm font-black tracking-tight text-neutral-800 dark:text-neutral-200 transition-colors duration-200">
