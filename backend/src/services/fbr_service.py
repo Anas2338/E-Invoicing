@@ -480,13 +480,29 @@ class FBRService:
         elif error_code:
             error_message = f"Error code: {error_code}"
 
-        # If still no error message, provide a generic one
-        if not error_message or error_message.strip() == "":
-            error_message = f"FBR validation failed with status: {status or 'Unknown'}"
-            if validation_response:
-                error_message += f". Response details: {str(validation_response)[:200]}"
+        # Get item-level errors, filtering out valid items with no actual error message
+        raw_item_errors = validation_response.get("invoiceStatuses", [])
+        item_errors = [
+            ie for ie in raw_item_errors
+            if ie.get("error") and ie.get("error", "").strip()
+        ]
 
-        item_errors = validation_response.get("invoiceStatuses", [])
+        # Build a clean error message from item errors if the top-level error is empty
+        if not error_message or error_message.strip() == "":
+            if item_errors:
+                # Build message from item-level errors
+                parts = []
+                for ie in item_errors:
+                    item_no = ie.get("itemSNo", "?")
+                    item_err = ie.get("error", "").strip()
+                    item_code = ie.get("errorCode", "").strip()
+                    if item_code:
+                        parts.append(f"Item {item_no}: [{item_code}] {item_err}")
+                    else:
+                        parts.append(f"Item {item_no}: {item_err}")
+                error_message = "; ".join(parts)
+            else:
+                error_message = f"FBR validation failed with status: {status or 'Unknown'}"
 
         return False, error_message, item_errors
 

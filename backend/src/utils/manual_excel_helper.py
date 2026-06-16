@@ -52,6 +52,7 @@ MANUAL_TEMPLATE_COLUMNS = [
     "further_tax",
     "discount",
     "income_tax",
+    "withholding_tax_amount",
     "status",
     "reason",
 ]
@@ -77,6 +78,7 @@ def generate_manual_excel_template() -> BytesIO:
         "further_tax": "0",
         "discount": "0",
         "income_tax": "236G",
+        "withholding_tax_amount": "50",
         "status": "",
         "reason": "",
     }])
@@ -93,7 +95,7 @@ def generate_manual_excel_template() -> BytesIO:
 
         column_widths = [
             15, 15, 12, 15, 25, 15, 30, 20,
-            20, 10, 20, 25, 12, 12, 12, 12, 30,
+            20, 10, 20, 25, 12, 12, 12, 20, 12, 30,
         ]
 
         for idx, width in enumerate(column_widths, start=1):
@@ -233,6 +235,17 @@ def parse_excel_for_manual_invoice(
         further_tax = float(row['further_tax']) if pd.notna(row['further_tax']) else 0
         discount = float(row['discount']) if pd.notna(row.get('discount')) else 0
 
+        # Parse withholding_tax_amount from Excel (optional, auto-calc if omitted)
+        withholding_tax_amount = None
+        if pd.notna(row.get('withholding_tax_amount')):
+            try:
+                withholding_tax_amount = float(row['withholding_tax_amount'])
+            except (ValueError, TypeError):
+                withholding_tax_amount = None
+        if withholding_tax_amount is None:
+            wht_rate = 0.005 if income_tax == "236H" else 0.001
+            withholding_tax_amount = round(value_sales_excluding_st * wht_rate, 2)
+
         tax_rate = float(saved_item.default_rate) if saved_item.default_rate else 18.0
         base_value = max(value_sales_excluding_st, fixed_notified_value_or_retail_price)
         sales_tax_applicable = (base_value * tax_rate) / 100
@@ -258,6 +271,9 @@ def parse_excel_for_manual_invoice(
             "discount": discount,
             "sale_type": saved_item.transaction_type or "01",
             "sro_item_serial_no": saved_item.sro_item_serial_no or "",
+            # Internal fields (not sent to FBR)
+            "income_tax_type": income_tax,
+            "withholding_tax_amount": withholding_tax_amount,
         }
 
         if invoice_number not in invoice_groups:

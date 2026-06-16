@@ -20,7 +20,6 @@ interface Invoice {
   environment: string;
   invoiceType: string;
   fbrReferenceNumber?: string;
-  incomeTax: string;
   createdAt: string;
   scheduledDate?: string;
   scheduledTime?: string;
@@ -39,7 +38,6 @@ export default function InvoiceHistoryPage() {
   const [buyerNameFilter, setBuyerNameFilter] = useState('');
   const [amountFilter, setAmountFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [incomeTaxFilter, setIncomeTaxFilter] = useState('all');
   const [fbrRefFilter, setFbrRefFilter] = useState('');
   const [selectedInvoices, setSelectedInvoices] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -67,7 +65,7 @@ export default function InvoiceHistoryPage() {
 
   useEffect(() => {
     applyFilters();
-  }, [invoices, invoiceNumberFilter, dateFromFilter, dateToFilter, buyerNameFilter, amountFilter, statusFilter, incomeTaxFilter, fbrRefFilter]);
+  }, [invoices, invoiceNumberFilter, dateFromFilter, dateToFilter, buyerNameFilter, amountFilter, statusFilter, fbrRefFilter]);
 
   useEffect(() => {
     fetchInvoices();
@@ -98,7 +96,6 @@ export default function InvoiceHistoryPage() {
           environment: invoice.environment || '',
           invoiceType: invoice.invoice_type || 'Sale Invoice',
           fbrReferenceNumber: invoice.fbr_reference_number || '',
-          incomeTax: invoice.income_tax || '236G',
           createdAt: invoice.created_at,
           scheduledDate: invoice.scheduled_date,
           scheduledTime: invoice.scheduled_time,
@@ -170,10 +167,6 @@ export default function InvoiceHistoryPage() {
     }
 
     // Apply income tax filter
-    if (incomeTaxFilter !== 'all') {
-      result = result.filter(invoice => invoice.incomeTax === incomeTaxFilter);
-    }
-
     // Apply FBR reference filter
     if (fbrRefFilter) {
       const term = fbrRefFilter.toLowerCase();
@@ -650,8 +643,6 @@ export default function InvoiceHistoryPage() {
           onAmountFilterChange={setAmountFilter}
           statusFilter={statusFilter}
           onStatusFilterChange={setStatusFilter}
-          incomeTaxFilter={incomeTaxFilter}
-          onIncomeTaxFilterChange={setIncomeTaxFilter}
           fbrRefFilter={fbrRefFilter}
           onFbrRefFilterChange={setFbrRefFilter}
         />

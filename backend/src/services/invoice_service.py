@@ -14,6 +14,44 @@ from src.utils.helpers import calculate_hash
 
 logger = logging.getLogger(__name__)
 
+# Withholding tax rates per income tax type
+WITHHOLDING_TAX_RATES = {
+    "236G": 0.001,  # 0.1%
+    "236H": 0.005,  # 0.5%
+}
+
+
+def _calculate_withholding_tax(value_sales_excluding_st: float, income_tax_type: str) -> float:
+    """Calculate withholding tax amount for an item based on its income tax type."""
+    rate = WITHHOLDING_TAX_RATES.get(income_tax_type, 0.001)
+    return round(value_sales_excluding_st * rate, 2)
+
+
+def _normalize_items_with_income_tax(items: list, fallback_income_tax: str = "236G") -> list:
+    """
+    Ensure every item has income_tax_type and withholding_tax_amount.
+    Auto-defaults to "236G" and calculates WHT if missing.
+
+    Args:
+        items: List of item dicts
+        fallback_income_tax: Fallback if item has no income_tax_type (for old invoices)
+
+    Returns:
+        Normalized list of item dicts
+    """
+    for item in items:
+        # Default income_tax_type if missing or empty
+        if not item.get("income_tax_type"):
+            item["income_tax_type"] = fallback_income_tax
+
+        # Calculate withholding_tax_amount if missing or zero and value exists
+        if not item.get("withholding_tax_amount") and item.get("value_sales_excluding_st"):
+            item["withholding_tax_amount"] = _calculate_withholding_tax(
+                float(item["value_sales_excluding_st"]),
+                item["income_tax_type"]
+            )
+    return items
+
 
 def _clean_ntn_cnic(value: str) -> str:
     """Normalize NTN/CNIC value — strips .0 suffix from float string artifacts."""
@@ -71,6 +109,24 @@ class InvoiceService:
         # Generate external ID if not provided
         external_id = invoice_create.external_id or f"INV-{int(datetime.utcnow().timestamp())}-{hash(str(invoice_create.invoice_type)) % 10000}"
 
+        # Check for existing DRAFT invoice with same external_id for this user — update instead of duplicate
+        existing = db.query(Invoice).filter(
+            Invoice.external_id == external_id,
+            Invoice.user_id == user_id,
+            Invoice.status == InvoiceStatus.DRAFT
+        ).first()
+        if existing:
+            logger.info(f"Updating existing DRAFT invoice {existing.id} (external_id={external_id}) instead of creating duplicate")
+            return self.update_invoice_from_dict(db, existing.id, invoice_create.model_dump(), user_id)
+
+        # Normalize items: auto-default income_tax_type and calculate withholding_tax_amount
+        items_data = [item.model_dump() for item in invoice_create.items]
+        fallback_income_tax = getattr(invoice_create, 'income_tax', None) or "236G"
+        items_data = _normalize_items_with_income_tax(items_data, fallback_income_tax)
+
+        # Derive invoice-level income_tax from first item (backward compat)
+        invoice_income_tax = items_data[0].get("income_tax_type", "236G") if items_data else "236G"
+
         # Create invoice object with FBR-specific fields
         db_invoice = Invoice(
             external_id=external_id,
@@ -89,8 +145,8 @@ class InvoiceService:
             buyer_registration_type=invoice_create.buyer_registration_type,
             invoice_ref_no=invoice_create.invoice_ref_no,
             scenario_id=invoice_create.scenario_id,
-            income_tax=getattr(invoice_create, 'income_tax', None) or "236G",
-            items=[item.model_dump() for item in invoice_create.items],
+            income_tax=invoice_income_tax,
+            items=items_data,
             environment=invoice_create.environment,
             status=InvoiceStatus.DRAFT
         )
@@ -268,6 +324,14 @@ class InvoiceService:
             invoice.validated_at = None
             invoice.validation_errors = None
             logger.info(f"Invoice {invoice_id} moved from {invoice.status} to DRAFT due to content update")
+
+        # Normalize items if they are being updated: auto-default income_tax_type and calculate withholding_tax_amount
+        if "items" in update_data and update_data["items"]:
+            fallback = update_data.get("income_tax") or invoice.income_tax or "236G"
+            update_data["items"] = _normalize_items_with_income_tax(update_data["items"], fallback)
+            # Derive invoice-level income_tax from first item if not explicitly provided
+            if "income_tax" not in update_data:
+                update_data["income_tax"] = update_data["items"][0].get("income_tax_type", "236G")
 
         # Update fields directly from the dict
         for field, value in update_data.items():

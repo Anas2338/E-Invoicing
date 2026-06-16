@@ -54,6 +54,7 @@ class InvoiceItem(SQLModel):
     rate: str  # Tax rate as string (e.g., "18%")
     uom: str  # Unit of measurement
     quantity: float
+    item_rate: Optional[float] = None  # Unit price = value_sales_excluding_st / quantity
     total_values: float
     value_sales_excluding_st: float
     fixed_notified_value_or_retail_price: float
@@ -66,6 +67,9 @@ class InvoiceItem(SQLModel):
     discount: float
     sale_type: str = "Goods at standard rate (default)"
     sro_item_serial_no: Optional[str] = None
+    # Internal fields (not sent to FBR)
+    income_tax_type: Optional[str] = "236G"  # Income tax type per item: "236G" or "236H"
+    withholding_tax_amount: float = 0  # Calculated withholding tax amount
 
 
 class InvoiceBase(SQLModel):

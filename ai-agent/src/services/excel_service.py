@@ -68,6 +68,7 @@ class ExcelService:
 
         # Income tax
         "income_tax",
+        "withholding_tax_amount",
 
         # Scheduling
         "scheduled_date",
@@ -103,6 +104,7 @@ class ExcelService:
 
         # Income tax
         "income_tax",
+        "withholding_tax_amount",
 
         # Status fields (auto-filled by system)
         "status",
@@ -147,6 +149,7 @@ class ExcelService:
             "further_tax": "0",
             "discount": "0",
             "income_tax": "236G",
+            "withholding_tax_amount": "50",
             "scheduled_date": "2026-05-13",
             "scheduled_time": "10:00",
             "status": "",
@@ -182,6 +185,7 @@ class ExcelService:
                 12,  # further_tax
                 12,  # discount
                 12,  # income_tax
+                20,  # withholding_tax_amount
                 15,  # scheduled_date
                 15,  # scheduled_time
                 12,  # status
@@ -222,6 +226,7 @@ class ExcelService:
             "further_tax": "0",
             "discount": "0",
             "income_tax": "236G",
+            "withholding_tax_amount": "50",
             "status": "",
             "reason": ""
         }])
@@ -252,6 +257,7 @@ class ExcelService:
                 12,  # further_tax
                 12,  # discount
                 12,  # income_tax
+                20,  # withholding_tax_amount
                 12,  # status
                 30   # reason
             ]
@@ -408,6 +414,17 @@ class ExcelService:
                         )
                         continue
 
+                # Parse withholding_tax_amount from Excel (optional, auto-calc if omitted)
+                withholding_tax_amount = None
+                if pd.notna(row.get('withholding_tax_amount')):
+                    try:
+                        withholding_tax_amount = float(row['withholding_tax_amount'])
+                    except (ValueError, TypeError):
+                        withholding_tax_amount = None
+                if withholding_tax_amount is None:
+                    wht_rate = 0.005 if income_tax == "236H" else 0.001
+                    withholding_tax_amount = round(value_sales_excluding_st * wht_rate, 2)
+
                 # Calculate sales tax based on saved item's tax rate
                 tax_rate = float(saved_item.default_rate) if saved_item.default_rate else 18.0
                 # Use the greater value between Value Excl. Tax and Fixed/Retail Price (FBR rule)
@@ -474,6 +491,9 @@ class ExcelService:
                         "sale_type_description": sale_type_description,  # Add description for frontend display
                         "sro_item_serial_no": saved_item.sro_item_serial_no or "",
                         "transaction_type": saved_item.transaction_type or "",
+                        # Internal fields (not sent to FBR)
+                        "income_tax_type": income_tax,
+                        "withholding_tax_amount": withholding_tax_amount,
                     }],
 
                     # Optional fields
@@ -670,12 +690,25 @@ class ExcelService:
                     )
                     continue
 
+            # Parse withholding_tax_amount from Excel (optional, auto-calc if omitted)
+            withholding_tax_amount = None
+            if pd.notna(row.get('withholding_tax_amount')):
+                try:
+                    withholding_tax_amount = float(row['withholding_tax_amount'])
+                except (ValueError, TypeError):
+                    withholding_tax_amount = None
+
             # Parse numeric fields
             quantity = float(row['quantity']) if pd.notna(row['quantity']) else 0
             value_sales_excluding_st = float(row['value_sales_excluding_st']) if pd.notna(row['value_sales_excluding_st']) else 0
             fixed_notified_value_or_retail_price = float(row['fixed_notified_value_or_retail_price']) if pd.notna(row['fixed_notified_value_or_retail_price']) else 0
             further_tax = float(row['further_tax']) if pd.notna(row['further_tax']) else 0
             discount = float(row['discount']) if pd.notna(row.get('discount')) else 0
+
+            # Auto-calc WHT if not provided
+            if withholding_tax_amount is None:
+                wht_rate = 0.005 if income_tax == "236H" else 0.001
+                withholding_tax_amount = round(value_sales_excluding_st * wht_rate, 2)
 
             tax_rate = float(saved_item.default_rate) if saved_item.default_rate else 18.0
             # Use the greater value between Value Excl. Tax and Fixed/Retail Price (FBR rule)
@@ -704,6 +737,9 @@ class ExcelService:
                 "discount": discount,
                 "sale_type": saved_item.transaction_type or "01",
                 "sro_item_serial_no": saved_item.sro_item_serial_no or "",
+                # Internal fields (not sent to FBR)
+                "income_tax_type": income_tax,
+                "withholding_tax_amount": withholding_tax_amount,
             }
 
             if invoice_number not in invoice_groups:
@@ -855,6 +891,7 @@ class ExcelService:
                 "further_tax": item.get('further_tax', 0),
                 "discount": item.get('discount', 0),
                 "income_tax": invoice_data.get('income_tax', '236G'),
+                "withholding_tax_amount": item.get('withholding_tax_amount', 0),
 
                 # Scheduling
                 "scheduled_date": invoice.scheduled_date.isoformat() if invoice.scheduled_date else '',
@@ -882,7 +919,7 @@ class ExcelService:
 
             column_widths = [
                 15, 15, 12, 15, 25, 15, 30, 20,
-                20, 10, 20, 25, 12, 12, 12, 15, 15, 12, 30
+                20, 10, 20, 25, 12, 12, 12, 20, 15, 15, 12, 30
             ]
 
             for idx, width in enumerate(column_widths, start=1):

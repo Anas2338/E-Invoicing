@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Trash2, Plus, Loader2, AlertCircle, Info, Building2, MapPin, FileText, Pencil, Check, X, CheckCircle, Send, Save } from 'lucide-react';
+import { Trash2, Plus, Loader2, AlertCircle, Building2, MapPin, FileText, Pencil, Check, X, CheckCircle, Send, Save, XCircle } from 'lucide-react';
 import { masterDataService, fbrIntegrationService, type AllMasterData } from '@/lib/api/api-client';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
@@ -19,6 +19,7 @@ interface InvoiceItem {
   rate: string;
   uoM: string;
   quantity: number;
+  itemRate: number;  // Unit price = valueSalesExcludingST / quantity (editable)
   totalValues: number;
   valueSalesExcludingST: number;
   fixedNotifiedValueOrRetailPrice: string;
@@ -31,6 +32,9 @@ interface InvoiceItem {
   discount: number;
   saleType: string;
   sroItemSerialNo: string;
+  // Internal fields (not sent to FBR)
+  incomeTaxType: string;
+  withholdingTaxAmount: number;
 }
 
 interface SaleInvoiceFormProps {
@@ -93,10 +97,8 @@ export function SaleInvoiceForm({
   const [buyerHighlightedIndex, setBuyerHighlightedIndex] = useState(-1);
   const [loadingSavedBuyers, setLoadingSavedBuyers] = useState(false);
 
-  // Income Tax state
-  const [incomeTax, setIncomeTax] = useState<'236G' | '236H'>('236G');
-
   // Invoice items state
+  // Note: income tax type is now per-item (incomeTaxType field on each item)
   const [items, setItems] = useState<InvoiceItem[]>([]);
 
   // Saved items state
@@ -115,6 +117,7 @@ export function SaleInvoiceForm({
     rate: '',
     uoM: 'NOS',
     quantity: 1,
+    itemRate: 0,
     totalValues: 0,
     valueSalesExcludingST: 0,
     fixedNotifiedValueOrRetailPrice: '0',
@@ -126,12 +129,59 @@ export function SaleInvoiceForm({
     fedPayable: 0,
     discount: 0,
     saleType: '01',
-    sroItemSerialNo: ''
+    sroItemSerialNo: '',
+    incomeTaxType: '236G',
+    withholdingTaxAmount: 0
   });
   // Track saved item selection in modal
   const [modalSelectedSavedItem, setModalSelectedSavedItem] = useState<string>('');
-  // Item entry mode: 'saved' = select from saved items (auto-fill), 'temporary' = manual entry
-  const [itemEntryMode, setItemEntryMode] = useState<'saved' | 'temporary'>('saved');
+
+  // Track focus state for Value Excl. Sales Tax display formatting
+  const [valueExclTaxFocused, setValueExclTaxFocused] = useState(false);
+
+  // Track which amount fields are focused for float formatting
+  const [focusedFields, setFocusedFields] = useState<Set<string>>(new Set());
+
+  // Track validation errors for field borders
+  const [fieldErrors, setFieldErrors] = useState<Set<string>>(new Set());
+
+  const errorBorder = (field: string) =>
+    fieldErrors.has(field) ? 'border-red-500 focus-visible:ring-red-500' : '';
+
+  const formatAmount = (field: string, value: number | string): string => {
+    if (focusedFields.has(field)) return String(value);
+    const num = Number(value) || 0;
+    if (num === 0) return '';
+    return num.toFixed(2);
+  };
+
+  // Sub-modal state for creating a new saved item
+  const [isAddSavedItemModalOpen, setIsAddSavedItemModalOpen] = useState(false);
+  const addSavedItemModalRef = useRef<HTMLDivElement>(null);
+
+  // Focus trap and auto-focus for Add Saved Item sub-modal
+  useEffect(() => {
+    if (isAddSavedItemModalOpen) {
+      // Auto-focus the first input after a short delay for rendering
+      const timer = setTimeout(() => {
+        document.getElementById('newItemCode')?.focus();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [isAddSavedItemModalOpen]);
+  const [newItemCode, setNewItemCode] = useState('');
+  const [newItemName, setNewItemName] = useState('');
+  const [newHsCode, setNewHsCode] = useState('');
+  const [newHsCodeValid, setNewHsCodeValid] = useState<boolean | null>(null);
+  const [newHsCodeError, setNewHsCodeError] = useState('');
+  const [newProductDescription, setNewProductDescription] = useState('');
+  const [newDefaultUom, setNewDefaultUom] = useState('');
+  const [newDefaultRate, setNewDefaultRate] = useState('');
+  const [newTransactionType, setNewTransactionType] = useState('');
+  const [newSroScheduleNo, setNewSroScheduleNo] = useState('');
+  const [newSroItemSerialNo, setNewSroItemSerialNo] = useState('');
+  const [isSavingNewItem, setIsSavingNewItem] = useState(false);
+  const [isValidatingNewHsCode, setIsValidatingNewHsCode] = useState(false);
 
   // Validate/Post workflow state
   const [isValidating, setIsValidating] = useState(false);
@@ -301,7 +351,7 @@ export function SaleInvoiceForm({
       setInvoiceRefNo(initialData.invoice_ref_no || '');
       setScenarioId(initialData.scenario_id || '');
       setEnvironment(initialData.environment || 'SANDBOX');
-      setIncomeTax(initialData.income_tax || '236G');
+      // income_tax is now per-item — no invoice-level state needed
 
       // Handle transaction_type_id: if empty but items have sale_type, reverse map it
       let resolvedTransactionTypeId = initialData.transaction_type_id || '';
@@ -375,6 +425,10 @@ export function SaleInvoiceForm({
           rate: item.rate || '18',
           uoM: item.uoM || item.uom || 'NOS',
           quantity: item.quantity || 1,
+          itemRate: item.itemRate || item.item_rate ||
+            (item.quantity && item.value_sales_excluding_st
+              ? parseFloat((Number(item.value_sales_excluding_st) / Number(item.quantity)).toFixed(2))
+              : 0),
           totalValues: item.totalValues || item.total_values || 0,
           valueSalesExcludingST: item.valueSalesExcludingST || item.value_sales_excluding_st || 0,
           fixedNotifiedValueOrRetailPrice: String(item.fixedNotifiedValueOrRetailPrice ?? item.fixed_notified_value_or_retail_price ?? '0'),
@@ -386,7 +440,9 @@ export function SaleInvoiceForm({
           fedPayable: item.fedPayable || item.fed_payable || 0,
           discount: item.discount || 0,
           saleType: item.saleType || item.sale_type || '01',
-          sroItemSerialNo: item.sroItemSerialNo || item.sro_item_serial_no || ''
+          sroItemSerialNo: item.sroItemSerialNo || item.sro_item_serial_no || '',
+          incomeTaxType: item.incomeTaxType || item.income_tax_type || '236G',
+          withholdingTaxAmount: item.withholdingTaxAmount || item.withholding_tax_amount || 0
         })));
 
         // Match items against saved items to restore dropdown selection
@@ -536,6 +592,7 @@ export function SaleInvoiceForm({
       rate: '',
       uoM: 'NOS',
       quantity: 1,
+      itemRate: 0,
       totalValues: 0,
       valueSalesExcludingST: 0,
       fixedNotifiedValueOrRetailPrice: '0',
@@ -547,11 +604,12 @@ export function SaleInvoiceForm({
       fedPayable: 0,
       discount: 0,
       saleType: transactionTypeName,
-      sroItemSerialNo: ''
+      sroItemSerialNo: '',
+      incomeTaxType: '236G',
+      withholdingTaxAmount: 0
     };
     setModalItem(newItem);
     setModalSelectedSavedItem('');
-    setItemEntryMode('saved');
     setEditingItemIndex(null); // null = adding new
     setIsItemModalOpen(true);
   };
@@ -559,7 +617,6 @@ export function SaleInvoiceForm({
   const openEditModal = (index: number) => {
     setModalItem({ ...items[index] });
     setModalSelectedSavedItem(selectedSavedItems[index] || '');
-    setItemEntryMode(selectedSavedItems[index] ? 'saved' : 'temporary');
     setEditingItemIndex(index);
     setIsItemModalOpen(true);
   };
@@ -603,12 +660,36 @@ export function SaleInvoiceForm({
       return;
     }
 
-    // Restrict non-first items to match the invoice's transaction type
+    // Validate Fixed/Retail Price >= Value Excl. Sales Tax
+    const valueExclTax = Number(modalItem.valueSalesExcludingST) || 0;
+    const fixedPrice = Number(modalItem.fixedNotifiedValueOrRetailPrice) || 0;
+    if (fixedPrice < valueExclTax) {
+      toast.error('Fixed/Retail Price must be equal to or greater than Value Excl. Sales Tax');
+      return;
+    }
+
+    // Validate Discount <= Value Excl. Sales Tax
+    const discount = Number(modalItem.discount) || 0;
+    if (discount > valueExclTax) {
+      toast.error('Discount cannot exceed Value Excl. Sales Tax');
+      return;
+    }
+
+    // Validate Sales Tax Withheld <= Sales Tax Applicable
+    const salesTaxApplicable = Number(modalItem.salesTaxApplicable) || 0;
+    const salesTaxWithheld = Number(modalItem.salesTaxWithheldAtSource) || 0;
+    if (salesTaxWithheld > salesTaxApplicable) {
+      toast.error('Sales Tax Withheld cannot exceed Sales Tax Applicable');
+      return;
+    }
+
+    // Restrict non-first items to match the first item's sale type
     const isNonFirstItem = (editingItemIndex !== null && editingItemIndex > 0) || (editingItemIndex === null && items.length > 0);
-    if (isNonFirstItem && transactionTypeId) {
-      const ttName = masterData?.transaction_types.find(t => t.code === transactionTypeId)?.name;
-      if (ttName && modalItem.saleType !== ttName) {
-        toast.error(`Sale Type must match the invoice's Transaction Type: "${ttName}"`);
+    if (isNonFirstItem && items.length > 0) {
+      const firstItemSaleType = items[0].saleType;
+      if (firstItemSaleType && modalItem.saleType !== firstItemSaleType) {
+        const ttName = masterData?.transaction_types.find(t => t.name === firstItemSaleType)?.name || firstItemSaleType;
+        toast.error(`Sale Type must match the first item's Transaction Type: "${ttName}"`);
         return;
       }
     }
@@ -681,16 +762,31 @@ export function SaleInvoiceForm({
       : '';
     const ttName = selectedItem.transaction_type || '';
 
-    // Validate transaction type for non-first items
-    if (editingItemIndex !== null && editingItemIndex > 0 && ttCode && transactionTypeId && ttCode !== transactionTypeId) {
-      toast.error(`Cannot select this item. Transaction type mismatch. Please select an item with matching transaction type.`);
-      return;
+    // Validate transaction type for non-first items — compare against first item's saleType
+    if (editingItemIndex !== null && editingItemIndex > 0 && items.length > 0) {
+      const firstItemSaleType = items[0].saleType;
+      if (firstItemSaleType && ttName && ttName.trim() !== firstItemSaleType.trim()) {
+        toast.error(`Cannot select this item. Transaction type mismatch. Please select an item with matching transaction type.`);
+        return;
+      }
+    }
+    // Also validate for new items (editingItemIndex === null) when there are existing items
+    if (editingItemIndex === null && items.length > 0) {
+      const firstItemSaleType = items[0].saleType;
+      if (firstItemSaleType && ttName && ttName.trim() !== firstItemSaleType.trim()) {
+        toast.error(`Cannot select this item. Transaction type mismatch. Please select an item with matching transaction type.`);
+        return;
+      }
     }
 
     setModalSelectedSavedItem(itemId);
 
     const uomCode = selectedItem.default_uom || 'NOS';
     const uomObj = masterData?.uom.find(u => u.code === uomCode);
+
+    // Calculate withholding tax from current modalItem values
+    const valueExclTax = Number(modalItem.valueSalesExcludingST) || 0;
+    const whtRate = (modalItem.incomeTaxType || '236G') === '236H' ? 0.005 : 0.001;
 
     setModalItem(prev => ({
       ...prev,
@@ -701,6 +797,7 @@ export function SaleInvoiceForm({
       saleType: ttName || prev.saleType,
       sroScheduleNo: selectedItem.sro_schedule_no || '',
       sroItemSerialNo: selectedItem.sro_item_serial_no || '',
+      withholdingTaxAmount: parseFloat((valueExclTax * whtRate).toFixed(2)),
     }));
 
     toast.success(`Item "${selectedItem.item_name}" loaded successfully`);
@@ -710,8 +807,22 @@ export function SaleInvoiceForm({
     setModalItem(prev => {
       const updated = { ...prev, [field]: value };
 
+      // Auto-calculate withholding tax when income_tax_type or value_sales_excluding_st changes
+      if (field === 'incomeTaxType' || field === 'valueSalesExcludingST') {
+        const valueExclTax = Number(updated.valueSalesExcludingST) || 0;
+        const rate = updated.incomeTaxType === '236H' ? 0.005 : 0.001;
+        updated.withholdingTaxAmount = parseFloat((valueExclTax * rate).toFixed(2));
+      }
+
+      // Auto-calculate item rate when quantity or value_sales_excluding_st changes
+      if (field === 'quantity' || field === 'valueSalesExcludingST') {
+        const qty = Number(updated.quantity) || 0;
+        const val = Number(updated.valueSalesExcludingST) || 0;
+        updated.itemRate = qty > 0 ? parseFloat((val / qty).toFixed(2)) : 0;
+      }
+
       // Auto-calculate when dependent fields change
-      if (field === 'valueSalesExcludingST' || field === 'fixedNotifiedValueOrRetailPrice' || field === 'furtherTax' || field === 'discount' || field === 'extraTax' || field === 'rate') {
+      if (field === 'valueSalesExcludingST' || field === 'fixedNotifiedValueOrRetailPrice' || field === 'furtherTax' || field === 'discount' || field === 'extraTax' || field === 'fedPayable' || field === 'salesTaxWithheldAtSource' || field === 'rate') {
         const valueExclTax = Number(updated.valueSalesExcludingST) || 0;
         const fixedPrice = Number(updated.fixedNotifiedValueOrRetailPrice) || 0;
         const taxRate = parseFloat(updated.rate) || 0;
@@ -730,7 +841,9 @@ export function SaleInvoiceForm({
             furtherTax = baseValue * 0.04;
           }
           const extraTax = Number(updated.extraTax) || 0;
-          const totalValue = baseValue + salesTax + furtherTax + extraTax - discount;
+          const fedPayable = Number(updated.fedPayable) || 0;
+          const salesTaxWithheldVal = Number(updated.salesTaxWithheldAtSource) || 0;
+          const totalValue = baseValue + salesTax + furtherTax + extraTax + fedPayable + salesTaxWithheldVal - discount;
 
           if (field !== 'discount') {
             updated.salesTaxApplicable = parseFloat(salesTax.toFixed(2));
@@ -742,6 +855,105 @@ export function SaleInvoiceForm({
 
       return updated;
     });
+  };
+
+  // --- Helpers for "Add Saved Item" sub-popup ---
+
+  const validateNewHsCode = async (code: string) => {
+    if (!code || code.trim() === '') {
+      setNewHsCodeValid(null);
+      setNewHsCodeError('');
+      return;
+    }
+    setIsValidatingNewHsCode(true);
+    try {
+      const result = await masterDataService.validateHSCode(code.trim());
+      if (result.valid) {
+        setNewHsCodeValid(true);
+        setNewHsCodeError('');
+      } else {
+        setNewHsCodeValid(false);
+        setNewHsCodeError('HS Code not found in FBR database');
+      }
+    } catch (error) {
+      console.error('Error validating HS code:', error);
+      setNewHsCodeValid(false);
+      setNewHsCodeError('Error validating HS Code');
+    } finally {
+      setIsValidatingNewHsCode(false);
+    }
+  };
+
+  const resetNewItemForm = () => {
+    setNewItemCode('');
+    setNewItemName('');
+    setNewHsCode('');
+    setNewHsCodeValid(null);
+    setNewHsCodeError('');
+    setNewProductDescription('');
+    setNewDefaultUom('');
+    setNewDefaultRate('');
+    setNewTransactionType('');
+    setNewSroScheduleNo('');
+    setNewSroItemSerialNo('');
+  };
+
+  const handleAddSavedItem = async () => {
+    if (!newItemCode || !newItemName || !newHsCode || !newProductDescription || !newDefaultUom || !newDefaultRate || !newTransactionType) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    try {
+      setIsSavingNewItem(true);
+
+      const createdItem = await api.auth.createSavedProduct({
+        item_code: newItemCode,
+        item_name: newItemName,
+        hs_code: newHsCode,
+        product_description: newProductDescription,
+        default_uom: newDefaultUom,
+        default_rate: newDefaultRate,
+        default_sale_type: newTransactionType,
+        transaction_type: newTransactionType,
+        sro_schedule_no: newSroScheduleNo || undefined,
+        sro_item_serial_no: newSroItemSerialNo || undefined,
+      });
+
+      if (createdItem.fbr_validated) {
+        toast.success('Item created and HS Code validated with FBR!');
+      } else {
+        toast.warning('Item created but HS Code validation failed');
+      }
+
+      // Refresh saved items list
+      const updatedItems = await api.auth.getSavedProducts(true);
+      setSavedItems(updatedItems || []);
+
+      // Auto-select the newly created item in the main modal
+      if (createdItem && createdItem.id) {
+        const newId = createdItem.id.toString();
+        setModalSelectedSavedItem(newId);
+        setModalItem(prev => ({
+          ...prev,
+          hsCode: createdItem.hs_code || '',
+          productDescription: createdItem.product_description || '',
+          rate: createdItem.default_rate || '',
+          uoM: createdItem.default_uom || 'NOS',
+          saleType: createdItem.transaction_type || prev.saleType,
+          sroScheduleNo: createdItem.sro_schedule_no || '',
+          sroItemSerialNo: createdItem.sro_item_serial_no || '',
+        }));
+      }
+
+      setIsAddSavedItemModalOpen(false);
+      resetNewItemForm();
+    } catch (error: any) {
+      console.error('Error creating saved item:', error);
+      toast.error(error.message || 'Failed to create item');
+    } finally {
+      setIsSavingNewItem(false);
+    }
   };
 
   const removeItem = (index: number) => {
@@ -770,11 +982,12 @@ export function SaleInvoiceForm({
       );
     }
 
-    // If this is NOT the first item, validate transaction type matches
-    if (index > 0 && ttCode && transactionTypeId) {
-      if (ttCode !== transactionTypeId) {
+    // If this is NOT the first item, validate transaction type matches first item
+    if (index > 0 && items.length > 0) {
+      const firstItemSaleType = items[0].saleType;
+      if (firstItemSaleType && ttName && ttName.trim() !== firstItemSaleType.trim()) {
         toast.error(`Cannot select this item. Transaction type mismatch. Please select an item with transaction type matching the first item.`);
-        return; // Prevent selection
+        return;
       }
     }
 
@@ -852,8 +1065,22 @@ export function SaleInvoiceForm({
       const updatedItems = [...prevItems];
       updatedItems[index] = { ...updatedItems[index], [field]: value };
 
-      // Auto-calculate when Value Excl. Sales Tax, Fixed/Retail Price, Further Tax, or Discount is updated
-      if (field === 'valueSalesExcludingST' || field === 'fixedNotifiedValueOrRetailPrice' || field === 'furtherTax' || field === 'discount' || field === 'extraTax') {
+      // Auto-calculate withholding tax when income_tax_type or value_sales_excluding_st changes
+      if (field === 'incomeTaxType' || field === 'valueSalesExcludingST') {
+        const valueExclTax = Number(updatedItems[index].valueSalesExcludingST) || 0;
+        const rate = updatedItems[index].incomeTaxType === '236H' ? 0.005 : 0.001;
+        updatedItems[index].withholdingTaxAmount = parseFloat((valueExclTax * rate).toFixed(2));
+      }
+
+      // Auto-calculate item rate when quantity or value_sales_excluding_st changes
+      if (field === 'quantity' || field === 'valueSalesExcludingST') {
+        const qty = Number(updatedItems[index].quantity) || 0;
+        const val = Number(updatedItems[index].valueSalesExcludingST) || 0;
+        updatedItems[index].itemRate = qty > 0 ? parseFloat((val / qty).toFixed(2)) : 0;
+      }
+
+      // Auto-calculate when Value Excl. Sales Tax, Fixed/Retail Price, Further Tax, Discount, Extra Tax, or FED Payable is updated
+      if (field === 'valueSalesExcludingST' || field === 'fixedNotifiedValueOrRetailPrice' || field === 'furtherTax' || field === 'discount' || field === 'extraTax' || field === 'fedPayable' || field === 'salesTaxWithheldAtSource') {
         const valueExclTax = Number(updatedItems[index].valueSalesExcludingST) || 0;
         const fixedPrice = Number(updatedItems[index].fixedNotifiedValueOrRetailPrice) || 0;
         const taxRate = parseFloat(updatedItems[index].rate) || 0;
@@ -876,8 +1103,10 @@ export function SaleInvoiceForm({
           }
 
           const extraTax = Number(updatedItems[index].extraTax) || 0;
-          // Total Value (Inc. Tax) = Base Value + Sales Tax + Further Tax + Extra Tax - Discount
-          const totalValue = baseValue + salesTax + furtherTax + extraTax - discount;
+          const fedPayable = Number(updatedItems[index].fedPayable) || 0;
+          const salesTaxWithheldVal = Number(updatedItems[index].salesTaxWithheldAtSource) || 0;
+          // Total Value (Inc. Tax) = Base Value + Sales Tax + Further Tax + Extra Tax + FED Payable + Sales Tax Withheld - Discount
+          const totalValue = baseValue + salesTax + furtherTax + extraTax + fedPayable + salesTaxWithheldVal - discount;
 
           if (field !== 'discount') {
             updatedItems[index].salesTaxApplicable = parseFloat(salesTax.toFixed(2));
@@ -933,6 +1162,7 @@ export function SaleInvoiceForm({
       rate: item.rate,
       uom: item.uoM,
       quantity: item.quantity,
+      item_rate: item.itemRate || 0,
       total_values: item.totalValues,
       value_sales_excluding_st: item.valueSalesExcludingST,
       fixed_notified_value_or_retail_price: item.fixedNotifiedValueOrRetailPrice,
@@ -944,8 +1174,14 @@ export function SaleInvoiceForm({
       fed_payable: item.fedPayable,
       discount: item.discount,
       sale_type: item.saleType,
-      sro_item_serial_no: item.sroItemSerialNo || undefined
+      sro_item_serial_no: item.sroItemSerialNo || undefined,
+      // Internal fields (not sent to FBR)
+      income_tax_type: item.incomeTaxType || '236G',
+      withholding_tax_amount: item.withholdingTaxAmount || 0
     }));
+
+    // Derive invoice-level income_tax from first item (backward compat)
+    const invoiceIncomeTax = items.length > 0 ? (items[0].incomeTaxType || '236G') : '236G';
 
     return {
       external_id: invoiceNo || `INV-${Date.now()}`,
@@ -963,7 +1199,7 @@ export function SaleInvoiceForm({
       buyer_registration_type: buyerRegistrationType,
       invoice_ref_no: invoiceRefNo || undefined,
       scenario_id: scenarioId || undefined,
-      income_tax: incomeTax,
+      income_tax: invoiceIncomeTax,
       items: formattedItems,
       environment: environment
     };
@@ -979,6 +1215,9 @@ export function SaleInvoiceForm({
       let invoiceResponse: any;
       if (isEditMode && initialData?.id) {
         invoiceResponse = await api.invoices.update(initialData.id, invoiceData);
+      } else if (savedInvoiceId) {
+        // Already saved by Validate flow — update instead of creating duplicate
+        invoiceResponse = await api.invoices.update(savedInvoiceId, invoiceData);
       } else {
         invoiceResponse = await api.invoices.create(invoiceData);
       }
@@ -1185,7 +1424,7 @@ export function SaleInvoiceForm({
           </div>
 
           {/* Main Form Content */}
-          <div className="flex-1 min-w-0 space-y-1">
+          <div className="flex-1 min-w-0 space-y-1 pb-24 sm:pb-4">
           {/* Invoice Header */}
           <Card>
             <CardContent>
@@ -1655,6 +1894,44 @@ export function SaleInvoiceForm({
             input[type="number"] {
               -moz-appearance: textfield;
             }
+                    
+            /* Moves a single tiny gradient block around the 4 edges of the box */
+            @keyframes borderTravel {
+              0% { background-position: 0% 0%, 0% 0%; }
+              25% { background-position: 0% 0%, 100% 0%; }
+              50% { background-position: 0% 0%, 100% 100%; }
+              75% { background-position: 0% 0%, 0% 100%; }
+              100% { background-position: 0% 0%, 0% 0%; }
+            }
+                    
+            .glow-border:focus {
+              border: 2px solid transparent !important;
+              outline: none !important;
+              box-shadow: none !important;
+                    
+              /* 1st layer: Input background mask
+                 2nd layer: A small glowing blue dot block
+              */
+              background-image:
+                linear-gradient(#ffffff, #ffffff),
+                linear-gradient(135deg, #60a5fa, #2563eb);
+                    
+              background-origin: border-box;
+              background-clip: padding-box, border-box;
+                    
+              /* Crucial: Prevent the dot from repeating, and size it to a small 16px square */
+              background-repeat: no-repeat, no-repeat;
+              background-size: 100% 100%, 16px 16px;
+                    
+              animation: borderTravel 2.5s linear infinite;
+            }
+                    
+            /* Dark mode support */
+            html.dark .glow-border:focus {
+              background-image:
+                linear-gradient(#1e1e1e, #1e1e1e),
+                linear-gradient(135deg, #93c5fd, #3b82f6);
+            }
           `}</style>
         <div className="fixed inset-0 z-50 flex items-start justify-center pt-5 overflow-y-auto">
           {/* Backdrop */}
@@ -1668,9 +1945,9 @@ export function SaleInvoiceForm({
           {/* Modal Content */}
           <div className="relative z-50 w-[95vw] max-w-6xl bg-white dark:bg-[#161616] rounded-2xl shadow-2xl border-2 border-black dark:border-[#2e2e2e] mb-10 mx-auto">
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-1 border-b border-[#e1e3e5] dark:border-[#2e2e2e]">
+            <div className="flex items-center justify-between px-6 py-1 border-b border-[#e1e3e5] dark:border-[#2e2e2e] bg-blue-100 rounded-t-2xl">
               <h4 className="text-xl font-bold text-[#202223] dark:text-[#e3e3e3]">
-                {editingItemIndex !== null ? `Edit Item ${editingItemIndex + 1}` : 'Add New Item'}
+                {editingItemIndex !== null ? `Edit Item ${editingItemIndex + 1}` : 'Item Wise Sale'}
               </h4>
               <button
                 type="button"
@@ -1685,458 +1962,798 @@ export function SaleInvoiceForm({
             </div>
 
             {/* Modal Body */}
-            <div className="px-6 pt-5 pb-5 space-y-6">
-              {/* Item Entry Mode Toggle */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] mr-2">Item Type:</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setItemEntryMode('saved');
-                    setModalSelectedSavedItem('');
-                  }}
-                  className={`px-4 py-1.5 text-sm font-medium rounded-lg border transition-all duration-150 ${
-                    itemEntryMode === 'saved'
-                      ? 'bg-[#008060] text-white border-[#008060] dark:bg-[#00a876] dark:border-[#00a876] shadow-sm'
-                      : 'bg-white dark:bg-[#1a1a1a] text-[#6d7175] dark:text-[#8c9196] border-[#c9cccf] dark:border-[#3e3e3e] hover:border-[#008060] hover:text-[#008060] dark:hover:border-[#00a876] dark:hover:text-[#00a876]'
-                  }`}
-                >
-                  Existing Saved Items
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setItemEntryMode('temporary');
-                    setModalSelectedSavedItem('');
-                  }}
-                  className={`px-4 py-1.5 text-sm font-medium rounded-lg border transition-all duration-150 ${
-                    itemEntryMode === 'temporary'
-                      ? 'bg-[#008060] text-white border-[#008060] dark:bg-[#00a876] dark:border-[#00a876] shadow-sm'
-                      : 'bg-white dark:bg-[#1a1a1a] text-[#6d7175] dark:text-[#8c9196] border-[#c9cccf] dark:border-[#3e3e3e] hover:border-[#008060] hover:text-[#008060] dark:hover:border-[#00a876] dark:hover:text-[#00a876]'
-                  }`}
-                >
-                  Temporary Item
-                </button>
-              </div>
+            <div className="px-6 pt-5 pb-5">
+              <div className="flex flex-col md:flex-row gap-4">
+                {/* LEFT COLUMN - 70% */}
+                <div className="w-full md:w-[70%] flex flex-col justify-between">
+                  {/* Header row with plus icon */}
+                  {/* <div className="flex items-center justify-between mb-2 border-2 rounded-xl bg-blue-50 px-1">
+                    <Label className="text-sm font-semibold">Quick Select from Saved Items</Label>
+                    <div className='flex gap-2 text-sm font-semibold'>
+                    <button
+                      type="button"
+                      onClick={() => { setIsAddSavedItemModalOpen(true); }}
+                      className="h-7 w-7 rounded-lg border border-[#c9cccf] dark:border-[#3e3e3e] bg-white dark:bg-[#1a1a1a] flex items-center justify-center text-[#008060] hover:bg-[#f0f9f6] dark:hover:bg-[#0d3d2f]/30 transition-colors cursor-pointer"
+                      title="Add new saved item"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
+                    <label className='text-black pt-1'>Add New Item</label>
+                    </div>
+                  </div> */}
+                  <div className='border-2 border-blue-500 rounded-2xl px-1 py-1 flex flex-col hover:bg-blue-50 focus-within:bg-blue-50'>
+                    <div className='flex justify-between pr-1'>
+                      {/* Saved Items Quick Select */}
+                      <div className={`py-2 px-1 rounded-xl w-full ${
+                          editingItemIndex !== null && editingItemIndex > 0 && items.length > 0 && modalSelectedSavedItem && (() => {
+                            const si = savedItems.find(item => item.id.toString() === modalSelectedSavedItem);
+                            const firstSaleType = items[0]?.saleType;
+                            return si && si.transaction_type && firstSaleType && si.transaction_type.trim() !== firstSaleType.trim();
+                          })()
+                            ? 'bg-red-50 border-red-300'
+                            : ''
+                        }`}>
+                          {/* Header row with plus icon */}
+                          {/* <div className="flex items-center justify-between mb-2 border-2 rounded-xl bg-blue-100 px-1">
+                            <Label className="text-sm font-semibold">Quick Select from Saved Items</Label>
+                            <div className='flex gap-2 text-sm font-semibold'>
+                            <button
+                              type="button"
+                              onClick={() => { setIsAddSavedItemModalOpen(true); }}
+                              className="h-7 w-7 rounded-lg border border-[#c9cccf] dark:border-[#3e3e3e] bg-white dark:bg-[#1a1a1a] flex items-center justify-center text-[#008060] hover:bg-[#f0f9f6] dark:hover:bg-[#0d3d2f]/30 transition-colors cursor-pointer"
+                              title="Add new saved item"
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                            </button>
+                            <label className='text-black pt-1'>Add New Item</label>
+                            </div>
+                          </div> */}
+                          {savedItems.length > 0 ? (
+                            <Select value={modalSelectedSavedItem} onValueChange={handleModalItemSelect}>
+                              <SelectTrigger className="glow-border">
+                                {modalSelectedSavedItem ? (
+                                  <span>{savedItems.find(item => item.id.toString() === modalSelectedSavedItem)?.item_name || 'Select a saved item to auto-fill...'}</span>
+                                ) : (
+                                  <span className="text-muted-foreground">Select a saved item to auto-fill...</span>
+                                )}
+                              </SelectTrigger>
+                              <SelectContent>
+                                {savedItems.map((savedItem) => (
+                                  <SelectItem key={savedItem.id} value={savedItem.id.toString()}>
+                                    <div className="flex flex-col">
+                                      <span className="font-medium">{savedItem.item_name}</span>
+                                      <span className="text-xs text-gray-500 ">
+                                        {savedItem.hs_code} - {savedItem.product_description}
+                                      </span>
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
 
-              {/* Saved Items Quick Select — only when mode is 'saved' */}
-              {itemEntryMode === 'saved' && savedItems.length > 0 && (
-                <div className={`p-2 border rounded-xl ${
-                  editingItemIndex !== null && editingItemIndex > 0 && transactionTypeId && modalSelectedSavedItem && (() => {
-                    const si = savedItems.find(item => item.id.toString() === modalSelectedSavedItem);
-                    return si && si.transaction_type && si.transaction_type !== transactionTypeId;
-                  })()
-                    ? 'bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-800'
-                    : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
-                }`}>
-                  <Label className="text-sm font-semibold mb-2 block">Quick Select from Saved Items</Label>
-                  <Select value={modalSelectedSavedItem} onValueChange={handleModalItemSelect}>
-                    <SelectTrigger>
-                      {modalSelectedSavedItem ? (
-                        <span>{savedItems.find(item => item.id.toString() === modalSelectedSavedItem)?.item_name || 'Select a saved item to auto-fill...'}</span>
-                      ) : (
-                        <span className="text-muted-foreground">Select a saved item to auto-fill...</span>
-                      )}
-                    </SelectTrigger>
-                    <SelectContent>
-                      {savedItems.map((savedItem) => (
-                        <SelectItem key={savedItem.id} value={savedItem.id.toString()}>
-                          <div className="flex flex-col">
-                            <span className="font-medium">{savedItem.item_name}</span>
-                            <span className="text-xs text-gray-500">
-                              {savedItem.hs_code} - {savedItem.product_description}
-                            </span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {editingItemIndex !== null && editingItemIndex > 0 && transactionTypeId && (
-                    <p className="text-xs text-red-600 dark:text-red-400 mt-2 flex items-center gap-1 font-medium">
-                      <AlertCircle className="h-3 w-3" />
-                      Only items with matching transaction type can be selected
-                    </p>
-                  )}
-                  {editingItemIndex === 0 && !transactionTypeId && (
-                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                      Select an item to automatically set the transaction type and fill all fields
-                    </p>
-                  )}
-                  {editingItemIndex === 0 && transactionTypeId && (
-                    <p className="text-xs text-green-600 dark:text-green-400 mt-1">
-                      Transaction type set. All items must match this transaction type.
-                    </p>
-                  )}
+                          ) : (
+                            <p className="text-xs text-[#6d7175] dark:text-[#8c9196]">
+                              No saved items yet. Click "+" to create one.
+                            </p>
+                          )}
+                          {editingItemIndex !== null && editingItemIndex > 0 && items.length > 0 && (
+                            <p className="text-xs text-red-600 dark:text-red-400 mt-2 flex items-center gap-1 font-medium">
+                              <AlertCircle className="h-3 w-3" />
+                              Only items with matching transaction type can be selected
+                            </p>
+                          )}
+                          {editingItemIndex === 0 && !transactionTypeId && (
+                            <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                              Select an item to automatically set the transaction type and fill all fields
+                            </p>
+                          )}
+                          {editingItemIndex === 0 && transactionTypeId && (
+                            <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                              Transaction type set. All items must match this transaction type.
+                            </p>
+                          )}
+                      </div>
+                        
+                      <div className='pt-2'>
+                        <button
+                        type="button"
+                        onClick={() => { setIsAddSavedItemModalOpen(true); }}
+                        className=" h-7 w-7 rounded-lg border border-[#c9cccf] dark:border-[#3e3e3e] bg-white dark:bg-[#1a1a1a] flex items-center justify-center text-[#008060] hover:bg-[#f0f9f6] dark:hover:bg-[#0d3d2f]/30 transition-colors cursor-pointer"
+                        title="Add new saved item"
+                        >
+                        <Plus className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                      
+                    {/* Product Description */}
+                    <div className="px-1">
+                      <Label className="text-[14px] font-bold">Product Description *</Label>
+                      <Input
+                        className="w-full text-[12px] h-[30px] glow-border"
+                        type="text"
+                        value={modalItem.productDescription}
+                        onChange={(e) => updateModalItem('productDescription', e.target.value)}
+                        placeholder="Enter product description"
+                        required
+                      />
+                    </div>                    
+                  </div>
+
+                  {/* Quantity + Item Rate */}
+                  <div className="flex flex-wrap sm:flex-nowrap justify-between gap-2 border-2 border-blue-600 rounded-2xl px-1 py-1 hover:bg-blue-50 focus-within:bg-blue-50">
+                    <div className="flex-1 min-w-[100px]">
+                      <Label>Quantity *</Label>
+                      <Input
+                        className="w-full text-[12px] h-[30px] text-right glow-border"
+                        type="number"
+                        step="0.0001"
+                        max={9999999}
+                        value={modalItem.quantity || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === '') {
+                            updateModalItem('quantity', 0);
+                            return;
+                          }
+                          const num = parseFloat(val);
+                          if (num > 9999999) return;
+                          updateModalItem('quantity', num);
+                        }}
+                        required
+                      />
+                    </div>
+                    <div className="flex-1 min-w-[100px]">
+                      <Label>Item Rate</Label>
+                      <Input
+                        className="w-full text-[12px] h-[30px] text-right glow-border"
+                        type="text"
+                        inputMode="decimal"
+                        maxLength={14}
+                        value={modalItem.itemRate ? Number(modalItem.itemRate).toFixed(2) : ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === '' || val === '-') {
+                            updateModalItem('itemRate', 0);
+                            return;
+                          }
+                          const num = parseFloat(val);
+                          if (isNaN(num)) return;
+                          if (num > 99999999999) return;
+                          updateModalItem('itemRate', num);
+                        }}
+                        placeholder="Per unit Rate"
+                      />
+                      {/* <p className="text-[10px] text-gray-400 mt-0.5">
+                        Value Excl. Tax / Quantity
+                      </p> */}
+                    </div>
+                  </div>
+
+                  {/* Value Excl. Sales Tax + Fixed/Retail Price + Discount */}
+                  <div className="flex flex-wrap sm:flex-nowrap justify-between gap-2 border-2 border-blue-600 rounded-2xl px-1 py-1 hover:bg-blue-50 focus-within:bg-blue-50">
+                    <div className='w-full min-w-[120px] flex-1'>
+                      <Label>Value Excl. Sales Tax *</Label>
+                      <Input
+                        className="w-full text-[12px] h-[30px] text-right glow-border"
+                        type="text"
+                        inputMode="decimal"
+                        maxLength={14}
+                        value={(() => {
+                          const num = modalItem.valueSalesExcludingST;
+                          if (num === 0 && !valueExclTaxFocused) return '';
+                          if (valueExclTaxFocused) return num.toString();
+                          return Number(num).toFixed(2);
+                        })()}
+                        onFocus={() => setValueExclTaxFocused(true)}
+                        onBlur={() => setValueExclTaxFocused(false)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === '' || val === '-') {
+                            updateModalItem('valueSalesExcludingST', 0);
+                            return;
+                          }
+                          const num = parseFloat(val);
+                          if (isNaN(num)) return;
+                          if (num > 99999999999) return;
+                          updateModalItem('valueSalesExcludingST', num);
+                        }}
+                        required
+                      />
+                    </div>
+                    <div className='w-full min-w-[120px] flex-1'>
+                      <Label>Fixed/Retail Price *</Label>
+                      <Input
+                        className={`w-full text-[12px] h-[30px] text-right glow-border ${errorBorder('fixedPrice')}`}
+                        type="text"
+                        inputMode="decimal"
+                        maxLength={14}
+                        value={formatAmount('fixedPrice', modalItem.fixedNotifiedValueOrRetailPrice ?? '0')}
+                        onFocus={() => setFocusedFields(prev => new Set(prev).add('fixedPrice'))}
+                        onBlur={() => {
+                          setFocusedFields(prev => { const next = new Set(prev); next.delete('fixedPrice'); return next; });
+                          const v = Number(modalItem.valueSalesExcludingST) || 0;
+                          const f = Number(modalItem.fixedNotifiedValueOrRetailPrice) || 0;
+                          if (f > 0 && f < v) {
+                            setFieldErrors(prev => new Set(prev).add('fixedPrice'));
+                            toast.error('Fixed/Retail Price must be equal to or greater than Value Excl. Sales Tax');
+                          } else {
+                            setFieldErrors(prev => { const next = new Set(prev); next.delete('fixedPrice'); return next; });
+                          }
+                        }}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val.length > 14) return;
+                          setFieldErrors(prev => { const next = new Set(prev); next.delete('fixedPrice'); return next; });
+                          updateModalItem('fixedNotifiedValueOrRetailPrice', val);
+                        }}
+                        required
+                      />
+                    </div>
+                    <div className='w-full min-w-[120px] flex-1'>
+                      <Label>Discount</Label>
+                      <Input
+                        className={`w-full text-[12px] h-[30px] text-right glow-border ${errorBorder('discount')}`}
+                        type="text"
+                        inputMode="decimal"
+                        maxLength={14}
+                        value={formatAmount('discount', modalItem.discount ?? 0)}
+                        onFocus={() => setFocusedFields(prev => new Set(prev).add('discount'))}
+                        onBlur={() => {
+                          setFocusedFields(prev => { const next = new Set(prev); next.delete('discount'); return next; });
+                          const v = Number(modalItem.valueSalesExcludingST) || 0;
+                          const d = Number(modalItem.discount) || 0;
+                          if (d > v) {
+                            setFieldErrors(prev => new Set(prev).add('discount'));
+                            toast.error('Discount cannot exceed Value Excl. Sales Tax');
+                          } else {
+                            setFieldErrors(prev => { const next = new Set(prev); next.delete('discount'); return next; });
+                          }
+                        }}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === '' || val === '-') {
+                            setFieldErrors(prev => { const next = new Set(prev); next.delete('discount'); return next; });
+                            updateModalItem('discount', 0);
+                            return;
+                          }
+                          if (val.length > 14) return;
+                          const num = parseFloat(val);
+                          if (isNaN(num)) return;
+                          if (num > 99999999999) return;
+                          setFieldErrors(prev => { const next = new Set(prev); next.delete('discount'); return next; });
+                          updateModalItem('discount', num);
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Sales Tax Applicable + Further Tax + Sales Tax Withheld */}
+                  <div className='border-2 border-blue-600 rounded-2xl px-1 py-1 hover:bg-blue-50 focus-within:bg-blue-50'>
+                    <div className="flex flex-wrap sm:flex-nowrap justify-between gap-2">
+                      <div className="flex-1 min-w-[100px]">
+                        <Label>Sales Tax Applicable *</Label>
+                        <Input
+                          className="w-full text-[12px] h-[30px] text-right glow-border"
+                          type="text"
+                          value={modalItem.salesTaxApplicable ? Number(modalItem.salesTaxApplicable).toFixed(2) : ''}
+                          readOnly
+                          required
+                        />
+                      </div>
+                      <div className="flex-1 min-w-[100px]">
+                        <Label>Further Tax {buyerRegistrationType === 'Unregistered' && '*'}</Label>
+                        <Input
+                          className="w-full text-[12px] h-[30px] text-right glow-border"
+                          type="text"
+                          inputMode="decimal"
+                          maxLength={13}
+                          value={formatAmount('furtherTax', modalItem.furtherTax ?? 0)}
+                          onFocus={() => setFocusedFields(prev => new Set(prev).add('furtherTax'))}
+                          onBlur={() => setFocusedFields(prev => { const next = new Set(prev); next.delete('furtherTax'); return next; })}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val.length > 13) return;
+                            updateModalItem('furtherTax', val);
+                          }}
+                          required={buyerRegistrationType === 'Unregistered'}
+                        />
+                      </div>
+                      <div className="flex-1 min-w-[100px]">
+                        <Label>Sales Tax Withheld *</Label>
+                        <Input
+                          className={`w-full text-[12px] h-[30px] text-right glow-border ${errorBorder('salesTaxWithheld')}`}
+                          type="text"
+                          inputMode="decimal"
+                          maxLength={11}
+                          value={formatAmount('salesTaxWithheld', modalItem.salesTaxWithheldAtSource)}
+                          onFocus={() => setFocusedFields(prev => new Set(prev).add('salesTaxWithheld'))}
+                          onBlur={() => {
+                            setFocusedFields(prev => { const next = new Set(prev); next.delete('salesTaxWithheld'); return next; });
+                            const s = Number(modalItem.salesTaxApplicable) || 0;
+                            const w = Number(modalItem.salesTaxWithheldAtSource) || 0;
+                            if (w > s) {
+                              setFieldErrors(prev => new Set(prev).add('salesTaxWithheld'));
+                              toast.error('Sales Tax Withheld cannot exceed Sales Tax Applicable');
+                            } else {
+                              setFieldErrors(prev => { const next = new Set(prev); next.delete('salesTaxWithheld'); return next; });
+                            }
+                          }}
+                          onChange={(e) => {
+                            setFieldErrors(prev => { const next = new Set(prev); next.delete('salesTaxWithheld'); return next; });
+                            updateModalItem('salesTaxWithheldAtSource', e.target.value);
+                          }}
+                          placeholder="0"
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    {/* Extra Tax + FED Payable */}
+                    <div className="flex flex-wrap sm:flex-nowrap justify-between gap-2">
+                      <div className="flex-1 min-w-[100px]">
+                        <Label>Extra Tax</Label>
+                        <Input
+                          className="w-full text-[12px] h-[30px] text-right glow-border"
+                          type="text"
+                          inputMode="decimal"
+                          maxLength={11}
+                          value={formatAmount('extraTax', modalItem.extraTax ?? 0)}
+                          onFocus={() => setFocusedFields(prev => new Set(prev).add('extraTax'))}
+                          onBlur={() => setFocusedFields(prev => { const next = new Set(prev); next.delete('extraTax'); return next; })}
+                          onChange={(e) => {
+                            updateModalItem('extraTax', e.target.value);
+                          }}
+                        />
+                      </div>
+                      <div className="flex-1 min-w-[100px]">
+                        <Label>FED Payable</Label>
+                        <Input
+                          className="w-full text-[12px] h-[30px] text-right glow-border"
+                          type="text"
+                          inputMode="decimal"
+                          maxLength={14}
+                          value={formatAmount('fedPayable', modalItem.fedPayable ?? 0)}
+                          onFocus={() => setFocusedFields(prev => new Set(prev).add('fedPayable'))}
+                          onBlur={() => setFocusedFields(prev => { const next = new Set(prev); next.delete('fedPayable'); return next; })}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === '' || val === '-') {
+                              updateModalItem('fedPayable', 0);
+                              return;
+                            }
+                            if (val.length > 14) return;
+                            const num = parseFloat(val);
+                            if (isNaN(num)) return;
+                            updateModalItem('fedPayable', num);
+                          }}
+                        />
+                      </div>
+                      <div className="flex-1 min-w-[100px] hidden sm:block"></div>
+                    </div>
+                  </div>
+
+                  {/* Income Tax Type + Withholding Tax (per item, internal only) */}
+                  <div className='border-2 border-blue-600 rounded-2xl px-1 py-1 hover:bg-blue-50 focus-within:bg-blue-50'>
+                    <div className="flex flex-wrap sm:flex-nowrap justify-between gap-2">
+                      <div className="w-full flex-1 min-w-[100px]">
+                        <Label htmlFor="modalIncomeTax">Income Tax Type</Label>
+                        <Select value={modalItem.incomeTaxType || '236G'} onValueChange={(val) => updateModalItem('incomeTaxType', val)}>
+                          <SelectTrigger className="text-[12px] h-[30px] glow-border">
+                            <SelectValue placeholder="236G" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="236G">236G (0.1%)</SelectItem>
+                            <SelectItem value="236H">236H (0.5%)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="w-full flex-1 min-w-[100px]">
+                        <Label>Withholding Tax</Label>
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          maxLength={11}
+                          value={formatAmount('withholdingTax', modalItem.withholdingTaxAmount ?? 0)}
+                          onFocus={() => setFocusedFields(prev => new Set(prev).add('withholdingTax'))}
+                          onBlur={() => setFocusedFields(prev => { const next = new Set(prev); next.delete('withholdingTax'); return next; })}
+                          onChange={(e) => {
+                            updateModalItem('withholdingTaxAmount', e.target.value);
+                          }}
+                          className="w-full text-[12px] h-[30px] text-right glow-border"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              )}
 
-              {/* Temporary Item notice */}
-              {itemEntryMode === 'temporary' && (
-                <div className="p-3 border rounded-xl bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800">
-                  <p className="text-sm text-amber-700 dark:text-amber-300 flex items-center gap-2">
-                    <Info className="h-4 w-4" />
-                    Temporary item — please fill all fields manually below.
-                  </p>
-                </div>
-              )}
-
-              {/* Item Fields Grid */}
-              <div>
-
-                <div className='flex flex-wrap gap-2 xl:flex-nowrap xl:justify-between'>
-                <div className='w-full sm:w-[48%] md:w-[23%] xl:w-[115px]'>
-                  <Label className='pl-3 text-[14px] font-bold'>HS Code *</Label>
-                  <Input
-                    className='w-full xl:w-[100px] text-[12px] h-[30px]'
-                    type="text"
-                    value={modalItem.hsCode}
-                    onChange={(e) => updateModalItem('hsCode', e.target.value)}
-                    placeholder="HS Code"
-                    required
-                  />
-                </div>
-
-                <div className="w-full sm:w-[48%] md:w-[48%] xl:w-[600px]">
-                  <Label className='pl-3 text-[14px] font-bold'>Product Description *</Label>
-                  <Input
-                    className='w-full xl:w-[600px] text-[12px] h-[30px]'
-                    type="text"
-                    value={modalItem.productDescription}
-                    onChange={(e) => updateModalItem('productDescription', e.target.value)}
-                    placeholder="Enter product description"
-                    required
-                  />
-                </div>
-
-                <div className='w-full sm:w-[48%] md:w-[23%] xl:w-[100px]'>
-                  <Label>Tax Rate *</Label>
-                  <Input
-                    className='w-full xl:w-[80px] text-[12px] h-[30px]'
-                    type="text"
-                    value={modalItem.rate}
-                    onChange={(e) => updateModalItem('rate', e.target.value)}
-                    placeholder="e.g., 18"
-                    required
-                  />
-                </div>
-
-                <div className='w-full sm:w-[48%] md:w-[23%] xl:w-[180px]'>
-                  <Label>Unit of Measurement *</Label>
-                  {itemEntryMode === 'temporary' ? (
-                    <Select value={modalItem.uoM} onValueChange={(val) => updateModalItem('uoM', val)}>
-                      <SelectTrigger className="text-[12px] h-[30px] w-full xl:w-[170px]">
-                        <SelectValue placeholder="Select UOM" />
+                {/* RIGHT COLUMN - 30% */}
+                <div className="w-full md:w-[30%] flex flex-col gap-3 border-2 border-blue-600 rounded-2xl p-3 bg-blue-50">
+                  {/* Sale Type */}
+                  <div>
+                    <Label>Sale Type</Label>
+                    <Select value={modalItem.saleType}>
+                      <SelectTrigger disabled tabIndex={-1} className="text-[12px] h-[30px] w-full bg-gray-50 dark:bg-gray-800 cursor-not-allowed">
+                        <SelectValue placeholder="Goods at standard rate (default)" />
                       </SelectTrigger>
-                      <SelectContent>
-                        {(masterData?.uom ?? []).map((uom) => (
-                          <SelectItem key={uom.code} value={uom.name}>
-                            {uom.name}
+                      <SelectContent className="max-h-[200px]">
+                        {(masterData?.transaction_types ?? []).map((type) => (
+                          <SelectItem key={type.code} value={type.name}>
+                            {type.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                  ) : (
+                  </div>
+
+                  {/* HS Code + Tax Rate */}
+                  <div className="flex justify-between gap-2">
+                    <div className="flex-1">
+                      <Label className="text-[14px] font-bold">HS Code *</Label>
+                      <Input
+                        className="w-full text-[12px] h-[30px]"
+                        type="text"
+                        value={modalItem.hsCode}
+                        onChange={(e) => updateModalItem('hsCode', e.target.value)}
+                        placeholder="HS Code"
+                        required
+                        readOnly
+                        tabIndex={-1}
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <Label>Tax Rate *</Label>
+                      <Input
+                        className="w-full text-[12px] h-[30px]"
+                        type="text"
+                        value={modalItem.rate}
+                        onChange={(e) => updateModalItem('rate', e.target.value)}
+                        placeholder="e.g., 18"
+                        required
+                        readOnly
+                        tabIndex={-1}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Unit of Measurement + Total Value */}
+                  <div className="flex-1">
+                    <Label>Unit of Measurement *</Label>
                     <Input
-                      className='w-full xl:w-[170px] text-[12px] h-[30px]'
+                      className="w-full text-[12px] h-[30px]"
                       type="text"
                       value={modalItem.uoM}
-                      onChange={(e) => updateModalItem('uoM', e.target.value)}
-                      placeholder="e.g., NOS, KG, MT"
+                      readOnly
+                      tabIndex={-1}
                       required
                     />
-                  )}
-                </div>
-                </div>
-
-                <div className='flex flex-wrap gap-2 xl:flex-nowrap xl:justify-between'>
-                <div className='w-full sm:w-[48%] lg:w-[18%] xl:w-[180px]'>
-                  <Label>Quantity *</Label>
-                  <Input
-                    className='w-full xl:w-[130px] text-[12px] h-[30px]'
-                    type="number"
-                    step="0.0001"
-                    value={modalItem.quantity || ''}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      updateModalItem('quantity', val === '' ? 0 : parseFloat(val));
-                    }}
-                    required
-                  />
-                </div>
-
-                <div className='w-full sm:w-[48%] lg:w-[18%] xl:w-[180px]'>
-                  <Label>Value Excl. Sales Tax *</Label>
-                  <Input
-                    className='w-full xl:w-[180px] text-[12px] h-[30px]'
-                    type="number"
-                    step="0.01"
-                    value={modalItem.valueSalesExcludingST || ''}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      updateModalItem('valueSalesExcludingST', val === '' ? 0 : parseFloat(val));
-                    }}
-                    required
-                  />
-                </div>
-
-                <div className='w-full sm:w-[48%] lg:w-[18%] xl:w-[180px]'>
-                  <Label>Sales Tax Applicable *</Label>
-                  <Input
-                    className='w-full xl:w-[180px] text-[12px] h-[30px]'
-                    type="number"
-                    step="0.01"
-                    value={modalItem.salesTaxApplicable || ''}
-                    readOnly
-                    required
-                  />
-                  {/* <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
-                    Auto-calculated from value excl. tax
-                  </p> */}
-                </div>
-
-                <div className='w-full sm:w-[48%] lg:w-[18%] xl:w-[180px]'>
-                  <Label>Total Value (Inc. Tax) *</Label>
-                  <Input
-                    className='w-full xl:w-[180px] text-[12px] h-[30px]'
-                    type="number"
-                    step="0.01"
-                    value={modalItem.totalValues || ''}
-                    readOnly
-                    required
-                  />
-                  {/* <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
-                    Auto-calculated (inc. tax + further tax - discount)
-                  </p> */}
-                </div>
-
-                <div className='w-full sm:w-[48%] lg:w-[18%] xl:w-[180px]'>
-                  <Label>Fixed/Retail Price *</Label>
-                  <Input
-                    className='w-full xl:w-[180px] text-[12px] h-[30px]'
-                    type="text"
-                    value={modalItem.fixedNotifiedValueOrRetailPrice ?? '0'}
-                    onChange={(e) => {
-                      updateModalItem('fixedNotifiedValueOrRetailPrice', e.target.value);
-                    }}
-                    required
-                  />
-                </div>
-                </div>
-
-                <div className='flex flex-wrap gap-2 xl:flex-nowrap xl:justify-between'>
-                <div className='w-full sm:w-[48%] lg:w-[18%] xl:w-[180px]'>
-                  <Label>Sales Tax Withheld *</Label>
-                  <Input
-                    className='w-full xl:w-[160px] text-[12px] h-[30px]'
-                    type="text"
-                    value={modalItem.salesTaxWithheldAtSource}
-                    onChange={(e) => updateModalItem('salesTaxWithheldAtSource', e.target.value)}
-                    placeholder="Enter amount (e.g., 0, 100.50)"
-                    required
-                  />
-                </div>
-
-                
-
-                <div className='w-full sm:w-[48%] lg:w-[18%] xl:w-[180px]'>
-                  <Label>Further Tax {buyerRegistrationType === 'Unregistered' && '*'}</Label>
-                  <Input
-                    className='w-full xl:w-[120px] text-[12px] h-[30px]'
-                    type="text"
-                    value={modalItem.furtherTax ?? '0'}
-                    onChange={(e) => {
-                      updateModalItem('furtherTax', e.target.value);
-                    }}
-                    required={buyerRegistrationType === 'Unregistered'}
-                  />
-                  {/* {buyerRegistrationType === 'Unregistered' && (
-                    <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
-                      Auto-filled at 4% of Value Excl. Sales Tax (editable)
-                    </p>
-                  )} */}
-                </div>
-
-                <div className='w-full sm:w-[48%] lg:w-[18%] xl:w-[180px]'>
-                  <Label>SRO Schedule No</Label>
-                  <Input
-                    className='w-full xl:w-[180px] text-[12px] h-[30px]'
-                    value={modalItem.sroScheduleNo}
-                    onChange={(e) => updateModalItem('sroScheduleNo', e.target.value)}
-                    placeholder={modalItem.rate ? "No SRO schedules available" : "Select Item"}
-                    disabled={!modalItem.rate}
-                  />
-                </div>
-
-                <div className='w-full sm:w-[48%] lg:w-[18%] xl:w-[180px]'>
-                  <Label>SRO Item Serial No</Label>
-                  <Input
-                    className='w-full xl:w-[150px] text-[12px] h-[30px]'
-                    value={modalItem.sroItemSerialNo}
-                    onChange={(e) => updateModalItem('sroItemSerialNo', e.target.value)}
-                    placeholder="Optional"
-                  />
-                </div>
-
-                <div className='w-full sm:w-[48%] lg:w-[18%] xl:w-[180px]'>
-                  <Label>Discount</Label>
-                  <Input
-                    className='w-full xl:w-[120px] text-[12px] h-[30px]'
-                    type="number"
-                    step="0.01"
-                    value={modalItem.discount || ''}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      updateModalItem('discount', val === '' ? 0 : parseFloat(val));
-                    }}
-                  />
-                </div>
-                </div>
-
-                <div className='flex flex-wrap gap-2 xl:flex-nowrap xl:justify-between'>
-
-
-
-                  <div className='w-full sm:w-[48%] lg:w-[30%] xl:w-[150px]'>
-                    <Label>Extra Tax</Label>
+                  </div>
+                  <div className="flex-1">
+                    <Label>Total Value (Inc. Tax) *</Label>
                     <Input
-                      className='w-full xl:w-[120px] text-[12px] h-[30px]'
+                      className="w-full text-[12px] h-[30px] text-right"
                       type="text"
-                      value={modalItem.extraTax ?? '0'}
-                      onChange={(e) => {
-                        updateModalItem('extraTax', e.target.value);
-                      }}
-                    />
-                  </div>
-
-                  <div className='w-full sm:w-[48%] lg:w-[30%] xl:w-[170px]'>
-                    <Label>Sale Type</Label>
-                    {itemEntryMode === 'temporary' ? (
-                      <Select value={modalItem.saleType} onValueChange={(val) => updateModalItem('saleType', val)}>
-                        <SelectTrigger className="text-[12px] h-[30px] w-full xl:w-[220px]">
-                          <SelectValue placeholder="Select sale type" />
-                        </SelectTrigger>
-                        <SelectContent className='h-[200px]'>
-                          {(masterData?.transaction_types ?? []).map((type) => (
-                            <SelectItem key={type.code} value={type.name}>
-                              {type.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <Input
-                        className='w-full xl:w-[220px] text-[12px] h-[30px] cursor-not-allowed'
-                        value={modalItem.saleType}
-                        disabled
-                      />
-                    )}
-                  </div>
-
-                  <div className='w-full sm:w-[48%] lg:w-[30%] xl:w-[160px]'>
-                    <Label>FED Payable</Label>
-                    <Input
-                      className='w-full xl:w-[120px] text-[12px] h-[30px]'
-                      type="number"
-                      step="0.01"
-                      value={modalItem.fedPayable || ''}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        updateModalItem('fedPayable', val === '' ? 0 : parseFloat(val));
-                      }}
-                    />
-                  </div>
-
-                  {/* <div className='w-[150px]'>
-                      <Label htmlFor="modalIncomeTax">Income Tax Type *</Label>
-                      <Select value={incomeTax} onValueChange={(val) => setIncomeTax(val as '236G' | '236H')}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select income tax type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="236G">236G</SelectItem>
-                          <SelectItem value="236H">236H</SelectItem>
-                        </SelectContent>
-                      </Select>
-                  </div>
-
-                  <div className='w-[180px]'>
-                      <Label>Withholding Tax (Info)</Label>
-                      <Input
-                        type="text"
-                        value={`${(() => {
-                          // Sum all saved items, but swap in modal values for the item being edited
-                          const sumExclTax = items.reduce((sum, item, i) => {
-                            if (i === editingItemIndex) {
-                              return sum + (Number(modalItem.valueSalesExcludingST) || 0);
-                            }
-                            return sum + (Number(item.valueSalesExcludingST) || 0);
-                          }, 0) + (editingItemIndex === null ? (Number(modalItem.valueSalesExcludingST) || 0) : 0);
-                          const rate = incomeTax === '236G' ? 0.001 : 0.005;
-                          return (sumExclTax * rate).toFixed(2);
-                        })()}`}
-                        readOnly
-                        className="w-[160px] text-[12px] h-[30px]"
-                      />
-                  </div> */}
-                </div>
-              
-            </div>
-
-            {/* Income Tax */}
-              {/* <div className="border rounded-xl p-4 bg-[#f9fafb] dark:bg-[#0d0d0d]">
-                <h3 className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] mb-3">Income Tax</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className='w-[220px]'>
-                    <Label htmlFor="modalIncomeTax">Income Tax Type *</Label>
-                    <Select value={incomeTax} onValueChange={(val) => setIncomeTax(val as '236G' | '236H')}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select income tax type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="236G">236G</SelectItem>
-                        <SelectItem value="236H">236H</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className='w-[220px]'>
-                    <Label>Withholding Tax (Info)</Label>
-                    <Input
-                      type="text"
-                      value={`${(() => {
-                        const sumExclTax = items.reduce((sum, item) => sum + (Number(item.valueSalesExcludingST) || 0), 0);
-                        const rate = incomeTax === '236G' ? 0.001 : 0.005;
-                        return (sumExclTax * rate).toFixed(2);
-                      })()}`}
+                      value={modalItem.totalValues ? Number(modalItem.totalValues).toFixed(2) : ''}
                       readOnly
-                      className="w-[220px] text-[12px] h-[30px]"
+                      tabIndex={-1}
+                      required
                     />
-                    <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
-                      {incomeTax === '236G' ? '0.1%' : '0.5%'} of sum of Value Excl. Sales Tax from all items
-                    </p>
+                  </div>
+
+                  {/* SRO Schedule No + SRO Item Serial No */}
+                  <div className="flex-1">
+                    <Label>SRO Schedule No</Label>
+                    <Input
+                      className="w-full text-[12px] h-[30px]"
+                      value={modalItem.sroScheduleNo}
+                      onChange={(e) => updateModalItem('sroScheduleNo', e.target.value)}
+                      placeholder="Select Item"
+                      disabled={!modalItem.rate}
+                      tabIndex={-1}
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <Label>SRO Item Serial No</Label>
+                    <Input
+                      className="w-full text-[12px] h-[30px]"
+                      value={modalItem.sroItemSerialNo}
+                      onChange={(e) => updateModalItem('sroItemSerialNo', e.target.value)}
+                      placeholder="Optional"
+                      readOnly
+                      tabIndex={-1}
+                    />
+                  </div>
+
+                  {/* Footer Buttons */}
+                  <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#e1e3e5] dark:border-[#2e2e2e] mt-auto">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={() => {
+                        setIsItemModalOpen(false);
+                        setEditingItemIndex(null);
+                      }}
+                      className="h-8 w-8 text-red-500 hover:text-red-600 border-red-300 dark:border-red-800"
+                      title="Cancel"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={handleModalSave}
+                      className="h-8 w-8 rounded-lg border-blue-300 dark:border-neutral-800 hover:text-emerald-500 dark:hover:text-emerald-400 shadow-sm transition-all duration-100"
+                      title={editingItemIndex !== null ? 'Save Changes' : 'Add Item'}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
                 </div>
-              </div> */}
-            </div>
+              </div>
 
-            {/* Modal Footer */}
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-[#e1e3e5] dark:border-[#2e2e2e] bg-[#f9fafb] dark:bg-[#0d0d0d] rounded-b-2xl">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setIsItemModalOpen(false);
-                  setEditingItemIndex(null);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                onClick={handleModalSave}
-                className="bg-[#008060] hover:bg-[#006e52] dark:bg-[#00a876] dark:hover:bg-[#008f64]"
-              >
-                {editingItemIndex !== null ? 'Save Changes' : 'Add Item'}
-              </Button>
+              {/* Sub-popup for creating a new saved item */}
+              {isAddSavedItemModalOpen && (
+                <>
+                  {/* Sub-backdrop */}
+                  <div
+                    className="fixed inset-0 z-[60] bg-black/30"
+                    onClick={() => {
+                      setIsAddSavedItemModalOpen(false);
+                      resetNewItemForm();
+                    }}
+                  />
+                  {/* Sub-modal content */}
+                  <div className="fixed inset-0 z-[60] flex items-start justify-center pt-2 sm:pt-10 overflow-y-auto">
+                    <div
+                      ref={addSavedItemModalRef}
+                      className="relative w-[95vw] max-w-2xl bg-white dark:bg-[#161616] rounded-2xl shadow-2xl border-2 border-black dark:border-[#2e2e2e] mb-10"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') {
+                          setIsAddSavedItemModalOpen(false);
+                          resetNewItemForm();
+                          return;
+                        }
+                        if (e.key !== 'Tab') return;
+                        const modal = addSavedItemModalRef.current;
+                        if (!modal) return;
+                        const focusable = modal.querySelectorAll<HTMLElement>(
+                          'input:not([disabled]):not([readonly]):not([tabindex="-1"]), select:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+                        );
+                        if (focusable.length === 0) return;
+                        const first = focusable[0];
+                        const last = focusable[focusable.length - 1];
+                        if (e.shiftKey) {
+                          if (document.activeElement === first) {
+                            e.preventDefault();
+                            last.focus();
+                          }
+                        } else {
+                          if (document.activeElement === last) {
+                            e.preventDefault();
+                            first.focus();
+                          }
+                        }
+                      }}
+                    >
+                      {/* Sub-modal Header */}
+                      <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-[#e1e3e5] dark:border-[#2e2e2e] bg-blue-100 rounded-t-xl">
+                        <h4 className="text-base sm:text-lg font-bold text-[#202223] dark:text-[#e3e3e3]">
+                          Add New Saved Item
+                        </h4>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsAddSavedItemModalOpen(false);
+                            resetNewItemForm();
+                          }}
+                          className="p-2 rounded-lg hover:bg-[#f3f4f6] dark:hover:bg-[#2e2e2e] text-[#6d7175] transition-colors"
+                        >
+                          <X className="h-5 w-5" />
+                        </button>
+                      </div>
+
+                      {/* Sub-modal Body */}
+                      <div className="p-4 sm:p-6 max-h-[70vh] sm:max-h-[80vh] overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                        {/* Item Code */}
+                        <div>
+                          <Label htmlFor="newItemCode">Item Code *</Label>
+                          <Input
+                            id="newItemCode"
+                            type="text"
+                            value={newItemCode}
+                            onChange={(e) => setNewItemCode(e.target.value)}
+                            placeholder="e.g., ITEM-001"
+                            className="mt-1 text-[12px] h-[30px] w-full glow-border"
+                            required
+                          />
+                        </div>
+
+                        {/* Item Name */}
+                        <div>
+                          <Label htmlFor="newItemName">Item Name *</Label>
+                          <Input
+                            id="newItemName"
+                            type="text"
+                            value={newItemName}
+                            onChange={(e) => setNewItemName(e.target.value)}
+                            placeholder="e.g., Laptop Computer"
+                            className="mt-1 text-[12px] h-[30px] w-full glow-border"
+                            required
+                          />
+                        </div>
+
+                        {/* HS Code with FBR validation */}
+                        <div>
+                          <Label htmlFor="newHsCode" className="flex items-center gap-2">
+                            HS Code *
+                            {newHsCodeValid === true && (
+                              <CheckCircle className="h-4 w-4 text-green-600" />
+                            )}
+                            {newHsCodeValid === false && (
+                              <XCircle className="h-4 w-4 text-red-600" />
+                            )}
+                          </Label>
+                          <div className="relative">
+                            <Input
+                              id="newHsCode"
+                              type="text"
+                              value={newHsCode}
+                              onChange={(e) => setNewHsCode(e.target.value)}
+                              onBlur={(e) => validateNewHsCode(e.target.value)}
+                              placeholder="Enter HS Code"
+                              className="mt-1 pr-10 text-[12px] h-[30px] w-full glow-border"
+                              required
+                            />
+                            {isValidatingNewHsCode && (
+                              <div className="absolute right-3 top-1/2 -translate-y-1/2 mt-0.5">
+                                <Loader2 className="h-4 w-4 animate-spin text-[#008060]" />
+                              </div>
+                            )}
+                          </div>
+                          {newHsCodeError && (
+                            <p className="text-xs text-red-600 mt-1">{newHsCodeError}</p>
+                          )}
+                          {newHsCodeValid === true && (
+                            <p className="text-xs text-green-600 mt-1">
+                              HS Code validated against FBR database
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Product Description */}
+                        <div>
+                          <Label htmlFor="newProductDescription">Product Description *</Label>
+                          <Input
+                            id="newProductDescription"
+                            type="text"
+                            value={newProductDescription}
+                            onChange={(e) => setNewProductDescription(e.target.value)}
+                            placeholder="Enter product description"
+                            className="mt-1 text-[12px] h-[30px] w-full glow-border"
+                            required
+                          />
+                        </div>
+
+                        {/* UOM */}
+                        <div className='w-full'>
+                          <Label htmlFor="newDefaultUom">Unit of Measurement *</Label>
+                          <Select value={newDefaultUom} onValueChange={setNewDefaultUom}>
+                            <SelectTrigger className="mt-1 text-[12px] h-[30px] glow-border">
+                              {newDefaultUom ? (
+                                <span>{newDefaultUom}</span>
+                              ) : (
+                                <span className="text-muted-foreground">Select UOM</span>
+                              )}
+                            </SelectTrigger>
+                            <SelectContent>
+                              {(masterData?.uom ?? []).map((uom) => (
+                                <SelectItem key={uom.code} value={uom.name}>
+                                  {uom.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Tax Rate */}
+                        <div>
+                          <Label htmlFor="newDefaultRate">Tax Rate *</Label>
+                          <Input
+                            id="newDefaultRate"
+                            type="text"
+                            value={newDefaultRate}
+                            onChange={(e) => setNewDefaultRate(e.target.value)}
+                            placeholder="e.g., 18"
+                            className="mt-1 text-[12px] h-[30px] w-full glow-border"
+                            required
+                          />
+                        </div>
+
+                        {/* Transaction Type */}
+                        <div className='w-full'>
+                          <Label htmlFor="newTransactionType">Transaction Type *</Label>
+                          <Select value={newTransactionType} onValueChange={setNewTransactionType}>
+                            <SelectTrigger className="mt-1 text-[12px] h-[30px] glow-border">
+                              {newTransactionType ? (
+                                <span>{newTransactionType}</span>
+                              ) : (
+                                <span className="text-muted-foreground">Select transaction type</span>
+                              )}
+                            </SelectTrigger>
+                            <SelectContent>
+                              {(masterData?.transaction_types ?? []).map((type) => (
+                                <SelectItem key={type.code} value={type.name}>
+                                  {type.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* SRO Schedule No */}
+                        <div>
+                          <Label htmlFor="newSroScheduleNo">SRO Schedule No (Optional)</Label>
+                          <Input
+                            id="newSroScheduleNo"
+                            type="text"
+                            value={newSroScheduleNo}
+                            onChange={(e) => setNewSroScheduleNo(e.target.value)}
+                            placeholder="Enter SRO schedule number"
+                            className="mt-1 text-[12px] h-[30px] w-full glow-border"
+                          />
+                        </div>
+
+                        {/* SRO Item Serial No */}
+                        <div>
+                          <Label htmlFor="newSroItemSerialNo">SRO Item Serial No (Optional)</Label>
+                          <Input
+                            id="newSroItemSerialNo"
+                            type="text"
+                            value={newSroItemSerialNo}
+                            onChange={(e) => setNewSroItemSerialNo(e.target.value)}
+                            placeholder="Enter SRO item serial number"
+                            className="mt-1 text-[12px] h-[30px] w-full glow-border"
+                          />
+                        </div>
+
+                        {/* Sub-modal Footer */}
+                        <div className="flex justify-end gap-3 pt-4 border-t border-[#e1e3e5] dark:border-[#2e2e2e] col-span-1 sm:col-span-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setIsAddSavedItemModalOpen(false);
+                              resetNewItemForm();
+                            }}
+                            disabled={isSavingNewItem}
+                            className="h-9 px-4 text-xs sm:text-sm text-red-500 hover:text-red-600 border-red-300 dark:border-red-800 disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            <X className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1" />
+                            Cancel
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            disabled={isSavingNewItem}
+                            onClick={handleAddSavedItem}
+                            className="h-9 px-4 text-xs sm:text-sm rounded-lg border-blue-300 dark:border-neutral-800 hover:text-emerald-500 dark:hover:text-emerald-400 shadow-sm transition-all duration-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            {isSavingNewItem ? (
+                              <Loader2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1 animate-spin" />
+                            ) : (
+                              <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1" />
+                            )}
+                            Save Item
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

@@ -18,7 +18,6 @@ interface Invoice {
   status: string;
   environment: string;
   fbrReferenceNumber?: string;
-  incomeTax?: string;
   invoiceType: string;
   createdAt: string;
   scheduledDate?: string;
@@ -48,8 +47,6 @@ interface InvoiceTableProps {
   onAmountFilterChange?: (value: string) => void;
   statusFilter?: string;
   onStatusFilterChange?: (value: string) => void;
-  incomeTaxFilter?: string;
-  onIncomeTaxFilterChange?: (value: string) => void;
   fbrRefFilter?: string;
   onFbrRefFilterChange?: (value: string) => void;
 }
@@ -60,12 +57,6 @@ const statusOptions = [
   { value: 'VALIDATED', label: 'Valid' },
   { value: 'POSTED', label: 'Posted' },
   { value: 'FAILED', label: 'Failed' },
-];
-
-const incomeTaxOptions = [
-  { value: 'all', label: 'All' },
-  { value: '236G', label: '236G' },
-  { value: '236H', label: '236H' },
 ];
 
 export function InvoiceTable({
@@ -91,8 +82,6 @@ export function InvoiceTable({
   onAmountFilterChange = () => {},
   statusFilter = 'all',
   onStatusFilterChange = () => {},
-  incomeTaxFilter = 'all',
-  onIncomeTaxFilterChange = () => {},
   fbrRefFilter = '',
   onFbrRefFilterChange = () => {},
 }: InvoiceTableProps) {
@@ -104,7 +93,7 @@ export function InvoiceTable({
 
   const activeFilterCount = [
     invoiceNumberFilter, dateFromFilter, dateToFilter, buyerNameFilter, amountFilter, fbrRefFilter,
-  ].filter(v => v !== '').length + (statusFilter !== 'all' ? 1 : 0) + (incomeTaxFilter !== 'all' ? 1 : 0);
+  ].filter(v => v !== '').length + (statusFilter !== 'all' ? 1 : 0);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -311,21 +300,6 @@ export function InvoiceTable({
                     ))}
                   </SelectContent>
                 </Select>
-                <Select value={incomeTaxFilter} onValueChange={onIncomeTaxFilterChange}>
-                  <SelectTrigger
-                    className="text-xs"
-                    style={{ height: '32px', padding: '4px 10px', borderRadius: '8px', fontSize: '12px', borderWidth: '1px', borderColor: '#2563eb' }}
-                  >
-                    <SelectValue placeholder="Tax" />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl border-blue-600 dark:border-neutral-800">
-                    {incomeTaxOptions.map(option => (
-                      <SelectItem key={option.value} value={option.value} className="text-xs rounded-md">
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
               </div>
               {activeFilterCount > 0 && (
                 <button
@@ -337,7 +311,6 @@ export function InvoiceTable({
                     onBuyerNameFilterChange('');
                     onAmountFilterChange('');
                     onStatusFilterChange('all');
-                    onIncomeTaxFilterChange('all');
                     onFbrRefFilterChange('');
                   }}
                   className="w-full text-center text-xs font-semibold text-red-500 hover:text-red-600 py-1.5"
@@ -690,7 +663,6 @@ export function InvoiceTable({
                         onBuyerNameFilterChange('');
                         onAmountFilterChange('');
                         onStatusFilterChange('all');
-                        onIncomeTaxFilterChange('all');
                         onFbrRefFilterChange('');
                       }}
                       className="text-xs font-semibold text-red-500 hover:text-red-600 transition-colors px-2 py-1"

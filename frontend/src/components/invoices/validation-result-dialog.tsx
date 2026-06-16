@@ -91,13 +91,13 @@ export function ValidationResultDialog({
           </div>
 
           {/* Validation Errors */}
-          {!success && errors.length > 0 && (
+          {!success && errors.filter((e: ValidationError) => e.error && e.error.trim()).length > 0 && (
             <div className="mt-4">
               <h3 className="text-sm font-bold text-[#202223] dark:text-[#e3e3e3] mb-2">
-                Validation Errors ({errors.length})
+                Validation Errors ({errors.filter((e: ValidationError) => e.error && e.error.trim()).length})
               </h3>
               <div className="space-y-2">
-                {errors.map((error, index) => (
+                {errors.filter((e: ValidationError) => e.error && e.error.trim()).map((error, index) => (
                   <div
                     key={index}
                     className="p-3 bg-[#fef3f2] dark:bg-[#3d1e1e] border border-[#fecdca] dark:border-[#5c2b2b] rounded-xl"

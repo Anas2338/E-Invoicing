@@ -112,7 +112,7 @@ export default function EditInvoicePage() {
 
   return (
     <div className="space-y-6 pb-8">
-      {/* Back to History Button */}
+      {/* Back to History Button
       <div className="flex items-center gap-4">
         <Button
           variant="outline"
@@ -132,13 +132,13 @@ export default function EditInvoicePage() {
             Edit invoice #{invoice?.external_id || invoice?.id}
           </p>
         </div>
-      </div>
+      </div> */}
 
-      <Card>
-        <CardHeader>
+      {/* <Card>
+        {/* <CardHeader>
           <CardTitle>Invoice Details</CardTitle>
-        </CardHeader>
-        <CardContent>
+        </CardHeader> */}
+        {/* <CardContent> */} */
           <SaleInvoiceForm
             onSubmit={handleSubmit}
             onCancel={handleCancel}
@@ -146,8 +146,8 @@ export default function EditInvoicePage() {
             initialData={invoice}
             isEditMode={true}
           />
-        </CardContent>
-      </Card>
+        {/* </CardContent>
+      </Card> */}
     </div>
   );
 }

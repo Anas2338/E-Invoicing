@@ -52,7 +52,7 @@ class TransferService:
             invoice_ref_no=data.get("invoice_ref_no"),
             scenario_id=data.get("scenario_id"),
             income_tax=data.get("income_tax", "236G"),
-            items=data.get("items", []),
+            items=self._normalize_items_income_tax(data.get("items", []), data.get("income_tax", "236G")),
             environment=Environment(data.get("environment", "SANDBOX")),
             status=InvoiceStatus.VALIDATED,
             validated_at=datetime.utcnow(),
@@ -61,6 +61,21 @@ class TransferService:
             transferred_at=None,
         )
         return invoice
+
+    @staticmethod
+    def _normalize_items_income_tax(items: list, fallback_income_tax: str = "236G") -> list:
+        """
+        Ensure every item has income_tax_type and withholding_tax_amount.
+        Auto-defaults to fallback_income_tax and calculates WHT if missing.
+        """
+        WHT_RATES = {"236G": 0.001, "236H": 0.005}
+        for item in items:
+            if not item.get("income_tax_type"):
+                item["income_tax_type"] = fallback_income_tax
+            if not item.get("withholding_tax_amount") and item.get("value_sales_excluding_st"):
+                rate = WHT_RATES.get(item["income_tax_type"], 0.001)
+                item["withholding_tax_amount"] = round(float(item["value_sales_excluding_st"]) * rate, 2)
+        return items
 
     def check_duplicate(self, main_db, user_id: UUID, automation_invoice_id: UUID) -> bool:
         """
