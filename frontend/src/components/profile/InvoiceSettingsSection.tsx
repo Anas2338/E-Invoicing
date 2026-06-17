@@ -147,7 +147,7 @@ export default function InvoiceSettingsSection() {
               value={invoicePadding.toString()}
               onValueChange={(val) => setInvoicePadding(parseInt(val))}
             >
-              <SelectTrigger>
+              <SelectTrigger className='h-[50px]'>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

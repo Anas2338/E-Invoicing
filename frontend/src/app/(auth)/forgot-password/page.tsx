@@ -187,6 +187,7 @@ export default function ForgotPasswordPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   disabled={isSubmitting}
+                  className='w-full'
                 />
               </div>
 

@@ -22,10 +22,10 @@ export default function ProductsPage() {
         </Button>
       </div>
 
-      <div>
+      {/* <div>
         <h1 className="text-2xl sm:text-3xl font-bold text-[#202223] dark:text-[#e3e3e3]">Items</h1>
         <p className="mt-2 text-sm sm:text-base text-[#6d7175] dark:text-[#8c9196]">Manage your saved items, products, and services</p>
-      </div>
+      </div> */}
 
       <SavedItemsSection />
     </div>

@@ -321,7 +321,7 @@ export default function SettingsPage() {
                 value={fbrSellerNtn}
                 onChange={(e) => setFbrSellerNtn(e.target.value)}
                 placeholder="Enter your 7-digit NTN or 13-digit CNIC"
-                className="mt-1"
+                className="mt-1 w-full"
               />
               <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
                 Your National Tax Number (7 digits) or CNIC (13 digits)
@@ -339,7 +339,7 @@ export default function SettingsPage() {
                 value={fbrBusinessName}
                 onChange={(e) => setFbrBusinessName(e.target.value)}
                 placeholder="Enter your registered business name"
-                className="mt-1"
+                className="mt-1 w-full"
               />
               <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
                 Your business name as registered with FBR
@@ -352,7 +352,7 @@ export default function SettingsPage() {
                 Province
               </Label>
               <Select value={fbrSellerProvince} onValueChange={setFbrSellerProvince}>
-                <SelectTrigger className="mt-1">
+                <SelectTrigger className="mt-1 h-[50px]">
                   <SelectValue placeholder="Select your province" />
                 </SelectTrigger>
                 <SelectContent>
@@ -381,7 +381,7 @@ export default function SettingsPage() {
                 value={fbrSellerAddress}
                 onChange={(e) => setFbrSellerAddress(e.target.value)}
                 placeholder="Enter your complete business address"
-                className="mt-1"
+                className="mt-1 w-full"
               />
               <p className="text-xs text-[#6d7175] dark:text-[#8c9196] mt-1">
                 Your complete business address (will auto-fill in invoices)

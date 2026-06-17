@@ -139,6 +139,10 @@ export function SaleInvoiceForm({
   // Track focus state for Value Excl. Sales Tax display formatting
   const [valueExclTaxFocused, setValueExclTaxFocused] = useState(false);
 
+  // Raw input tracking for Quantity & Item Rate (to allow partial decimals while typing)
+  const [rawQuantity, setRawQuantity] = useState('');
+  const [rawItemRate, setRawItemRate] = useState('');
+
   // Track which amount fields are focused for float formatting
   const [focusedFields, setFocusedFields] = useState<Set<string>>(new Set());
 
@@ -152,7 +156,7 @@ export function SaleInvoiceForm({
     if (focusedFields.has(field)) return String(value);
     const num = Number(value) || 0;
     if (num === 0) return '';
-    return num.toFixed(2);
+    return num.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
   // Sub-modal state for creating a new saved item
@@ -2086,19 +2090,49 @@ export function SaleInvoiceForm({
                       <Label>Quantity *</Label>
                       <Input
                         className="w-full text-[12px] h-[30px] text-right glow-border"
-                        type="number"
-                        step="0.0001"
-                        max={9999999}
-                        value={modalItem.quantity || ''}
+                        type="text"
+                        inputMode="decimal"
+                        maxLength={10}
+                        value={(() => {
+                          if (focusedFields.has('quantity')) return rawQuantity;
+                          const num = modalItem.quantity;
+                          if (!num) return '';
+                          return Number(num).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                        })()}
+                        onFocus={() => {
+                          setFocusedFields(prev => new Set(prev).add('quantity'));
+                          setRawQuantity(modalItem.quantity ? String(modalItem.quantity) : '');
+                        }}
+                        onBlur={() => {
+                          setFocusedFields(prev => { const next = new Set(prev); next.delete('quantity'); return next; });
+                          setRawQuantity('');
+                          // Commit final parsed value
+                          const qty = parseFloat(rawQuantity);
+                          if (!isNaN(qty) && qty >= 0) {
+                            updateModalItem('quantity', qty);
+                          }
+                          // Auto-calculate Value Excl. Sales Tax from Quantity × Item Rate
+                          const finalQty = !isNaN(qty) && qty > 0 ? qty : (Number(modalItem.quantity) || 0);
+                          const rate = Number(modalItem.itemRate) || 0;
+                          if (finalQty > 0 && rate > 0) {
+                            updateModalItem('valueSalesExcludingST', parseFloat((finalQty * rate).toFixed(2)));
+                          }
+                        }}
                         onChange={(e) => {
                           const val = e.target.value;
+                          // Allow partial decimal input like "12." or ".5"
+                          if (val !== '' && !/^\d*\.?\d*$/.test(val)) return;
                           if (val === '') {
+                            setRawQuantity('');
                             updateModalItem('quantity', 0);
                             return;
                           }
+                          setRawQuantity(val);
+                          // Only update actual quantity when it's a valid number
                           const num = parseFloat(val);
-                          if (num > 9999999) return;
-                          updateModalItem('quantity', num);
+                          if (!isNaN(num) && num <= 9999999) {
+                            updateModalItem('quantity', num);
+                          }
                         }}
                         required
                       />
@@ -2110,17 +2144,45 @@ export function SaleInvoiceForm({
                         type="text"
                         inputMode="decimal"
                         maxLength={14}
-                        value={modalItem.itemRate ? Number(modalItem.itemRate).toFixed(2) : ''}
+                        value={(() => {
+                          if (focusedFields.has('itemRate')) return rawItemRate;
+                          if (!modalItem.itemRate) return '';
+                          return Number(modalItem.itemRate).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                        })()}
+                        onFocus={() => {
+                          setFocusedFields(prev => new Set(prev).add('itemRate'));
+                          setRawItemRate(modalItem.itemRate ? String(modalItem.itemRate) : '');
+                        }}
+                        onBlur={() => {
+                          setFocusedFields(prev => { const next = new Set(prev); next.delete('itemRate'); return next; });
+                          setRawItemRate('');
+                          // Commit final parsed value
+                          const rate = parseFloat(rawItemRate);
+                          if (!isNaN(rate) && rate >= 0) {
+                            updateModalItem('itemRate', rate);
+                          }
+                          // Auto-calculate Value Excl. Sales Tax from Quantity × Item Rate
+                          const finalRate = !isNaN(rate) && rate > 0 ? rate : (Number(modalItem.itemRate) || 0);
+                          const qty = Number(modalItem.quantity) || 0;
+                          if (qty > 0 && finalRate > 0) {
+                            updateModalItem('valueSalesExcludingST', parseFloat((qty * finalRate).toFixed(2)));
+                          }
+                        }}
                         onChange={(e) => {
                           const val = e.target.value;
+                          // Allow partial decimal input like "1." or ".5"
+                          if (val !== '' && !/^\d*\.?\d*$/.test(val)) return;
                           if (val === '' || val === '-') {
+                            setRawItemRate('');
                             updateModalItem('itemRate', 0);
                             return;
                           }
+                          setRawItemRate(val);
+                          // Only update actual rate when it's a valid number
                           const num = parseFloat(val);
-                          if (isNaN(num)) return;
-                          if (num > 99999999999) return;
-                          updateModalItem('itemRate', num);
+                          if (!isNaN(num) && num <= 99999999999) {
+                            updateModalItem('itemRate', num);
+                          }
                         }}
                         placeholder="Per unit Rate"
                       />
@@ -2143,7 +2205,7 @@ export function SaleInvoiceForm({
                           const num = modalItem.valueSalesExcludingST;
                           if (num === 0 && !valueExclTaxFocused) return '';
                           if (valueExclTaxFocused) return num.toString();
-                          return Number(num).toFixed(2);
+                          return Number(num).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                         })()}
                         onFocus={() => setValueExclTaxFocused(true)}
                         onBlur={() => setValueExclTaxFocused(false)}
@@ -2236,7 +2298,7 @@ export function SaleInvoiceForm({
                         <Input
                           className="w-full text-[12px] h-[30px] text-right glow-border"
                           type="text"
-                          value={modalItem.salesTaxApplicable ? Number(modalItem.salesTaxApplicable).toFixed(2) : ''}
+                          value={modalItem.salesTaxApplicable ? Number(modalItem.salesTaxApplicable).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}
                           readOnly
                           required
                         />
@@ -2433,7 +2495,7 @@ export function SaleInvoiceForm({
                     <Input
                       className="w-full text-[12px] h-[30px] text-right"
                       type="text"
-                      value={modalItem.totalValues ? Number(modalItem.totalValues).toFixed(2) : ''}
+                      value={modalItem.totalValues ? Number(modalItem.totalValues).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}
                       readOnly
                       tabIndex={-1}
                       required
@@ -2731,8 +2793,7 @@ export function SaleInvoiceForm({
                             disabled={isSavingNewItem}
                             className="h-9 px-4 text-xs sm:text-sm text-red-500 hover:text-red-600 border-red-300 dark:border-red-800 disabled:opacity-30 disabled:cursor-not-allowed"
                           >
-                            <X className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1" />
-                            Cancel
+                            <X className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1"/>
                           </Button>
                           <Button
                             type="button"
@@ -2746,7 +2807,6 @@ export function SaleInvoiceForm({
                             ) : (
                               <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1" />
                             )}
-                            Save Item
                           </Button>
                         </div>
                       </div>

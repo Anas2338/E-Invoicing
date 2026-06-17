@@ -606,7 +606,7 @@ export default function InvoiceHistoryPage() {
                   className="h-8 w-8 text-red-500 border-red-300 disabled:opacity-30 disabled:cursor-not-allowed"
                   title="Delete selected"
                 >
-                  <Trash2 className="h-4 w-4" />
+                  {bulkDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                 </Button>
               </>
             );
