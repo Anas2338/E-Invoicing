@@ -43,7 +43,8 @@ RUN apk add --no-cache \
     libpq \
     libffi \
     openssl \
-    libmagic && \
+    libmagic \
+    tzdata && \
     rm -rf /var/cache/apk/*
 
 # Create non-root user
@@ -53,7 +54,8 @@ RUN adduser -D -u 1000 appuser
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONOPTIMIZE=2
+    PYTHONOPTIMIZE=2 \
+    TZ=Asia/Karachi
 
 # Copy virtual environment from builder
 COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
