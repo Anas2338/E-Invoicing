@@ -60,22 +60,33 @@ def transfer_validated_invoices():
                 failed = 0
 
                 for invoice in invoices:
+                    # Pre-capture metadata — invoice may be deleted mid-transfer
+                    inv_id = invoice.id
+                    inv_number = invoice.invoice_number
                     try:
                         logger.info(
-                            f"Transferring invoice {invoice.invoice_number} "
-                            f"(ID: {invoice.id}) scheduled for "
+                            f"Transferring invoice {inv_number} "
+                            f"(ID: {inv_id}) scheduled for "
                             f"{invoice.scheduled_date} {invoice.scheduled_time}"
                         )
 
                         manual_invoice = transfer_service.transform_invoice_data(invoice)
 
-                        if transfer_service.check_duplicate(main_db, invoice.user_id, invoice.id):
-                            logger.warning(f"Duplicate: invoice {invoice.id} already in main DB")
-                            invoice.status = AutomationInvoiceStatus.TRANSFERRED
-                            invoice.transferred_at = datetime.utcnow()
-                            invoice.transfer_error = "Duplicate - already transferred"
-                            automation_db.add(invoice)
-                            automation_db.commit()
+                        if transfer_service.check_duplicate(main_db, invoice.user_id, inv_id):
+                            logger.warning(f"Duplicate: invoice {inv_id} already in main DB")
+                            try:
+                                invoice.status = AutomationInvoiceStatus.TRANSFERRED
+                                invoice.transferred_at = datetime.utcnow()
+                                invoice.transfer_error = "Duplicate - already transferred"
+                                automation_db.add(invoice)
+                                automation_db.commit()
+                            except Exception:
+                                # Invoice may have been deleted externally (e.g. session deletion)
+                                automation_db.rollback()
+                                logger.warning(
+                                    f"Invoice {inv_id} ({inv_number}) was deleted "
+                                    f"externally during duplicate handling — skipping"
+                                )
                             failed += 1
                             continue
 
@@ -92,7 +103,7 @@ def transfer_validated_invoices():
 
                         transferred += 1
                         logger.info(
-                            f"[OK] Transferred invoice {invoice.invoice_number} "
+                            f"[OK] Transferred invoice {inv_number} "
                             f"-> Main DB ID: {manual_invoice.id}"
                         )
 
@@ -102,15 +113,36 @@ def transfer_validated_invoices():
 
                         error_type = transfer_service.classify_error(e)
                         error_details = f"[{error_type}] {type(e).__name__}: {str(e)}"
+
+                        # Handle invoices deleted externally (e.g. upload session deleted
+                        # mid-transfer) — skip gracefully instead of crashing the batch
+                        from sqlalchemy.orm.exc import ObjectDeletedError, StaleDataError
+                        if isinstance(e, (ObjectDeletedError, StaleDataError)):
+                            logger.warning(
+                                f"[SKIPPED] Invoice {inv_id} ({inv_number}) was deleted "
+                                f"externally during transfer — skipping: {error_details}"
+                            )
+                            failed += 1
+                            continue
+
                         logger.error(
                             f"[FAILED] Transfer failed for invoice "
-                            f"{invoice.invoice_number}: {error_details}"
+                            f"{inv_number}: {error_details}"
                         )
 
-                        invoice.status = AutomationInvoiceStatus.TRANSFER_FAILED
-                        invoice.transfer_error = error_details[:2000]
-                        automation_db.add(invoice)
-                        automation_db.commit()
+                        # Try to update status to TRANSFER_FAILED — may fail if
+                        # invoice was deleted externally (session cascade)
+                        try:
+                            invoice.status = AutomationInvoiceStatus.TRANSFER_FAILED
+                            invoice.transfer_error = error_details[:2000]
+                            automation_db.add(invoice)
+                            automation_db.commit()
+                        except Exception:
+                            automation_db.rollback()
+                            logger.warning(
+                                f"Invoice {inv_id} ({inv_number}) was deleted "
+                                f"externally after transfer failure — cannot update status"
+                            )
 
                         failed += 1
 
