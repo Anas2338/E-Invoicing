@@ -183,8 +183,8 @@ def login_user(request: Request, user_login: UserLogin, db: Session = Depends(ge
             "created_at": user.created_at.isoformat() if user.created_at else None,
             "updated_at": user.updated_at.isoformat() if user.updated_at else None,
             "approval_flags": user.approval_flags or {},
-            "has_production_access": user.approval_flags.get('has_production_access', False) if user.approval_flags else False,
-            "can_post_to_production": user.approval_flags.get('can_post_to_production', False) if user.approval_flags else False,
+            "has_production_access": (user.approval_flags.get('has_production_access', False) if user.approval_flags else False) or bool(user.fbr_production_token),
+            "can_post_to_production": (user.approval_flags.get('can_post_to_production', False) if user.approval_flags else False) or bool(user.fbr_production_token),
             "automation_enabled": user.automation_enabled
         }
 
@@ -419,8 +419,8 @@ def get_profile(
             created_at=user.created_at,
             updated_at=user.updated_at,
             approval_flags=user.approval_flags or {},
-            has_production_access=user.approval_flags.get('has_production_access', False) if user.approval_flags else False,
-            can_post_to_production=user.approval_flags.get('can_post_to_production', False) if user.approval_flags else False,
+            has_production_access=(user.approval_flags.get('has_production_access', False) if user.approval_flags else False) or bool(user.fbr_production_token),
+            can_post_to_production=(user.approval_flags.get('can_post_to_production', False) if user.approval_flags else False) or bool(user.fbr_production_token),
             automation_enabled=user.automation_enabled,
             fbr_seller_ntn=user.fbr_seller_ntn,
             fbr_business_name=user.fbr_business_name,
@@ -478,8 +478,8 @@ def update_profile(
             created_at=user.created_at,
             updated_at=user.updated_at,
             approval_flags=user.approval_flags or {},
-            has_production_access=user.approval_flags.get('has_production_access', False) if user.approval_flags else False,
-            can_post_to_production=user.approval_flags.get('can_post_to_production', False) if user.approval_flags else False,
+            has_production_access=(user.approval_flags.get('has_production_access', False) if user.approval_flags else False) or bool(user.fbr_production_token),
+            can_post_to_production=(user.approval_flags.get('can_post_to_production', False) if user.approval_flags else False) or bool(user.fbr_production_token),
             automation_enabled=user.automation_enabled,
             fbr_seller_ntn=user.fbr_seller_ntn,
             fbr_business_name=user.fbr_business_name,
@@ -634,8 +634,8 @@ def get_permissions(
         return {
             "user_id": str(user.id),
             "permissions": {
-                "has_production_access": approval_flags.get("has_production_access", False),
-                "can_post_to_production": approval_flags.get("can_post_to_production", False),
+                "has_production_access": approval_flags.get("has_production_access", False) or bool(user.fbr_production_token),
+                "can_post_to_production": approval_flags.get("can_post_to_production", False) or bool(user.fbr_production_token),
                 "can_validate_invoices": True,
                 "can_view_own_invoices": True,
             }

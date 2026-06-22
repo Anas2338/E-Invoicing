@@ -45,6 +45,8 @@ export default function InvoiceHistoryPage() {
   const [bulkPrinting, setBulkPrinting] = useState(false);
   const [validatingInvoiceId, setValidatingInvoiceId] = useState<string | null>(null);
   const [postingInvoiceId, setPostingInvoiceId] = useState<string | null>(null);
+  const [deletingInvoiceId, setDeletingInvoiceId] = useState<string | null>(null);
+  const [retryingLoad, setRetryingLoad] = useState(false);
   const [lastRefreshTime, setLastRefreshTime] = useState<Date>(new Date());
 
   // Dialog state
@@ -290,6 +292,7 @@ export default function InvoiceHistoryPage() {
         return;
       }
 
+      setDeletingInvoiceId(id);
       // Call delete API
       await api.invoices.delete(id);
 
@@ -302,6 +305,8 @@ export default function InvoiceHistoryPage() {
       // Show error toast
       toast.error(err instanceof ApiError ? err.message : 'Failed to delete invoice. Please try again.');
       console.error('Error deleting invoice:', err);
+    } finally {
+      setDeletingInvoiceId(null);
     }
   };
 
@@ -551,7 +556,10 @@ export default function InvoiceHistoryPage() {
             </div>
           </div>
         </div>
-        <Button onClick={() => fetchInvoices()}>Try Again</Button>
+        <Button onClick={async () => { setRetryingLoad(true); await fetchInvoices(); setRetryingLoad(false); }} disabled={retryingLoad}>
+          {retryingLoad ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+          Try Again
+        </Button>
       </div>
     );
   }
@@ -576,7 +584,11 @@ export default function InvoiceHistoryPage() {
                   className="h-8 w-8 border-orange-200"
                   title="Refresh"
                 >
-                  <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+                  {refreshing ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
                 </Button>
                 <Button
                   variant="outline"
@@ -596,7 +608,11 @@ export default function InvoiceHistoryPage() {
                   className="h-8 w-8 border-[#1e40af] text-[#1e40af] border-blue-300"
                   title="Print selected"
                 >
-                  <Printer className="h-4 w-4" />
+                  {bulkPrinting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Printer className="h-4 w-4" />
+                  )}
                 </Button>
                 <Button
                   variant="outline"
@@ -619,7 +635,7 @@ export default function InvoiceHistoryPage() {
         </div>
 
         {/* Invoice Table */}
-        <div className="rounded-2xl flex-1 min-h-0">
+        <div className="rounded-2xl flex-1 min-h-0 overflow-auto">
           <InvoiceTable
           invoices={filteredInvoices}
           selectedInvoices={selectedInvoices}
@@ -631,6 +647,7 @@ export default function InvoiceHistoryPage() {
           onDelete={handleDeleteInvoice}
           validatingInvoiceId={validatingInvoiceId}
           postingInvoiceId={postingInvoiceId}
+          deletingInvoiceId={deletingInvoiceId}
           invoiceNumberFilter={invoiceNumberFilter}
           onInvoiceNumberFilterChange={setInvoiceNumberFilter}
           dateFromFilter={dateFromFilter}

@@ -461,8 +461,12 @@ export class MasterDataService extends ApiClient {
     return this.request('/masterdata/all');
   }
 
-  async getHSCodes(): Promise<HsCode[]> {
-    return this.request('/masterdata/hs-codes');
+  async getHSCodes(search?: string, limit?: number): Promise<HsCode[]> {
+    const params = new URLSearchParams();
+    if (search) params.set('search', search);
+    if (limit) params.set('limit', String(limit));
+    const qs = params.toString();
+    return this.request(`/masterdata/hs-codes${qs ? `?${qs}` : ''}`);
   }
 
   async validateHSCode(hsCode: string): Promise<{ valid: boolean; code: string; description: string | null }> {
@@ -478,11 +482,16 @@ export class MasterDataService extends ApiClient {
   }
 
   async getSaleTypeToRate(date: string, transTypeId: number, originationSupplier: number): Promise<any[]> {
-    return [];
+    // Use the cached endpoint filtered by transaction type
+    return this.request(`/masterdata/tax-rates/by-transaction-type?transaction_type_code=${encodeURIComponent(String(transTypeId))}`);
   }
 
-  async getHsUom(hsCode: string, annexureId: number): Promise<Array<{code: string, name: string}>> {
-    return [];
+  async getTaxRatesByTransactionType(transactionTypeCode: string): Promise<Array<{rate: string, name: string}>> {
+    return this.request(`/masterdata/tax-rates/by-transaction-type?transaction_type_code=${encodeURIComponent(transactionTypeCode)}`);
+  }
+
+  async getHsUom(hsCode: string, annexureId: number = 3): Promise<Array<{code: string, name: string}>> {
+    return this.request(`/masterdata/hs-uom/cached?hs_code=${encodeURIComponent(hsCode)}&annexure_id=${annexureId}`);
   }
 
   async getSroItemDetails(date: string, sroId: number): Promise<any[]> {

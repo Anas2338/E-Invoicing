@@ -12,7 +12,9 @@ from .fbr_master_data import (
     FBRHSCode,
     FBRTransactionType,
     FBRInvoiceType,
-    FBRSyncLog
+    FBRSyncLog,
+    FBRUserHSCodeUOM,
+    FBRTaxRate
 )
 from .fbr_notifications import (
     FBRChangeNotification,
@@ -31,6 +33,8 @@ __all__ = [
     "FBRTransactionType",
     "FBRInvoiceType",
     "FBRSyncLog",
+    "FBRUserHSCodeUOM",
+    "FBRTaxRate",
     "FBRChangeNotification",
     "FBRDataSnapshot",
     "UserSavedProduct"

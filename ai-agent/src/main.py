@@ -43,7 +43,17 @@ app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(Exception, generic_exception_handler)
 
-allowed_origins = settings.allowed_origins
+allowed_origins = list(settings.allowed_origins)
+
+# Always allow production domains (needed for Hugging Face Space CORS)
+PRODUCTION_ORIGINS = [
+    "https://taxntec.com",
+    "https://www.taxntec.com",
+]
+for origin in PRODUCTION_ORIGINS:
+    if origin not in allowed_origins:
+        allowed_origins.append(origin)
+
 if "*" in allowed_origins and len(allowed_origins) == 1:
     raise ValueError(
         "SECURITY ERROR: CORS cannot use wildcard '*' with allow_credentials=True."
@@ -53,7 +63,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-CSRF-Token"],
     max_age=600,
 )

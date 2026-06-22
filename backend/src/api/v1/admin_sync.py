@@ -120,7 +120,7 @@ async def get_sync_status(
         # Get record counts from database
         from src.models.fbr_master_data import (
             FBRProvince, FBRUOM, FBRHSCode, FBRTransactionType,
-            FBRInvoiceType
+            FBRInvoiceType, FBRTaxRate
         )
 
         record_counts = {
@@ -128,7 +128,8 @@ async def get_sync_status(
             "uom": db.query(FBRUOM).count(),
             "hs_codes": db.query(FBRHSCode).count(),
             "transaction_types": db.query(FBRTransactionType).count(),
-            "invoice_types": db.query(FBRInvoiceType).count()
+            "invoice_types": db.query(FBRInvoiceType).count(),
+            "tax_rates": db.query(FBRTaxRate).count()
         }
 
         # Check if system token is configured

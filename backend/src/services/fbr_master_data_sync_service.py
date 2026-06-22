@@ -19,7 +19,8 @@ from src.models.fbr_master_data import (
     FBRHSCode,
     FBRTransactionType,
     FBRInvoiceType,
-    FBRSyncLog
+    FBRSyncLog,
+    FBRTaxRate
 )
 from src.models.fbr_notifications import FBRChangeNotification, FBRDataSnapshot
 
@@ -196,7 +197,8 @@ class FBRMasterDataSyncService:
             'uom': 'Unit of Measure',
             'hs_codes': 'HS Code',
             'transaction_types': 'Transaction Type',
-            'invoice_types': 'Invoice Type'
+            'invoice_types': 'Invoice Type',
+            'tax_rates': 'Tax Rate'
         }
 
         label = data_type_labels.get(data_type, data_type)
@@ -392,6 +394,112 @@ class FBRMasterDataSyncService:
             'invoice_types', '/pdi/v1/doctypecode', FBRInvoiceType, transform
         )
 
+    async def sync_tax_rates(self) -> Dict[str, Any]:
+        """
+        Sync tax rates for all transaction types from FBR and cache locally.
+
+        Fetches applicable tax rates for each transaction type using the
+        FBR SaleTypeToRate API. Uses the admin system sync token.
+        Data is stored system-wide (no user_id) — shared across all users.
+
+        API: GET /pdi/v2/SaleTypeToRate?date=<today>&transTypeId=<code>&originationSupplier=2
+        """
+        transaction_types = self.db.query(FBRTransactionType).all()
+        if not transaction_types:
+            logger.warning("No transaction types found in database, skipping tax rate sync")
+            return {'synced': 0, 'added': 0, 'modified': 0, 'deleted': 0}
+
+        # Format today's date as DD-MMM-YYYY (e.g., "24-Feb-2024")
+        today = datetime.utcnow().strftime("%d-%b-%Y")
+
+        all_rates = []
+        for tt in transaction_types:
+            try:
+                endpoint = (
+                    f"/pdi/v2/SaleTypeToRate"
+                    f"?date={today}"
+                    f"&transTypeId={tt.code}"
+                    f"&originationSupplier=2"
+                )
+                fbr_data = await self.fetch_from_fbr(endpoint)
+                if fbr_data:
+                    for item in fbr_data:
+                        rate_id = str(item.get("ratE_ID", ""))
+                        if rate_id:
+                            all_rates.append({
+                                "rate_id": rate_id,
+                                "rate_desc": item.get("ratE_DESC", ""),
+                                "rate_value": str(item.get("ratE_VALUE", "")),
+                                "transaction_type_code": tt.code,
+                            })
+                else:
+                    logger.warning(
+                        f"No tax rate data from FBR for transaction type {tt.code} ({tt.name})"
+                    )
+            except Exception as e:
+                logger.error(
+                    f"Error fetching tax rates for transaction type {tt.code}: {str(e)}"
+                )
+
+        if not all_rates:
+            logger.warning("No tax rates fetched from FBR for any transaction type")
+            return {'synced': 0, 'added': 0, 'modified': 0, 'deleted': 0}
+
+        # Transform for change detection (use composite key: rate_id + transaction_type_code)
+        # The generic _detect_changes uses a single key_field — for tax rates we
+        # clear and re-insert per transaction type to handle the composite key properly.
+        # Strategy: delete all existing rates, then insert fresh batch.
+        try:
+            deleted_count = self.db.query(FBRTaxRate).delete()
+            self.db.commit()
+            logger.info(f"Cleared {deleted_count} existing tax rates before re-sync")
+        except Exception as e:
+            logger.error(f"Error clearing existing tax rates: {str(e)}")
+            self.db.rollback()
+
+        # Insert fresh rates — use plain bulk insert since we already deleted all records.
+        # Cannot use _upsert_records here because the unique constraint is composite
+        # (rate_id, transaction_type_code), not just rate_id.
+        count = 0
+        try:
+            # Build FBRTaxRate objects and bulk insert
+            tax_rate_objects = [FBRTaxRate(**rate_data) for rate_data in all_rates]
+            self.db.bulk_save_objects(tax_rate_objects)
+            self.db.commit()
+            count = len(tax_rate_objects)
+            logger.info(f"Bulk inserted {count} tax rates")
+        except Exception as e:
+            logger.error(f"Error bulk inserting tax rates: {str(e)}")
+            self.db.rollback()
+            # Fall back to individual inserts
+            count = 0
+            for rate_data in all_rates:
+                try:
+                    existing = self.db.query(FBRTaxRate).filter(
+                        FBRTaxRate.rate_id == rate_data["rate_id"],
+                        FBRTaxRate.transaction_type_code == rate_data["transaction_type_code"]
+                    ).first()
+                    if existing:
+                        existing.rate_desc = rate_data["rate_desc"]
+                        existing.rate_value = rate_data["rate_value"]
+                        existing.updated_at = datetime.utcnow()
+                    else:
+                        self.db.add(FBRTaxRate(**rate_data))
+                    count += 1
+                except Exception as insert_err:
+                    logger.warning(f"Could not insert tax rate {rate_data.get('rate_id')}: {insert_err}")
+            try:
+                self.db.commit()
+            except Exception as commit_err:
+                logger.error(f"Error committing tax rates: {commit_err}")
+                self.db.rollback()
+
+        # Update snapshot
+        self._update_snapshot('tax_rates', all_rates)
+
+        logger.info(f"Synced {count} tax rates across {len(transaction_types)} transaction types")
+        return {'synced': count, 'added': count, 'modified': 0, 'deleted': deleted_count}
+
     def _create_sync_log(self, sync_type: str, status: str, records_synced: int,
                         error_message: Optional[str], started_at: datetime,
                         completed_at: datetime, change_summary: Optional[Dict] = None) -> int:
@@ -431,7 +539,8 @@ class FBRMasterDataSyncService:
             ('uom', self.sync_uom),
             ('hs_codes', self.sync_hs_codes),
             ('transaction_types', self.sync_transaction_types),
-            ('invoice_types', self.sync_invoice_types)
+            ('invoice_types', self.sync_invoice_types),
+            ('tax_rates', self.sync_tax_rates)
         ]
 
         for data_type, method in sync_methods:

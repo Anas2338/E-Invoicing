@@ -146,7 +146,6 @@ class AutomationApiClient {
   async downloadTemplate(): Promise<Blob> {
     const response = await fetch(`${this.baseUrl}/automation/template/download`, {
       headers: this.getHeaders(),
-      credentials: 'include',
     });
     if (!response.ok) {
       throw new Error('Failed to download template');
@@ -171,7 +170,6 @@ class AutomationApiClient {
     const response = await fetch(`${this.baseUrl}/automation/excel/upload`, {
       method: 'POST',
       headers: this.getHeaders(),
-      credentials: 'include',
       body: formData,
     });
 
@@ -191,8 +189,7 @@ class AutomationApiClient {
       `${this.baseUrl}/automation/excel/status/${sessionId}`,
       {
         headers: this.getHeaders(),
-        credentials: 'include',
-      }
+        }
     );
 
     if (!response.ok) {
@@ -209,7 +206,6 @@ class AutomationApiClient {
   async getDashboardStats(): Promise<DashboardStats> {
     const response = await fetch(`${this.baseUrl}/automation/dashboard/stats`, {
       headers: this.getHeaders(),
-      credentials: 'include',
     });
 
     if (!response.ok) {
@@ -243,8 +239,7 @@ class AutomationApiClient {
       `${this.baseUrl}/automation/dashboard/invoices?${queryParams}`,
       {
         headers: this.getHeaders(),
-        credentials: 'include',
-      }
+        }
     );
 
     if (!response.ok) {
@@ -275,8 +270,7 @@ class AutomationApiClient {
       `${this.baseUrl}/automation/dashboard/invoices/ids?${queryParams}`,
       {
         headers: this.getHeaders(),
-        credentials: 'include',
-      }
+        }
     );
 
     if (!response.ok) {
@@ -295,8 +289,7 @@ class AutomationApiClient {
       `${this.baseUrl}/automation/dashboard/invoice/${invoiceId}`,
       {
         headers: this.getHeaders(),
-        credentials: 'include',
-      }
+        }
     );
 
     if (!response.ok) {
@@ -315,8 +308,7 @@ class AutomationApiClient {
       `${this.baseUrl}/automation/dashboard/download/${sessionId}`,
       {
         headers: this.getHeaders(),
-        credentials: 'include',
-      }
+        }
     );
 
     if (!response.ok) {
@@ -335,8 +327,7 @@ class AutomationApiClient {
       {
         method: 'POST',
         headers: this.getHeaders(),
-        credentials: 'include',
-      }
+        }
     );
 
     if (!response.ok) {
@@ -355,8 +346,7 @@ class AutomationApiClient {
       `${this.baseUrl}/automation/upload-sessions`,
       {
         headers: this.getHeaders(),
-        credentials: 'include',
-      }
+        }
     );
 
     if (!response.ok) {
@@ -376,8 +366,7 @@ class AutomationApiClient {
       {
         method: 'DELETE',
         headers: this.getHeaders(),
-        credentials: 'include',
-      }
+        }
     );
 
     if (!response.ok) {
@@ -396,8 +385,7 @@ class AutomationApiClient {
       {
         method: 'DELETE',
         headers: this.getHeaders(),
-        credentials: 'include',
-      }
+        }
     );
 
     if (!response.ok) {
@@ -415,8 +403,7 @@ class AutomationApiClient {
       {
         method: 'POST',
         headers: this.getHeaders(true),
-        credentials: 'include',
-        body: JSON.stringify({ reason }),
+          body: JSON.stringify({ reason }),
       }
     );
 
@@ -435,8 +422,7 @@ class AutomationApiClient {
       {
         method: 'POST',
         headers: this.getHeaders(),
-        credentials: 'include',
-      }
+        }
     );
 
     if (!response.ok) {
@@ -454,8 +440,7 @@ class AutomationApiClient {
       {
         method: 'DELETE',
         headers: this.getHeaders(),
-        credentials: 'include',
-      }
+        }
     );
 
     if (!response.ok) {
@@ -491,8 +476,7 @@ class AutomationApiClient {
       {
         method: 'POST',
         headers: this.getHeaders(true),
-        credentials: 'include',
-        body: JSON.stringify({ invoice_ids: invoiceIds, reason }),
+          body: JSON.stringify({ invoice_ids: invoiceIds, reason }),
       }
     );
 
@@ -513,8 +497,7 @@ class AutomationApiClient {
       {
         method: 'POST',
         headers: this.getHeaders(true),
-        credentials: 'include',
-        body: JSON.stringify({ invoice_ids: invoiceIds }),
+          body: JSON.stringify({ invoice_ids: invoiceIds }),
       }
     );
 
@@ -535,8 +518,7 @@ class AutomationApiClient {
       {
         method: 'POST',
         headers: this.getHeaders(true),
-        credentials: 'include',
-        body: JSON.stringify({ invoice_ids: invoiceIds }),
+          body: JSON.stringify({ invoice_ids: invoiceIds }),
       }
     );
 
@@ -556,8 +538,7 @@ class AutomationApiClient {
       `${this.baseUrl}/automation/invoices/${invoiceId}/pdf`,
       {
         headers: this.getHeaders(),
-        credentials: 'include',
-      }
+        }
     );
 
     if (!response.ok) {
@@ -577,8 +558,7 @@ class AutomationApiClient {
       {
         method: 'POST',
         headers: this.getHeaders(),
-        credentials: 'include',
-      }
+        }
     );
 
     if (!response.ok) {
@@ -598,8 +578,7 @@ class AutomationApiClient {
       {
         method: 'POST',
         headers: this.getHeaders(),
-        credentials: 'include',
-      }
+        }
     );
 
     if (!response.ok) {
@@ -619,8 +598,7 @@ class AutomationApiClient {
       {
         method: 'POST',
         headers: this.getHeaders(true),
-        credentials: 'include',
-        body: JSON.stringify({ invoice_ids: invoiceIds }),
+          body: JSON.stringify({ invoice_ids: invoiceIds }),
       }
     );
 
@@ -641,8 +619,7 @@ class AutomationApiClient {
       {
         method: 'POST',
         headers: this.getHeaders(true),
-        credentials: 'include',
-        body: JSON.stringify({ invoice_ids: invoiceIds }),
+          body: JSON.stringify({ invoice_ids: invoiceIds }),
       }
     );
 
@@ -663,8 +640,7 @@ class AutomationApiClient {
       {
         method: 'POST',
         headers: this.getHeaders(true),
-        credentials: 'include',
-        body: JSON.stringify({ invoice_ids: invoiceIds }),
+          body: JSON.stringify({ invoice_ids: invoiceIds }),
       }
     );
 

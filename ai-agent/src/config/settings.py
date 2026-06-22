@@ -71,7 +71,10 @@ class Settings(BaseSettings):
     dry_run: bool = Field(default=False, validation_alias="DRY_RUN")
 
     # CORS settings
-    allowed_origins: Union[List[str], str] = Field(default="http://localhost:3000", validation_alias="ALLOWED_ORIGINS")
+    allowed_origins: Union[List[str], str] = Field(
+        default="http://localhost:3000,https://taxntec.com,https://www.taxntec.com",
+        validation_alias="ALLOWED_ORIGINS"
+    )
 
     # CSRF
     csrf_secret: str = Field(default="change-me", validation_alias="CSRF_SECRET")

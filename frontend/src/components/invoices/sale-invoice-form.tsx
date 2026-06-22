@@ -187,6 +187,22 @@ export function SaleInvoiceForm({
   const [isSavingNewItem, setIsSavingNewItem] = useState(false);
   const [isValidatingNewHsCode, setIsValidatingNewHsCode] = useState(false);
 
+  // HS Code → UOM filtered options for Add Saved Item sub-modal
+  const [newHsCodeUoms, setNewHsCodeUoms] = useState<Array<{code: string, name: string}>>([]);
+  const [newHsCodeUomsLoading, setNewHsCodeUomsLoading] = useState(false);
+
+  // Transaction Type → Tax Rate filtered options for Add Saved Item sub-modal
+  const [newTaxRateOptions, setNewTaxRateOptions] = useState<Array<{rate: string, name: string}>>([]);
+  const [newTaxRatesLoading, setNewTaxRatesLoading] = useState(false);
+
+  // HS Code autocomplete state for Add Saved Item sub-modal
+  const [newHsCodeOptions, setNewHsCodeOptions] = useState<{ code: string; description: string }[]>([]);
+  const [newHsCodeSearchOpen, setNewHsCodeSearchOpen] = useState(false);
+  const [newHsCodeHighlightIndex, setNewHsCodeHighlightIndex] = useState(-1);
+  const [newHsCodeSearching, setNewHsCodeSearching] = useState(false);
+  const newHsCodeSearchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const newHsCodeDropdownRef = useRef<HTMLDivElement>(null);
+
   // Validate/Post workflow state
   const [isValidating, setIsValidating] = useState(false);
   const [isPosting, setIsPosting] = useState(false);
@@ -847,7 +863,7 @@ export function SaleInvoiceForm({
           const extraTax = Number(updated.extraTax) || 0;
           const fedPayable = Number(updated.fedPayable) || 0;
           const salesTaxWithheldVal = Number(updated.salesTaxWithheldAtSource) || 0;
-          const totalValue = baseValue + salesTax + furtherTax + extraTax + fedPayable + salesTaxWithheldVal - discount;
+          const totalValue = baseValue + salesTax + furtherTax + extraTax + fedPayable - salesTaxWithheldVal - discount;
 
           if (field !== 'discount') {
             updated.salesTaxApplicable = parseFloat(salesTax.toFixed(2));
@@ -863,10 +879,105 @@ export function SaleInvoiceForm({
 
   // --- Helpers for "Add Saved Item" sub-popup ---
 
+  // ── Next Item Code auto-generation ──
+  const getNextItemCode = (): string => {
+    if (savedItems.length === 0) return 'ITEM-001';
+
+    const prefixCounts: Record<string, { maxNum: number; count: number }> = {};
+    for (const item of savedItems) {
+      const code = item.item_code?.trim();
+      if (!code) continue;
+      const match = code.match(/^(.+?)(\d+)$/);
+      if (!match) continue;
+      const prefix = match[1];
+      const num = parseInt(match[2], 10);
+      if (!prefixCounts[prefix]) {
+        prefixCounts[prefix] = { maxNum: num, count: 1 };
+      } else {
+        if (num > prefixCounts[prefix].maxNum) prefixCounts[prefix].maxNum = num;
+        prefixCounts[prefix].count++;
+      }
+    }
+
+    const prefixes = Object.keys(prefixCounts);
+    if (prefixes.length === 0) return 'ITEM-001';
+
+    const bestPrefix = prefixes.reduce((a, b) =>
+      prefixCounts[a].count >= prefixCounts[b].count ? a : b
+    );
+
+    const nextNum = prefixCounts[bestPrefix].maxNum + 1;
+    const padLength = String(prefixCounts[bestPrefix].maxNum).length;
+    return `${bestPrefix}${String(nextNum).padStart(padLength, '0')}`;
+  };
+
+  // ── HS Code autocomplete functions for Add Saved Item sub-modal ──
+  const searchNewHSCodes = (query: string) => {
+    if (newHsCodeSearchRef.current) {
+      clearTimeout(newHsCodeSearchRef.current);
+    }
+    if (!query || query.trim().length === 0) {
+      setNewHsCodeOptions([]);
+      setNewHsCodeSearchOpen(false);
+      return;
+    }
+    newHsCodeSearchRef.current = setTimeout(async () => {
+      try {
+        setNewHsCodeSearching(true);
+        const results = await masterDataService.getHSCodes(query.trim(), 15);
+        setNewHsCodeOptions(results);
+        setNewHsCodeHighlightIndex(-1);
+        setNewHsCodeSearchOpen(results.length > 0);
+      } catch {
+        setNewHsCodeOptions([]);
+        setNewHsCodeSearchOpen(false);
+      } finally {
+        setNewHsCodeSearching(false);
+      }
+    }, 250);
+  };
+
+  const selectNewHsCode = async (code: string) => {
+    setNewHsCode(code);
+    setNewHsCodeOptions([]);
+    setNewHsCodeSearchOpen(false);
+    setNewHsCodeHighlightIndex(-1);
+    validateNewHsCode(code);
+    // Auto-focus Product Description
+    setTimeout(() => {
+      document.getElementById('newProductDescription')?.focus();
+    }, 100);
+  };
+
+  const handleNewHsCodeKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!newHsCodeSearchOpen || newHsCodeOptions.length === 0) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setNewHsCodeHighlightIndex((prev) =>
+        prev < newHsCodeOptions.length - 1 ? prev + 1 : 0
+      );
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setNewHsCodeHighlightIndex((prev) =>
+        prev > 0 ? prev - 1 : newHsCodeOptions.length - 1
+      );
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (newHsCodeHighlightIndex >= 0 && newHsCodeHighlightIndex < newHsCodeOptions.length) {
+        selectNewHsCode(newHsCodeOptions[newHsCodeHighlightIndex].code);
+      }
+    } else if (e.key === 'Escape') {
+      setNewHsCodeSearchOpen(false);
+      setNewHsCodeHighlightIndex(-1);
+    }
+  };
+
   const validateNewHsCode = async (code: string) => {
     if (!code || code.trim() === '') {
       setNewHsCodeValid(null);
       setNewHsCodeError('');
+      setNewHsCodeUoms([]);
+      setNewDefaultUom('');
       return;
     }
     setIsValidatingNewHsCode(true);
@@ -875,18 +986,73 @@ export function SaleInvoiceForm({
       if (result.valid) {
         setNewHsCodeValid(true);
         setNewHsCodeError('');
+
+        // Fetch relevant UOMs for this HS code
+        try {
+          setNewHsCodeUomsLoading(true);
+          setNewDefaultUom('');
+          const uoms = await masterDataService.getHsUom(code.trim(), 3);
+          if (uoms && uoms.length > 0) {
+            setNewHsCodeUoms(uoms);
+            if (uoms.length === 1) {
+              setNewDefaultUom(uoms[0].name);
+            }
+          } else {
+            setNewHsCodeUoms([]);
+          }
+        } catch {
+          setNewHsCodeUoms([]);
+        } finally {
+          setNewHsCodeUomsLoading(false);
+        }
       } else {
         setNewHsCodeValid(false);
         setNewHsCodeError('HS Code not found in FBR database');
+        setNewHsCodeUoms([]);
       }
     } catch (error) {
       console.error('Error validating HS code:', error);
       setNewHsCodeValid(false);
       setNewHsCodeError('Error validating HS Code');
+      setNewHsCodeUoms([]);
     } finally {
       setIsValidatingNewHsCode(false);
     }
   };
+
+  // Fetch tax rates when transaction type changes in Add Saved Item sub-modal
+  useEffect(() => {
+    if (!newTransactionType || !masterData?.transaction_types?.length) {
+      setNewTaxRateOptions([]);
+      return;
+    }
+
+    const fetchTaxRates = async () => {
+      try {
+        setNewTaxRatesLoading(true);
+        const tt = masterData.transaction_types.find(
+          (t: any) => t.name === newTransactionType || t.code === newTransactionType
+        );
+        if (tt) {
+          const rates = await masterDataService.getTaxRatesByTransactionType(tt.code);
+          if (rates && rates.length > 0) {
+            setNewTaxRateOptions(rates);
+            if (rates.length === 1) {
+              setNewDefaultRate(rates[0].rate);
+            }
+            return;
+          }
+        }
+        setNewTaxRateOptions([]);
+      } catch {
+        setNewTaxRateOptions([]);
+      } finally {
+        setNewTaxRatesLoading(false);
+      }
+    };
+
+    fetchTaxRates();
+  }, [newTransactionType, masterData?.transaction_types]);
 
   const resetNewItemForm = () => {
     setNewItemCode('');
@@ -900,6 +1066,13 @@ export function SaleInvoiceForm({
     setNewTransactionType('');
     setNewSroScheduleNo('');
     setNewSroItemSerialNo('');
+    setNewHsCodeUoms([]);
+    setNewHsCodeUomsLoading(false);
+    setNewTaxRateOptions([]);
+    setNewTaxRatesLoading(false);
+    setNewHsCodeOptions([]);
+    setNewHsCodeSearchOpen(false);
+    setNewHsCodeHighlightIndex(-1);
   };
 
   const handleAddSavedItem = async () => {
@@ -1109,8 +1282,8 @@ export function SaleInvoiceForm({
           const extraTax = Number(updatedItems[index].extraTax) || 0;
           const fedPayable = Number(updatedItems[index].fedPayable) || 0;
           const salesTaxWithheldVal = Number(updatedItems[index].salesTaxWithheldAtSource) || 0;
-          // Total Value (Inc. Tax) = Base Value + Sales Tax + Further Tax + Extra Tax + FED Payable + Sales Tax Withheld - Discount
-          const totalValue = baseValue + salesTax + furtherTax + extraTax + fedPayable + salesTaxWithheldVal - discount;
+          // Total Value (Inc. Tax) = Base Value + Sales Tax + Further Tax + Extra Tax + FED Payable - Sales Tax Withheld - Discount
+          const totalValue = baseValue + salesTax + furtherTax + extraTax + fedPayable - salesTaxWithheldVal - discount;
 
           if (field !== 'discount') {
             updatedItems[index].salesTaxApplicable = parseFloat(salesTax.toFixed(2));
@@ -1571,7 +1744,7 @@ export function SaleInvoiceForm({
               {/* <CardTitle>Buyer Information</CardTitle> */}
             {/* </CardHeader> */}
             <CardContent>
-              <div className='flex flex-wrap gap-2 xl:flex-nowrap xl:gap-0 xl:justify-between px-2 mb-2'>
+              <div className='flex gap-2 xl:flex-nowrap xl:gap-0 xl:justify-between px-2 mb-2'>
                 {/* Buyer Business Name */}
                 <div className="relative w-full sm:w-[48%] md:w-[48%] xl:w-[490px]">
                   <Label className='pl-3 text-[14px] font-bold' htmlFor="buyerBusinessName">Business Name *</Label>
@@ -1700,10 +1873,10 @@ export function SaleInvoiceForm({
                   )}
                 </div>
                 {/* Buyer Type */}
-                <div className='w-full min-w-[100px] sm:w-[48%] md:w-[23%] xl:w-[120px]'>
+                <div className='w-full min-w-[80px] sm:w-[48%] md:w-[17%] xl:w-[120px]'>
                   <Label className='pl-3 text-[14px] font-bold' htmlFor="buyerRegistrationType">Type *</Label>
                   <Select value={buyerRegistrationType} onValueChange={(val) => setBuyerRegistrationType(val as 'Registered' | 'Unregistered')}>
-                    <SelectTrigger disabled={isVerifyingBuyer}>
+                    <SelectTrigger className='!w-full' disabled={isVerifyingBuyer}>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -1713,6 +1886,7 @@ export function SaleInvoiceForm({
                     </SelectContent>
                   </Select>
                 </div>
+
                 {/* Buyer Province */}
                 <div className='w-full min-w-[180px] sm:w-[48%] md:w-[23%] xl:w-[220px]'>
                   <Label className='pl-3 text-[14px] font-bold' htmlFor="buyerProvince">Province *</Label>
@@ -1724,7 +1898,7 @@ export function SaleInvoiceForm({
                       setBuyerProvinceCode(province.code);
                     }
                   }}>
-                    <SelectTrigger disabled={(masterData?.provinces.length ?? 0) === 0}>
+                    <SelectTrigger disabled={(masterData?.provinces.length ?? 0) === 0} className="!text-[10px]">
                       <SelectValue placeholder={(masterData?.provinces.length ?? 0) === 0 ? "Configure FBR token in profile" : "Select province"} />
                     </SelectTrigger>
                     <SelectContent>
@@ -1785,18 +1959,18 @@ export function SaleInvoiceForm({
 
           {/*table 1 if invoice not exist*/}
           {items.length === 0 ? (
-            <div className="overflow-x-auto xl:overflow-visible">
-              <table className="w-[720px] xl:w-full table-fixed bg-[#7c97f0] rounded-4xl flex-shrink-0">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[605px] table-fixed bg-[#7c97f0] rounded-4xl flex-shrink-0">
               <thead>
                   <tr>
-                    <th className="border-r-2 border-[#FFFFFF] w-[155px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Item Name</th>
-                    <th className="border-r-2 border-[#FFFFFF] w-[50px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Qty</th>
-                    <th className="border-r-2 border-[#FFFFFF] w-[85px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Value Excl. Tax</th>
-                    <th className="border-r-2 border-[#FFFFFF] w-[40px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Rate</th>
-                    <th className="border-r-2 border-[#FFFFFF] w-[75px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Sales Tax</th>
-                    <th className="border-r-2 border-[#FFFFFF] w-[70px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Further Tax</th>
-                    <th className="border-r-2 border-[#FFFFFF] w-[85px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Total (Inc. Tax)</th>
-                    <th className=" w-[45px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Actions</th>
+                    <th className="border-r-2 border-[#FFFFFF] w-[23%] px-2 py-1 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">Item Name</th>
+                    <th className="border-r-2 border-[#FFFFFF] w-[9%] px-2 py-1 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">Qty</th>
+                    <th className="border-r-2 border-[#FFFFFF] w-[14%] px-2 py-1 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">Value Excl. Tax</th>
+                    <th className="border-r-2 border-[#FFFFFF] w-[8%] px-2 py-1 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">Rate</th>
+                    <th className="border-r-2 border-[#FFFFFF] w-[13%] px-2 py-1 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">Sales Tax</th>
+                    <th className="border-r-2 border-[#FFFFFF] w-[13%] px-2 py-1 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">Further Tax</th>
+                    <th className="border-r-2 border-[#FFFFFF] w-[11%] px-2 py-1 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">Total (Inc. Tax)</th>
+                    <th className="w-[9%] px-2 py-1 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">Actions</th>
                   </tr>
                 </thead>
                 </table>
@@ -1806,49 +1980,49 @@ export function SaleInvoiceForm({
               </div>
             </div>
           ) : (
-            <div className="overflow-x-auto xl:overflow-visible">
-              <div className='max-h-50 overflow-y-auto rounded-2xl min-w-[720px] xl:min-w-0'>
+            <div className="overflow-x-auto">
+              <div className='max-h-50 overflow-y-auto rounded-2xl min-w-[605px]'>
                 {/*table 2 if invoice exist*/}
-                <table className='w-[720px] xl:w-full table-fixed'>
+                <table className='w-full table-fixed'>
                   <thead className="sticky top-0 bg-[#7c97f0] z-10">
                     <tr>
-                      <th className="border-r-2 border-[#FFFFFF] w-[155px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Item Name</th>
-                      <th className="border-r-2 border-[#FFFFFF] w-[50px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Qty</th>
-                      <th className="border-r-2 border-[#FFFFFF] w-[85px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Value Excl. Tax</th>
-                      <th className="border-r-2 border-[#FFFFFF] w-[40px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Rate</th>
-                      <th className="border-r-2 border-[#FFFFFF] w-[75px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Sales Tax</th>
-                      <th className="border-r-2 border-[#FFFFFF] w-[70px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Further Tax</th>
-                      <th className="border-r-2 border-[#FFFFFF] w-[85px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Total (Inc. Tax)</th>
-                      <th className="w-[45px] px-2 py-1 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">Actions</th>
+                      <th className="border-r-2 border-[#FFFFFF] w-[23%] px-2 py-1 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">Item Name</th>
+                      <th className="border-r-2 border-[#FFFFFF] w-[9%] px-2 py-1 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">Qty</th>
+                      <th className="border-r-2 border-[#FFFFFF] w-[14%] px-2 py-1 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">Value Excl. Tax</th>
+                      <th className="border-r-2 border-[#FFFFFF] w-[8%] px-2 py-1 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">Rate</th>
+                      <th className="border-r-2 border-[#FFFFFF] w-[13%] px-2 py-1 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">Sales Tax</th>
+                      <th className="border-r-2 border-[#FFFFFF] w-[13%] px-2 py-1 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">Further Tax</th>
+                      <th className="border-r-2 border-[#FFFFFF] w-[11%] px-2 py-1 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">Total (Inc. Tax)</th>
+                      <th className="w-[9%] px-2 py-1 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">Actions</th>
                     </tr>
                   </thead>
                   <tbody className='divide-y divide-[#FFFFFF]'>
                     {items.map((item, index) => (
-                      <tr key={index} className="group transition-colors duration-150 text-sm text-black bg-[#e7eaf1]">
-                        <td className="border-r-2 border-[#FFFFFF] py-1 px-2 align-middle w-[155px] " title={item.productDescription}>{item.productDescription || '—'}</td>
-                        <td className="border-r-2 border-[#FFFFFF] py-1 px-2 align-middle w-[50px] text-center">{item.quantity || 0}</td>
-                        <td className="border-r-2 border-[#FFFFFF] py-1 px-2 align-middle w-[85px] text-right">{Number(item.valueSalesExcludingST).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                        <td className="border-r-2 border-[#FFFFFF] py-1 px-2 align-middle w-[40px] text-center">{item.rate || '—'}</td>
-                        <td className="border-r-2 border-[#FFFFFF] py-1 px-2 align-middle w-[75px] text-right">{Number(item.salesTaxApplicable).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                        <td className="border-r-2 border-[#FFFFFF] py-1 px-2 align-middle w-[70px] text-right">{Number(item.furtherTax).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                        <td className="border-r-2 border-[#FFFFFF] py-1 px-2 align-middle w-[85px] text-right">{Number(item.totalValues).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                        <td className="py-1 px-2 align-middle w-[45px]">
+                      <tr key={index} className="group transition-colors duration-150 text-black bg-[#e7eaf1]">
+                        <td className="border-r-2 border-[#FFFFFF] py-1 px-2 align-middle w-[23%] text-[11px] lg:text-[13px] truncate" title={item.productDescription}>{item.productDescription || '—'}</td>
+                        <td className="border-r-2 border-[#FFFFFF] py-1 px-2 align-middle w-[9%] text-center text-[10px] lg:text-[11px]">{item.quantity || 0}</td>
+                        <td className="border-r-2 border-[#FFFFFF] py-1 px-2 align-middle w-[14%] text-right text-[10px] lg:text-[11px] whitespace-nowrap">{Number(item.valueSalesExcludingST).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td className="border-r-2 border-[#FFFFFF] py-1 px-2 align-middle w-[8%] text-center text-[11px] lg:text-[13px]">{item.rate || '—'}</td>
+                        <td className="border-r-2 border-[#FFFFFF] py-1 px-2 align-middle w-[13%] text-right text-[10px] lg:text-[11px] whitespace-nowrap">{Number(item.salesTaxApplicable).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td className="border-r-2 border-[#FFFFFF] py-1 px-2 align-middle w-[13%] text-right text-[10px] lg:text-[11px] whitespace-nowrap">{Number(item.furtherTax).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td className="border-r-2 border-[#FFFFFF] py-1 px-2 align-middle w-[11%] text-right text-[9px] lg:text-[10px] whitespace-nowrap">{Number(item.totalValues).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td className="py-1 px-2 align-middle w-[9%]">
                           <div className="flex items-center justify-center gap-1">
                             <button
                               type="button"
                               onClick={() => openEditModal(index)}
-                              className="h-8 w-8 rounded-lg border border-[#c9cccf] dark:border-[#3e3e3e] bg-white dark:bg-[#1a1a1a] flex items-center justify-center text-[#6d7175] hover:border-[#008060] hover:text-[#008060] dark:hover:border-[#00a876] dark:hover:text-[#00a876] hover:bg-[#f0f9f6] dark:hover:bg-[#0d3d2f]/30 transition-colors cursor-pointer"
+                              className="h-6 w-6 lg:h-7 lg:w-7 rounded-lg border border-[#c9cccf] dark:border-[#3e3e3e] bg-white dark:bg-[#1a1a1a] flex items-center justify-center text-[#6d7175] hover:border-[#008060] hover:text-[#008060] dark:hover:border-[#00a876] dark:hover:text-[#00a876] hover:bg-[#f0f9f6] dark:hover:bg-[#0d3d2f]/30 transition-colors cursor-pointer"
                               title="Edit item"
                             >
-                              <Pencil className="h-4 w-4" />
+                              <Pencil className="h-3 w-3 lg:h-3.5 lg:w-3.5" />
                             </button>
                             <button
                               type="button"
                               onClick={() => removeItem(index)}
-                              className="h-8 w-8 rounded-lg border border-[#c9cccf] dark:border-[#3e3e3e] bg-white dark:bg-[#1a1a1a] flex items-center justify-center text-red-500 hover:text-red-600 hover:border-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors cursor-pointer"
+                              className="h-6 w-6 lg:h-7 lg:w-7 rounded-lg border border-[#c9cccf] dark:border-[#3e3e3e] bg-white dark:bg-[#1a1a1a] flex items-center justify-center text-red-500 hover:text-red-600 hover:border-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors cursor-pointer"
                               title="Remove item"
                             >
-                              <Trash2 className="h-4 w-4" />
+                              <Trash2 className="h-3 w-3 lg:h-3.5 lg:w-3.5" />
                             </button>
                           </div>
                         </td>
@@ -1858,26 +2032,26 @@ export function SaleInvoiceForm({
                 </table>
               </div>
 
-              <div className="overflow-x-auto xl:overflow-visible">
+              <div className="overflow-x-auto">
                 {/*table 3 footer*/}
-                <table className="w-[720px] xl:w-full table-fixed border-2 border-blue-300 rounded-2xl border-separate border-spacing-0 bg-[#FFFFFF]">
+                <table className="w-full min-w-[605px] table-fixed border-2 border-blue-300 rounded-2xl border-separate border-spacing-0 bg-[#FFFFFF]">
                   <tfoot>
-                    <tr className="font-normal text-black text-[15px]">
-                      <td className="py-1 px-2 w-[205px] text-center">Totals:</td>
-                      <td className="py-1 px-2 w-[85px] text-right">
+                    <tr className="font-normal text-black">
+                      <td className="py-1 px-2 w-[32%] text-center font-bold">Totals:</td>
+                      <td className="py-1 px-2 w-[14%] text-right text-[10px] lg:text-[11px] whitespace-nowrap">
                         {items.reduce((sum, item) => sum + (Number(item.valueSalesExcludingST) || 0), 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
-                      <td className='py-1 px-2 w-[40px]'></td>
-                      <td className="py-1 px-2 w-[75px] text-right">
+                      <td className='py-1 px-2 w-[8%]'></td>
+                      <td className="py-1 px-2 w-[13%] text-right text-[10px] lg:text-[11px] whitespace-nowrap">
                         {items.reduce((sum, item) => sum + (Number(item.salesTaxApplicable) || 0), 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
-                      <td className="py-1 px-2 w-[70px] text-right">
+                      <td className="py-1 px-2 w-[13%] text-right text-[10px] lg:text-[11px] whitespace-nowrap">
                         {items.reduce((sum, item) => sum + (Number(item.furtherTax) || 0), 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
-                      <td className="py-1 px-2 w-[85px] text-right">
+                      <td className="py-1 px-2 w-[11%] text-right text-[9px] lg:text-[10px] whitespace-nowrap">
                         {items.reduce((sum, item) => sum + (Number(item.totalValues) || 0), 0).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
-                      <td className='py-1 px-2 w-[45px]'></td>
+                      <td className='py-1 px-2 w-[9%]'></td>
                     </tr>
                   </tfoot>
                 </table>
@@ -1976,7 +2150,11 @@ export function SaleInvoiceForm({
                     <div className='flex gap-2 text-sm font-semibold'>
                     <button
                       type="button"
-                      onClick={() => { setIsAddSavedItemModalOpen(true); }}
+                      onClick={() => {
+                        setNewItemCode(getNextItemCode());
+                        setNewTransactionType((masterData?.transaction_types?.[0]?.name) || '');
+                        setIsAddSavedItemModalOpen(true);
+                      }}
                       className="h-7 w-7 rounded-lg border border-[#c9cccf] dark:border-[#3e3e3e] bg-white dark:bg-[#1a1a1a] flex items-center justify-center text-[#008060] hover:bg-[#f0f9f6] dark:hover:bg-[#0d3d2f]/30 transition-colors cursor-pointer"
                       title="Add new saved item"
                     >
@@ -2061,7 +2239,11 @@ export function SaleInvoiceForm({
                       <div className='pt-2'>
                         <button
                         type="button"
-                        onClick={() => { setIsAddSavedItemModalOpen(true); }}
+                        onClick={() => {
+                          setNewItemCode(getNextItemCode());
+                          setNewTransactionType((masterData?.transaction_types?.[0]?.name) || '');
+                          setIsAddSavedItemModalOpen(true);
+                        }}
                         className=" h-7 w-7 rounded-lg border border-[#c9cccf] dark:border-[#3e3e3e] bg-white dark:bg-[#1a1a1a] flex items-center justify-center text-[#008060] hover:bg-[#f0f9f6] dark:hover:bg-[#0d3d2f]/30 transition-colors cursor-pointer"
                         title="Add new saved item"
                         >
@@ -2647,8 +2829,8 @@ export function SaleInvoiceForm({
                           />
                         </div>
 
-                        {/* HS Code with FBR validation */}
-                        <div>
+                        {/* HS Code with FBR validation + autocomplete */}
+                        <div ref={newHsCodeDropdownRef}>
                           <Label htmlFor="newHsCode" className="flex items-center gap-2">
                             HS Code *
                             {newHsCodeValid === true && (
@@ -2663,15 +2845,58 @@ export function SaleInvoiceForm({
                               id="newHsCode"
                               type="text"
                               value={newHsCode}
-                              onChange={(e) => setNewHsCode(e.target.value)}
-                              onBlur={(e) => validateNewHsCode(e.target.value)}
-                              placeholder="Enter HS Code"
+                              onChange={(e) => {
+                                setNewHsCode(e.target.value);
+                                setNewHsCodeValid(null);
+                                setNewHsCodeError('');
+                                setNewHsCodeUoms([]);
+                                setNewDefaultUom('');
+                                searchNewHSCodes(e.target.value);
+                              }}
+                              onFocus={() => {
+                                if (newHsCodeOptions.length > 0) setNewHsCodeSearchOpen(true);
+                              }}
+                              onBlur={() => {
+                                setTimeout(() => {
+                                  setNewHsCodeSearchOpen(false);
+                                  setNewHsCodeOptions([]);
+                                }, 200);
+                                if (newHsCode.trim()) validateNewHsCode(newHsCode);
+                              }}
+                              onKeyDown={handleNewHsCodeKeyDown}
+                              placeholder="Type to search HS Code..."
                               className="mt-1 pr-10 text-[12px] h-[30px] w-full glow-border"
+                              autoComplete="off"
                               required
                             />
-                            {isValidatingNewHsCode && (
-                              <div className="absolute right-3 top-1/2 -translate-y-1/2 mt-0.5">
+                            <div className="absolute right-3 top-1/2 -translate-y-1/2 mt-0.5 pointer-events-none">
+                              {(isValidatingNewHsCode || newHsCodeSearching) && (
                                 <Loader2 className="h-4 w-4 animate-spin text-[#008060]" />
+                              )}
+                            </div>
+                            {newHsCodeSearchOpen && newHsCodeOptions.length > 0 && (
+                              <div className="absolute left-0 right-0 top-full mt-1 z-[70] bg-white dark:bg-[#1e1e1e] border border-neutral-200 dark:border-neutral-700 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                                {newHsCodeOptions.map((opt, idx) => (
+                                  <button
+                                    key={opt.code}
+                                    type="button"
+                                    className={`w-full text-left px-3 py-1.5 flex items-start gap-2 transition-colors ${
+                                      idx === newHsCodeHighlightIndex
+                                        ? 'bg-[#008060]/10 text-[#008060] dark:bg-[#008060]/20 dark:text-[#00a876]'
+                                        : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800'
+                                    }`}
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      selectNewHsCode(opt.code);
+                                    }}
+                                    onMouseEnter={() => setNewHsCodeHighlightIndex(idx)}
+                                  >
+                                    <span className="font-mono text-[12px] font-semibold shrink-0">{opt.code}</span>
+                                    <span className="text-[11px] text-neutral-500 dark:text-neutral-400 leading-tight">
+                                      {opt.description || ''}
+                                    </span>
+                                  </button>
+                                ))}
                               </div>
                             )}
                           </div>
@@ -2701,43 +2926,52 @@ export function SaleInvoiceForm({
 
                         {/* UOM */}
                         <div className='w-full'>
-                          <Label htmlFor="newDefaultUom">Unit of Measurement *</Label>
+                          <Label htmlFor="newDefaultUom">
+                            Unit of Measurement *
+                            {newHsCodeUomsLoading && (
+                              <Loader2 className="inline h-3 w-3 ml-1 animate-spin text-[#008060]" />
+                            )}
+                          </Label>
                           <Select value={newDefaultUom} onValueChange={setNewDefaultUom}>
                             <SelectTrigger className="mt-1 text-[12px] h-[30px] glow-border">
-                              {newDefaultUom ? (
+                              {newHsCodeUomsLoading ? (
+                                <span className="text-muted-foreground">Loading UOMs for HS Code...</span>
+                              ) : newDefaultUom ? (
                                 <span>{newDefaultUom}</span>
                               ) : (
                                 <span className="text-muted-foreground">Select UOM</span>
                               )}
                             </SelectTrigger>
                             <SelectContent>
-                              {(masterData?.uom ?? []).map((uom) => (
+                              {(newHsCodeUomsLoading
+                                ? []
+                                : newHsCode
+                                  ? newHsCodeUoms
+                                  : (masterData?.uom ?? [])
+                              ).map((uom) => (
                                 <SelectItem key={uom.code} value={uom.name}>
                                   {uom.name}
                                 </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
-                        </div>
-
-                        {/* Tax Rate */}
-                        <div>
-                          <Label htmlFor="newDefaultRate">Tax Rate *</Label>
-                          <Input
-                            id="newDefaultRate"
-                            type="text"
-                            value={newDefaultRate}
-                            onChange={(e) => setNewDefaultRate(e.target.value)}
-                            placeholder="e.g., 18"
-                            className="mt-1 text-[12px] h-[30px] w-full glow-border"
-                            required
-                          />
+                          {newHsCode && newHsCodeUoms.length > 0 && (
+                            <p className="text-xs text-green-600 mt-1">
+                              {newHsCodeUoms.length} UOM(s) found for this HS Code
+                            </p>
+                          )}
                         </div>
 
                         {/* Transaction Type */}
                         <div className='w-full'>
                           <Label htmlFor="newTransactionType">Transaction Type *</Label>
-                          <Select value={newTransactionType} onValueChange={setNewTransactionType}>
+                          <Select value={newTransactionType} onValueChange={(value) => {
+                            if (value !== newTransactionType) {
+                              setNewTransactionType(value);
+                              setNewDefaultRate('');
+                              setNewTaxRateOptions([]);
+                            }
+                          }}>
                             <SelectTrigger className="mt-1 text-[12px] h-[30px] glow-border">
                               {newTransactionType ? (
                                 <span>{newTransactionType}</span>
@@ -2753,6 +2987,50 @@ export function SaleInvoiceForm({
                               ))}
                             </SelectContent>
                           </Select>
+                        </div>
+
+                        {/* Tax Rate */}
+                        <div>
+                          <Label htmlFor="newDefaultRate">
+                            Tax Rate *
+                            {newTaxRatesLoading && (
+                              <Loader2 className="inline h-3 w-3 ml-1 animate-spin text-[#008060]" />
+                            )}
+                          </Label>
+                          {newTaxRateOptions.length > 0 ? (
+                            <Select value={newDefaultRate} onValueChange={setNewDefaultRate}>
+                              <SelectTrigger className="mt-1 text-[12px] h-[30px] glow-border">
+                                {newDefaultRate ? (
+                                  <span>{newTaxRateOptions.find(r => r.rate === newDefaultRate)?.name || newDefaultRate}</span>
+                                ) : (
+                                  <span className="text-muted-foreground">Select tax rate</span>
+                                )}
+                              </SelectTrigger>
+                              <SelectContent>
+                                {newTaxRateOptions.map((rate) => (
+                                  <SelectItem key={rate.rate} value={rate.rate}>
+                                    {rate.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Input
+                              id="newDefaultRate"
+                              type="text"
+                              value={newDefaultRate}
+                              onChange={(e) => setNewDefaultRate(e.target.value)}
+                              placeholder={newTaxRatesLoading ? 'Loading tax rates...' : 'e.g., 18'}
+                              className="mt-1 text-[12px] h-[30px] w-full glow-border"
+                              disabled={newTaxRatesLoading}
+                              required
+                            />
+                          )}
+                          {newTransactionType && newTaxRateOptions.length > 0 && (
+                            <p className="text-xs text-green-600 mt-1">
+                              {newTaxRateOptions.length} rate(s) for this transaction type
+                            </p>
+                          )}
                         </div>
 
                         {/* SRO Schedule No */}
@@ -2786,26 +3064,28 @@ export function SaleInvoiceForm({
                           <Button
                             type="button"
                             variant="outline"
+                            size='icon'
                             onClick={() => {
                               setIsAddSavedItemModalOpen(false);
                               resetNewItemForm();
                             }}
                             disabled={isSavingNewItem}
-                            className="h-9 px-4 text-xs sm:text-sm text-red-500 hover:text-red-600 border-red-300 dark:border-red-800 disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="h-8 w-8 text-red-500 hover:text-red-600 border-red-300 dark:border-red-800 disabled:opacity-30 disabled:cursor-not-allowed"
                           >
-                            <X className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1"/>
+                            <X className="h-3.5 w-3.5 sm:h-4 sm:w-4"/>
                           </Button>
                           <Button
                             type="button"
                             variant="outline"
+                            size='icon'
                             disabled={isSavingNewItem}
                             onClick={handleAddSavedItem}
-                            className="h-9 px-4 text-xs sm:text-sm rounded-lg border-blue-300 dark:border-neutral-800 hover:text-emerald-500 dark:hover:text-emerald-400 shadow-sm transition-all duration-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="h-8 w-8 rounded-lg border-blue-300 dark:border-neutral-800 hover:text-emerald-500 dark:hover:text-emerald-400 shadow-sm transition-all duration-100 disabled:opacity-30 disabled:cursor-not-allowed"
                           >
                             {isSavingNewItem ? (
-                              <Loader2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1 animate-spin" />
+                              <Loader2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin" />
                             ) : (
-                              <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1" />
+                              <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                             )}
                           </Button>
                         </div>

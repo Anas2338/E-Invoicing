@@ -35,6 +35,7 @@ interface InvoiceTableProps {
   onDelete?: (id: string) => void;
   validatingInvoiceId?: string | null;
   postingInvoiceId?: string | null;
+  deletingInvoiceId?: string | null;
   invoiceNumberFilter?: string;
   onInvoiceNumberFilterChange?: (value: string) => void;
   dateFromFilter?: string;
@@ -70,6 +71,7 @@ export function InvoiceTable({
   onDelete,
   validatingInvoiceId = null,
   postingInvoiceId = null,
+  deletingInvoiceId = null,
   invoiceNumberFilter = '',
   onInvoiceNumberFilterChange = () => {},
   dateFromFilter = '',
@@ -122,19 +124,19 @@ export function InvoiceTable({
   switch (status.toUpperCase()) {
     case 'DRAFT':
     case 'PENDING':
-      return 'px-2.5 py-0.5 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-blue-400 via-blue-500 to-blue-600 border border-blue-400/40 shadow-[0_5px_12px_-3px_rgba(59,130,246,0.4),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)]';
+      return 'px-1 lg:px-1.5 xl:px-2.5 py-0.5 text-[9px] lg:text-[10px] xl:text-xs font-black tracking-wider lg:tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-blue-400 via-blue-500 to-blue-600 border border-blue-400/40 shadow-[0_5px_12px_-3px_rgba(59,130,246,0.4),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)]';
     case 'VALIDATED':
     case 'TRANSFERRED':
-      return 'px-2.5 py-0.5 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-sky-400 via-sky-500 to-sky-600 border border-sky-400/40 shadow-[0_5px_12px_-3px_rgba(14,165,233,0.4),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)]';
+      return 'px-1 lg:px-1.5 xl:px-2.5 py-0.5 text-[9px] lg:text-[10px] xl:text-xs font-black tracking-wider lg:tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-sky-400 via-sky-500 to-sky-600 border border-sky-400/40 shadow-[0_5px_12px_-3px_rgba(14,165,233,0.4),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)]';
     case 'POSTED':
     case 'SUBMITTED':
-      return 'px-2.5 py-0.5 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-emerald-400 via-emerald-500 to-emerald-600 border border-emerald-400/40 shadow-[0_5px_12px_-3px_rgba(16,185,129,0.4),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)]';
+      return 'px-1 lg:px-1.5 xl:px-2.5 py-0.5 text-[9px] lg:text-[10px] xl:text-xs font-black tracking-wider lg:tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-emerald-400 via-emerald-500 to-emerald-600 border border-emerald-400/40 shadow-[0_5px_12px_-3px_rgba(16,185,129,0.4),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)]';
     case 'FAILED':
-      return 'px-2.5 py-0.5 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-rose-400 via-rose-500 to-rose-600 border border-rose-400/40 shadow-[0_5px_12px_-3px_rgba(244,63,94,0.4),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)]';
+      return 'px-1 lg:px-1.5 xl:px-2.5 py-0.5 text-[9px] lg:text-[10px] xl:text-xs font-black tracking-wider lg:tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-rose-400 via-rose-500 to-rose-600 border border-rose-400/40 shadow-[0_5px_12px_-3px_rgba(244,63,94,0.4),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)]';
     case 'EXPIRED':
-      return 'px-2.5 py-2 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-slate-400 via-slate-500 to-slate-600 border border-slate-400/40 shadow-[0_5px_12px_-3px_rgba(100,116,139,0.3),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)] transition-all duration-200 hover:brightness-110 active:scale-[0.97] cursor-pointer select-none';
+      return 'px-1 lg:px-1.5 xl:px-2.5 py-0.5 text-[9px] lg:text-[10px] xl:text-xs font-black tracking-wider lg:tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-slate-400 via-slate-500 to-slate-600 border border-slate-400/40 shadow-[0_5px_12px_-3px_rgba(100,116,139,0.3),inset_0_4px_6px_rgba(255,255,255,0.4),inset_0_-3px_6px_rgba(0,0,0,0.1)] transition-all duration-200 hover:brightness-110 active:scale-[0.97] cursor-pointer select-none';
     default:
-      return 'px-2.5 py-0.5 text-xs font-black tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-gray-400 to-gray-500';
+      return 'px-1 lg:px-1.5 xl:px-2.5 py-0.5 text-[9px] lg:text-[10px] xl:text-xs font-black tracking-wider lg:tracking-widest uppercase rounded-full text-white bg-gradient-to-b from-gray-400 to-gray-500';
   }
 };
 
@@ -410,7 +412,7 @@ export function InvoiceTable({
                       onClick={() => onView(invoice.id)}
                       className="flex-1 min-w-[80px] h-9 text-xs rounded-xl font-semibold border-slate-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-slate-700 dark:text-neutral-300 hover:bg-slate-50 dark:hover:bg-neutral-800"
                     >
-                      <Eye className="h-3.5 w-3.5 mr-1.5 opacity-80" />
+                      <Eye className="h-4 w-4 mr-1.5 opacity-80" />
                       View
                     </Button>
                   )}
@@ -423,9 +425,9 @@ export function InvoiceTable({
                       className="flex-1 min-w-[80px] h-9 text-xs rounded-xl font-semibold border-amber-200 text-amber-700 bg-amber-50/50 hover:bg-amber-50 dark:border-amber-500/30 dark:text-amber-400 dark:bg-amber-500/5 dark:hover:bg-amber-500/10"
                     >
                       {validatingInvoiceId === invoice.id ? (
-                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                        <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
                       ) : (
-                        <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
+                        <CheckCircle className="h-4 w-4 mr-1.5" />
                       )}
                       {validatingInvoiceId === invoice.id ? 'Validating...' : 'Validate'}
                     </Button>
@@ -439,9 +441,9 @@ export function InvoiceTable({
                       className="flex-1 min-w-[80px] h-9 text-xs rounded-xl font-semibold border-emerald-500/40 text-emerald-600 bg-emerald-50/40 hover:bg-emerald-500 hover:text-white dark:border-emerald-500/30 dark:text-emerald-400 dark:bg-emerald-500/5 dark:hover:bg-emerald-500 dark:hover:text-neutral-950 transition-all"
                     >
                       {validatingInvoiceId === invoice.id ? (
-                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                        <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
                       ) : (
-                        <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                        <RefreshCw className="h-4 w-4 mr-1.5" />
                       )}
                       {validatingInvoiceId === invoice.id ? 'Retrying...' : 'Retry'}
                     </Button>
@@ -455,9 +457,9 @@ export function InvoiceTable({
                       className="flex-1 min-w-[80px] h-9 text-xs rounded-xl font-semibold border-blue-200 text-blue-700 bg-blue-50/50 hover:bg-blue-50 dark:border-blue-500/30 dark:text-blue-400 dark:bg-blue-500/5 dark:hover:bg-blue-500/10"
                     >
                       {postingInvoiceId === invoice.id ? (
-                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                        <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
                       ) : (
-                        <Send className="h-3.5 w-3.5" />
+                        <Send className="h-4 w-4" />
                       )}
                       {postingInvoiceId === invoice.id ? 'Posting...' : 'Post'}
                     </Button>
@@ -477,10 +479,15 @@ export function InvoiceTable({
                       variant="outline"
                       size="sm"
                       onClick={() => onDelete(invoice.id)}
+                      disabled={deletingInvoiceId === invoice.id}
                       className="flex-1 min-w-[80px] h-9 text-xs rounded-xl font-semibold border-rose-100 text-rose-600 bg-rose-50/30 hover:bg-rose-50 dark:border-rose-950 dark:text-rose-400 dark:bg-rose-950/20 dark:hover:bg-rose-950/40"
                     >
-                      <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-                      Delete
+                      {deletingInvoiceId === invoice.id ? (
+                        <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4 mr-1.5" />
+                      )}
+                      {deletingInvoiceId === invoice.id ? 'Deleting...' : 'Delete'}
                     </Button>
                   )}
                 </div>
@@ -494,6 +501,8 @@ export function InvoiceTable({
 
       {/* Desktop Table View */}
       <div className="hidden lg:flex lg:flex-col lg:gap-2 h-full">
+        <div className="overflow-x-auto rounded-2xl flex-1 min-h-0">
+        <div className="min-w-[880px] flex flex-col gap-2 h-full">
 
         {/* Header wrapper — right-padding synced to body scrollbar */}
         <div style={{ paddingRight: scrollbarWidth }}>
@@ -503,27 +512,27 @@ export function InvoiceTable({
             {/* Column Headers */}
             <tr>
               {onSelectionChange && (
-                <th className="border-r-2 border-[#FFFFFF] w-[50px] px-3.5 pt-3.5 pb-2"></th>
+                <th className="border-r-2 border-[#FFFFFF] w-[4%] px-1 pt-3.5 pb-2"></th>
               )}
-              <th className="border-r-2 border-[#FFFFFF]  w-[125px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
-                Invoice Number
+              <th className="border-r-2 border-[#FFFFFF] w-[11%] px-2 py-2 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">
+                Invoice #
               </th>
-              <th className="border-r-2 border-[#FFFFFF]  w-[185px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
-                FBR Ref Number
+              <th className="border-r-2 border-[#FFFFFF] w-[16%] px-2 py-2 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">
+                FBR Ref
               </th>
-              <th className="border-r-2 border-[#FFFFFF]  w-[95px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+              <th className="border-r-2 border-[#FFFFFF] w-[8%] px-2 py-2 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">
                 Date
               </th>
-              <th className="border-r-2 border-[#FFFFFF]  w-[340px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+              <th className="border-r-2 border-[#FFFFFF] w-[29%] px-2 py-2 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">
                 Buyer Name
               </th>
-              <th className="border-r-2 border-[#FFFFFF]  w-[115px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+              <th className="border-r-2 border-[#FFFFFF] w-[10%] px-2 py-2 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">
                 Amount
               </th>
-              <th className="border-r-2 border-[#FFFFFF]  w-[100px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+              <th className="border-r-2 border-[#FFFFFF] w-[8%] px-2 py-2 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">
                 Status
               </th>
-              <th className=" w-[180px] px-3 py-3 text-center text-xs font-bold text-black uppercase tracking-wider align-middle">
+              <th className="w-[14%] px-2 py-2 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">
                 Actions
               </th>
             </tr>
@@ -531,13 +540,12 @@ export function InvoiceTable({
         </table>
 
         {/*table 2 heading*/}
-        {/* <table className="w-full table-fixed bg-[#FFFFFF] rounded-4xl flex-shrink-0 border-2 border-[#7c97f0] border-separate border-spacing-0"> */}
-        <table className="w-full table-fixed rounded-4xl flex-shrink-0">    
+        <table className="w-full table-fixed rounded-4xl flex-shrink-0">
             <thead>
               {/* Filter Inputs Row */}
               <tr>
                 {onSelectionChange && (
-                  <th scope="col" className="w-[50px] px-3.5 py-2">
+                  <th scope="col" className="w-[4%] px-1 py-2">
                     <Checkbox
                       checked={allSelectableSelected}
                       onCheckedChange={handleSelectAll}
@@ -546,7 +554,7 @@ export function InvoiceTable({
                     />
                   </th>
                 )}
-                <th scope="col" className="w-[125px] px-2 py-2">
+                <th scope="col" className="w-[11%] px-1 py-2">
                   <input
                     type="text"
                     placeholder="Filter ID..."
@@ -555,7 +563,7 @@ export function InvoiceTable({
                     className={filterInputClass}
                   />
                 </th>
-                <th scope="col" className="w-[185px] px-3 py-2">
+                <th scope="col" className="w-[16%] px-1 py-2">
                   <input
                     type="text"
                     placeholder="Filter FBR..."
@@ -564,7 +572,7 @@ export function InvoiceTable({
                     className={filterInputClass}
                   />
                 </th>
-                <th scope="col" className="w-[95px] px-3 py-2">
+                <th scope="col" className="w-[8%] px-1 py-2">
                   <div className="relative" ref={datePopoverRef}>
                     <button
                       type="button"
@@ -617,7 +625,7 @@ export function InvoiceTable({
                     )}
                   </div>
                 </th>
-                <th scope="col" className="w-[340px] px-3 py-2">
+                <th scope="col" className="w-[29%] px-1 py-2">
                   <input
                     type="text"
                     placeholder="Filter buyer..."
@@ -626,20 +634,20 @@ export function InvoiceTable({
                     className={filterInputClass}
                   />
                 </th>
-                <th scope="col" className="w-[115px] px-3 py-2">
+                <th scope="col" className="w-[10%] px-1 py-2">
                   <input
                     type="text"
-                    placeholder="Filter amount..."
+                    placeholder="Filter amt..."
                     value={amountFilter}
                     onChange={(e) => onAmountFilterChange(e.target.value)}
                     className={filterInputClass}
                   />
                 </th>
-                <th scope="col" className="w-[100px] px-3 py-2">
+                <th scope="col" className="w-[8%] px-1 py-2">
                   <Select value={statusFilter} onValueChange={onStatusFilterChange}>
                     <SelectTrigger
-                      className="text-xs text-slate-400"
-                      style={{ height: '32px', padding: '4px 10px', borderRadius: '8px', fontSize: '12px', borderWidth: '1px', color: '#94a3b8', borderColor: '#2563eb' }}
+                      className="text-[10px] text-slate-400"
+                      style={{ height: '32px', padding: '2px 6px', borderRadius: '8px', fontSize: '10px', borderWidth: '1px', color: '#94a3b8', borderColor: '#2563eb' }}
                     >
                       <SelectValue placeholder="All" />
                     </SelectTrigger>
@@ -652,7 +660,7 @@ export function InvoiceTable({
                     </SelectContent>
                   </Select>
                 </th>
-                <th scope="col" className="w-[180px] pl-2 pr-0 py-2">
+                <th scope="col" className="w-[14%] pl-1 pr-0 py-2">
                   {activeFilterCount > 0 && (
                     <button
                       type="button"
@@ -665,7 +673,7 @@ export function InvoiceTable({
                         onStatusFilterChange('all');
                         onFbrRefFilterChange('');
                       }}
-                      className="text-xs font-semibold text-red-500 hover:text-red-600 transition-colors px-2 py-1"
+                      className="text-[10px] font-semibold text-red-500 hover:text-red-600 transition-colors px-1 py-1"
                     >
                       Clear
                     </button>
@@ -678,9 +686,9 @@ export function InvoiceTable({
         </div>{/* end header wrapper */}
 
         {/*table 3 body — scrollable*/}
-        <div ref={bodyScrollRef} className="min-h-0 overflow-y-auto overflow-x-hidden rounded-4xl bg-[#e7eaf1] border-2 border-blue-200">
+        <div ref={bodyScrollRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden rounded-4xl bg-blue-50 border-2 border-blue-600">
         <table className="w-full table-fixed border-separate border-spacing-0">
-          <tbody className='divide-y divide-[#FFFFFF]'>
+          <tbody className=' border-1 border-blue-200'>
             {invoices.length === 0 && (
               <tr>
                 <td colSpan={onSelectionChange ? 8 : 7} className="py-0">
@@ -695,16 +703,16 @@ export function InvoiceTable({
               const isSelected = selectedInvoices.has(invoice.id);
 
               return (
-                <tr 
-                  key={invoice.id} 
+                <tr
+                  key={invoice.id}
                   className={`group transition-colors duration-150 ${
-                    isSelected 
-                      ? 'bg-emerald-50/20' 
+                    isSelected
+                      ? 'bg-emerald-50/20'
                       : 'hover:bg-slate-50/60'
                   }`}
                 >
                   {onSelectionChange && (
-                    <td className="border-r-2 border-b-1 border-[#FFFFFF] px-3 py-3 align-middle w-[50px]">
+                    <td className="border-r-2 border-b-1 border-blue-200 px-1 py-4 align-middle w-[4%]">
                       <Checkbox
                         checked={isSelected}
                         onCheckedChange={(checked) => handleSelectInvoice(invoice.id, checked as boolean)}
@@ -714,47 +722,47 @@ export function InvoiceTable({
                       />
                     </td>
                   )}
-                  <td className="px-3 py-3 align-middle w-[125px] border-r-2 border-b-1 border-[#FFFFFF] ">
-                    <div className=" text-sm font-medium text-slate-700  break-all">{invoice.invoiceNumber}</div>
-                    <div className="text-sm font-medium text-slate-700  mt-0.5">{invoice.invoiceType}</div>
+                  <td className="px-1 py-4 align-middle w-[11%] border-r-2 border-b-1 border-blue-200">
+                    <div className="text-[11px] lg:text-[13px] xl:text-sm font-medium text-slate-700 truncate">{invoice.invoiceNumber}</div>
+                    <div className="text-[9px] lg:text-[10px] xl:text-xs font-medium text-slate-500 truncate mt-0.5">{invoice.invoiceType}</div>
                   </td>
-                  <td className="px-2 py-3 align-middle w-[185px] border-r-2 border-[#FFFFFF] border-b-1">
-                    <div className="text-sm font-medium text-slate-700 dark:text-neutral-300">
+                  <td className="px-1 py-4 align-middle w-[16%] border-r-2 border-blue-200 border-b-1">
+                    <div className="text-[11px] lg:text-[13px] xl:text-sm font-medium text-slate-700 truncate">
                       {invoice.fbrReferenceNumber || '—'}
                     </div>
                   </td>
-                  <td className="border-r-2 border-[#FFFFFF] border-b-1 w-[95px] px-2 py-3 text-sm font-medium text-slate-700 whitespace-nowrap align-middle">
+                  <td className="px-1 py-4 w-[8%] border-r-2 border-blue-200 border-b-1 text-[10px] lg:text-[11px] xl:text-[13px] font-medium text-slate-700 whitespace-nowrap text-center align-middle">
                     {new Date(invoice.date).toLocaleDateString('en-GB', {
                       timeZone: 'Asia/Karachi'
                     })}
                   </td>
-                  <td className="border-r-2 border-b-1 border-[#FFFFFF] px-2 py-3 w-[340px]">
-                    <div className="text-sm font-medium text-slate-700 text-left">{invoice.buyerName}</div>
+                  <td className="px-2 py-4 w-[29%] border-r-2 border-b-1 border-blue-200">
+                    <div className="text-[11px] lg:text-[13px] xl:text-sm font-medium text-slate-700 truncate">{invoice.buyerName}</div>
                   </td>
-                  <td className="border-r-2 border-b-1 border-[#FFFFFF] px-2 py-3 align-middle w-[115px]">
-                    <div className="text-sm font-medium text-slate-700 dark:text-neutral-300 whitespace-nowrap text-right">
+                  <td className="px-1 py-4 w-[10%] border-r-2 border-b-1 border-blue-200 align-middle">
+                    <div className="text-[11px] lg:text-[13px] xl:text-sm font-medium text-slate-700 whitespace-nowrap text-right">
                        {invoice.totalAmount.toLocaleString('en-US', {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2
                       })}
                     </div>
                   </td>
-                  <td className="border-r-2 border-b-1 border-[#FFFFFF] px-2 py-0.5 text-center w-[100px]">
+                  <td className="px-1 py-4 text-center w-[8%] border-r-2 border-b-1 border-blue-200">
                     <Badge className={`${getStatusColor(invoice.status)}`}>
                       {formatStatus(invoice.status)}
                     </Badge>
                   </td>
-                  <td className="pl-2 pr-0 py-3 text-center align-middle w-[180px] border-b-1 border-[#FFFFFF]">
-                    <div className="flex items-center justify-center gap-2">
+                  <td className="pl-1 pr-0 py-4 text-center align-middle w-[14%] border-b-1 border-blue-200">
+                    <div className="flex items-center justify-center gap-1">
                       {onView && (
                         <Button
                           variant="outline"
                           size="icon"
                           onClick={() => onView(invoice.id)}
-                          className="h-8 w-8 rounded-lg border-slate-200 dark:border-neutral-800 hover:text-emerald-500 dark:hover:text-emerald-400 shadow-sm transition-all duration-100"
+                          className="h-10 w-10 rounded-lg border-slate-200 dark:border-neutral-800 hover:text-emerald-500 dark:hover:text-emerald-400 shadow-sm transition-all duration-100"
                           title="View"
                         >
-                          <Eye className="h-3.5 w-3.5" />
+                          <Eye className="h-4 w-4" />
                         </Button>
                       )}
                       {onValidate && invoice.status === 'DRAFT' && (
@@ -763,13 +771,13 @@ export function InvoiceTable({
                           size="icon"
                           onClick={() => onValidate(invoice.id)}
                           disabled={validatingInvoiceId === invoice.id}
-                          className="h-8 w-8 rounded-lg border-amber-200 text-amber-600 bg-amber-50/30 hover:bg-amber-50 dark:border-amber-500/30 dark:text-amber-400 dark:bg-amber-500/5 dark:hover:bg-amber-500/20 shadow-sm"
+                          className="h-10 w-10 rounded-lg border-amber-200 text-amber-600 bg-amber-50/30 hover:bg-amber-50 dark:border-amber-500/30 dark:text-amber-400 dark:bg-amber-500/5 dark:hover:bg-amber-500/20 shadow-sm"
                           title="Validate"
                         >
                           {validatingInvoiceId === invoice.id ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <Loader2 className="h-4 w-4 animate-spin" />
                           ) : (
-                            <CheckCircle className="h-3.5 w-3.5" />
+                            <CheckCircle className="h-4 w-4" />
                           )}
                         </Button>
                       )}
@@ -779,13 +787,13 @@ export function InvoiceTable({
                           size="icon"
                           onClick={() => onValidate(invoice.id)}
                           disabled={validatingInvoiceId === invoice.id}
-                          className="h-8 w-8 rounded-lg border-emerald-500/30 text-emerald-600 bg-emerald-50/20 hover:bg-emerald-500 hover:text-white dark:border-emerald-500/30 dark:text-emerald-400 dark:bg-emerald-500/5 dark:hover:bg-emerald-500 dark:hover:text-neutral-950 shadow-sm transition-all"
+                          className="h-10 w-10 rounded-lg border-emerald-500/30 text-emerald-600 bg-emerald-50/20 hover:bg-emerald-500 hover:text-white dark:border-emerald-500/30 dark:text-emerald-400 dark:bg-emerald-500/5 dark:hover:bg-emerald-500 dark:hover:text-neutral-950 shadow-sm transition-all"
                           title="Retry"
                         >
                           {validatingInvoiceId === invoice.id ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <Loader2 className="h-4 w-4 animate-spin" />
                           ) : (
-                            <RefreshCw className="h-3.5 w-3.5" />
+                            <RefreshCw className="h-4 w-4" />
                           )}
                         </Button>
                       )}
@@ -795,13 +803,13 @@ export function InvoiceTable({
                           size="icon"
                           onClick={() => onPost(invoice.id)}
                           disabled={postingInvoiceId === invoice.id}
-                          className="h-8 w-8 rounded-lg border-blue-200 text-blue-600 bg-blue-50/30 hover:bg-blue-50 dark:border-blue-500/30 dark:text-blue-400 dark:bg-blue-500/5 dark:hover:bg-blue-500/20 shadow-sm"
+                          className="h-10 w-10 rounded-lg border-blue-200 text-blue-600 bg-blue-50/30 hover:bg-blue-50 dark:border-blue-500/30 dark:text-blue-400 dark:bg-blue-500/5 dark:hover:bg-blue-500/20 shadow-sm"
                           title="Post to FBR"
                         >
                           {postingInvoiceId === invoice.id ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <Loader2 className="h-4 w-4 animate-spin" />
                           ) : (
-                            <Send className="h-3.5 w-3.5" />
+                            <Send className="h-4 w-4" />
                           )}
                         </Button>
                       )}
@@ -812,7 +820,7 @@ export function InvoiceTable({
                           status={invoice.status}
                           variant="outline"
                           size="icon"
-                          className="h-8 w-8 rounded-lg border-slate-200 dark:border-neutral-800 shadow-sm"
+                          className="h-10 w-10 rounded-lg border-slate-200 dark:border-neutral-800 shadow-sm"
                         />
                       )}
                       {onDelete && canDelete && (
@@ -820,10 +828,15 @@ export function InvoiceTable({
                           variant="outline"
                           size="icon"
                           onClick={() => onDelete(invoice.id)}
-                          className="h-8 w-8 rounded-lg border-rose-100 text-rose-500 hover:text-rose-600 bg-rose-50/20 dark:border-rose-950/60 dark:text-rose-400 dark:bg-rose-950/20 dark:hover:bg-rose-900/40 shadow-sm transition-all"
+                          disabled={deletingInvoiceId === invoice.id}
+                          className="h-10 w-10 rounded-lg border-rose-100 text-rose-500 hover:text-rose-600 bg-rose-50/20 dark:border-rose-950/60 dark:text-rose-400 dark:bg-rose-950/20 dark:hover:bg-rose-900/40 shadow-sm transition-all"
                           title="Delete"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          {deletingInvoiceId === invoice.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
                         </Button>
                       )}
                     </div>
@@ -833,6 +846,8 @@ export function InvoiceTable({
             })}
           </tbody>
         </table>
+        </div>
+        </div>
         </div>
       </div>
     </>

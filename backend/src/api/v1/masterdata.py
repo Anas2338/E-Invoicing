@@ -4,7 +4,7 @@ Provides dropdown options for invoice forms based on FBR specifications.
 Fetches data from local database (synced daily from FBR APIs).
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from typing import List, Dict, Any, Optional
 from uuid import UUID
 import httpx
@@ -18,7 +18,9 @@ from src.models.fbr_master_data import (
     FBRUOM,
     FBRHSCode,
     FBRTransactionType,
-    FBRInvoiceType
+    FBRInvoiceType,
+    FBRUserHSCodeUOM,
+    FBRTaxRate
 )
 
 router = APIRouter()
@@ -93,21 +95,35 @@ async def get_user_fbr_token(db, user_id: str, environment: str = "SANDBOX") -> 
 
         user = db.query(User).filter(User.id == UUID(user_id)).first()
         if not user:
+            logger.warning(f"User {user_id} not found in database")
             return None
 
         encrypted_token = None
         if environment == "SANDBOX":
             encrypted_token = user.fbr_sandbox_token or user.fbr_access_token
+            # Fall back to production token if sandbox is not configured
+            if not encrypted_token:
+                encrypted_token = user.fbr_production_token
         else:
             encrypted_token = user.fbr_production_token or user.fbr_access_token
+            # Fall back to sandbox token if production is not configured
+            if not encrypted_token:
+                encrypted_token = user.fbr_sandbox_token
 
         if not encrypted_token:
+            logger.warning(
+                f"User {user_id} ({user.email}) has no FBR token configured "
+                f"(sandbox={'set' if user.fbr_sandbox_token else 'empty'}, "
+                f"production={'set' if user.fbr_production_token else 'empty'}, "
+                f"legacy={'set' if user.fbr_access_token else 'empty'})"
+            )
             return None
 
         # Decrypt the token before returning
         encryption_service = get_encryption_service()
         try:
             decrypted_token = encryption_service.decrypt(encrypted_token)
+            logger.info(f"Successfully decrypted FBR token for user {user.email}")
             return decrypted_token
         except Exception as decrypt_error:
             logger.error(f"Failed to decrypt FBR token for user {user_id}: {decrypt_error}")
@@ -208,12 +224,72 @@ async def get_tax_rates(
     user_id: str = Depends(require_authentication)
 ):
     """
-    Get list of FBR-compliant tax rates.
-    Note: FBR doesn't have a direct API for tax rates, using fallback values.
+    Get list of FBR-compliant tax rates from local database.
+    Falls back to hardcoded values if no synced rates exist.
 
     Returns:
         List of tax rates with rate and name
     """
+    try:
+        # Get all unique rates from the synced tax rates table
+        rates = db.query(FBRTaxRate).all()
+        if rates:
+            # Deduplicate by rate_value while preserving order
+            seen = set()
+            result = []
+            for r in rates:
+                if r.rate_value not in seen:
+                    seen.add(r.rate_value)
+                    result.append({"rate": r.rate_value, "name": r.rate_desc})
+            return result
+    except Exception as e:
+        logger.error(f"Error fetching tax rates from database: {str(e)}")
+
+    return FALLBACK_TAX_RATES
+
+
+@router.get("/tax-rates/by-transaction-type", response_model=List[Dict[str, str]])
+async def get_tax_rates_by_transaction_type(
+    transaction_type_code: str,
+    db = Depends(get_database_session),
+    user_id: str = Depends(require_authentication)
+):
+    """
+    Get tax rates filtered by transaction type from local database.
+
+    This is system-wide shared data (no user_id filter) — synced by admin.
+    Falls back to hardcoded values if no rates exist for this transaction type.
+
+    Args:
+        transaction_type_code: FBR transaction type code (e.g., "01", "02")
+
+    Returns:
+        List of tax rates applicable to this transaction type
+    """
+    try:
+        rates = db.query(FBRTaxRate).filter(
+            FBRTaxRate.transaction_type_code == transaction_type_code.strip()
+        ).all()
+
+        if rates:
+            result = []
+            seen = set()
+            for r in rates:
+                if r.rate_value not in seen:
+                    seen.add(r.rate_value)
+                    result.append({"rate": r.rate_value, "name": r.rate_desc})
+            logger.info(
+                f"Returning {len(result)} tax rates for transaction type {transaction_type_code}"
+            )
+            return result
+    except Exception as e:
+        logger.error(
+            f"Error fetching tax rates for transaction type {transaction_type_code}: {str(e)}"
+        )
+
+    logger.info(
+        f"No synced tax rates for transaction type {transaction_type_code}, using fallback"
+    )
     return FALLBACK_TAX_RATES
 
 
@@ -308,20 +384,26 @@ async def validate_hs_code(
 
 @router.get("/hs-codes", response_model=List[Dict[str, str]])
 async def get_hs_codes(
+    search: Optional[str] = Query(None, description="Filter HS codes by code prefix (case-insensitive)"),
+    limit: int = Query(50, ge=1, le=200, description="Max results to return"),
     db = Depends(get_database_session),
     user_id: str = Depends(require_authentication),
     environment: str = "SANDBOX"
 ):
     """
     Get list of HS codes from local database.
+    Optionally filter by a search prefix for autocomplete.
 
     Returns:
         List of HS codes with code and description
     """
     try:
-        hs_codes = db.query(FBRHSCode).all()
+        query = db.query(FBRHSCode)
+        if search:
+            query = query.filter(FBRHSCode.code.ilike(f"{search.strip()}%"))
+        hs_codes = query.order_by(FBRHSCode.code).limit(limit).all()
         result = [{"code": h.code, "description": h.description} for h in hs_codes]
-        logger.info(f"Returning {len(result)} HS codes from database")
+        logger.info(f"Returning {len(result)} HS codes from database (search={search})")
         return result
     except Exception as e:
         logger.error(f"Error fetching HS codes from database: {str(e)}")
@@ -507,6 +589,97 @@ async def get_hs_uom(
     return result
 
 
+@router.get("/hs-uom/cached", response_model=List[Dict[str, Any]])
+async def get_hs_uom_cached(
+    hs_code: str,
+    annexure_id: int = 3,
+    db = Depends(get_database_session),
+    user_id: str = Depends(require_authentication),
+    environment: str = "SANDBOX"
+):
+    """
+    Get valid UOM options for a specific HS code with user-scoped local caching.
+
+    First checks the user's local cache (fbr_user_hs_code_uom). If found,
+    returns immediately. Otherwise fetches from FBR API using the user's
+    own FBR token, caches the results, and returns them.
+
+    Data is scoped per-user — User A cannot see User B's cached HS UOMs.
+
+    Args:
+        hs_code: HS code (e.g., "5904.9000")
+        annexure_id: Sales annexure ID (default: 3)
+    """
+    try:
+        from uuid import UUID
+
+        user_uuid = UUID(user_id)
+
+        # Step 1: Check local cache for this user + HS code
+        cached = db.query(FBRUserHSCodeUOM).filter(
+            FBRUserHSCodeUOM.hs_code == hs_code.strip(),
+            FBRUserHSCodeUOM.user_id == user_uuid
+        ).all()
+
+        if cached:
+            logger.info(
+                f"Returning {len(cached)} cached UOMs for HS code {hs_code} (user {user_id})"
+            )
+            return [{"code": c.uom_id, "name": c.uom_description} for c in cached]
+
+        # Step 2: Not cached — fetch from FBR using user's own token
+        token = await get_user_fbr_token(db, user_id, environment)
+
+        if not token:
+            logger.warning(
+                f"No FBR token for user {user_id}, cannot fetch HS-UOM for {hs_code}"
+            )
+            return []
+
+        endpoint = f"/pdi/v2/HS_UOM?hs_code={hs_code.strip()}&annexure_id={annexure_id}"
+        fbr_data = await fetch_from_fbr(endpoint, token, environment)
+
+        if not fbr_data:
+            logger.warning(f"No FBR HS-UOM data for HS code {hs_code}")
+            return []
+
+        # Step 3: Save to local cache and return
+        result = []
+        for item in fbr_data:
+            uom_id = str(item.get("uoM_ID", ""))
+            if uom_id:
+                result.append({
+                    "code": uom_id,
+                    "name": item.get("description", "")
+                })
+                try:
+                    cache_entry = FBRUserHSCodeUOM(
+                        user_id=user_uuid,
+                        hs_code=hs_code.strip(),
+                        uom_id=uom_id,
+                        uom_description=item.get("description", "")
+                    )
+                    db.add(cache_entry)
+                except Exception as insert_err:
+                    logger.warning(f"Could not cache HS-UOM entry: {insert_err}")
+
+        if result:
+            try:
+                db.commit()
+            except Exception as commit_err:
+                logger.warning(f"Could not commit HS-UOM cache: {commit_err}")
+                db.rollback()
+
+        logger.info(
+            f"Fetched and cached {len(result)} UOM options for HS code {hs_code} (user {user_id})"
+        )
+        return result
+
+    except Exception as e:
+        logger.error(f"Error in get_hs_uom_cached for HS code {hs_code}: {str(e)}")
+        return []
+
+
 @router.get("/sro-item-details", response_model=List[Dict[str, Any]])
 async def get_sro_item_details(
     date: str,
@@ -565,10 +738,24 @@ async def get_all_master_data(
         invoice_types = db.query(FBRInvoiceType).all()
         transaction_types = db.query(FBRTransactionType).all()
 
+        # Tax rates: pull from synced DB, fallback to hardcoded
+        tax_rates = FALLBACK_TAX_RATES
+        try:
+            db_rates = db.query(FBRTaxRate).all()
+            if db_rates:
+                seen = set()
+                tax_rates = []
+                for r in db_rates:
+                    if r.rate_value not in seen:
+                        seen.add(r.rate_value)
+                        tax_rates.append({"rate": r.rate_value, "name": r.rate_desc})
+        except Exception:
+            pass  # Table may not exist yet, use fallback
+
         return {
             "provinces": [{"code": p.code, "name": p.name} for p in provinces],
             "uom": [{"code": u.code, "name": u.name} for u in uom],
-            "tax_rates": FALLBACK_TAX_RATES,
+            "tax_rates": tax_rates,
             "sale_types": FALLBACK_SALE_TYPES,
             "registration_types": FALLBACK_REGISTRATION_TYPES,
             "invoice_types": [{"code": i.code, "name": i.name} for i in invoice_types],

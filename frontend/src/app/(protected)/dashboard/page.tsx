@@ -286,11 +286,11 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="h-full flex flex-col space-y-2 sm:space-y-3 lg:space-y-4 pt-1 pb-2 px-3 sm:px-4 md:px-6 lg:px-8 w-full max-w-[1600px] mx-auto overflow-auto lg:overflow-hidden">
+    <div className="h-full flex flex-col space-y-2 sm:space-y-3 lg:space-y-4 pt-1 pb-2 px-3 sm:px-4 md:px-6 lg:px-8 w-full max-w-[1600px] mx-auto overflow-auto">
 
       {/* SECTION 1: Responsive Grid Setup for Actions & Gateways */}
       <div className="flex-shrink-0">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-5 xl:grid-cols-6 gap-3">
 
           {/* Sale Invoice */}
           <div className="relative group h-28 sm:h-32 lg:h-36 p-[1.5px] rounded-2xl sm:rounded-3xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(37,99,235,0.5)] focus-within:-translate-y-1 focus-within:shadow-[0_0_30px_rgba(37,99,235,0.5)]">
@@ -351,19 +351,19 @@ export default function DashboardPage() {
           </div>
 
           {/* Credentials & Dynamic Account Settings Card */}
-          <div className="relative group sm:col-span-2 md:col-span-2 lg:col-span-4 xl:col-span-2 h-28 sm:h-32 lg:h-36 p-[1.5px] rounded-2xl sm:rounded-3xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_35px_rgba(0,128,96,0.35)] focus-within:-translate-y-1 focus-within:shadow-[0_0_35px_rgba(0,128,96,0.35)]">
+          <div className="relative group sm:col-span-2 md:col-span-2 lg:col-span-1 xl:col-span-2 h-28 sm:h-32 lg:h-36 p-[1.5px] rounded-2xl sm:rounded-3xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_35px_rgba(0,128,96,0.35)] focus-within:-translate-y-1 focus-within:shadow-[0_0_35px_rgba(0,128,96,0.35)]">
             <div className="absolute inset-0 bg-gradient-to-r from-[#008060] via-[#00a876] to-[#3f51b5] opacity-50 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-300" />
             <div className="relative h-full w-full flex flex-col rounded-[22px] bg-[#008060] dark:bg-[#161616]/95 backdrop-blur-md transition-colors">
-              <div className="flex-1 flex flex-col items-center justify-center gap-1 px-5 z-10 text-center">
+              <div className="flex-1 flex flex-col items-center justify-center gap-0.5 lg:gap-0.5 xl:gap-1 px-3 lg:px-2 xl:px-5 z-10 text-center">
                 {fbrBusinessName ? (
-                  <span className="text-base font-black tracking-wide text-white dark:text-neutral-50 truncate max-w-full drop-shadow-sm">
+                  <span className="text-[11px] lg:text-[13px] xl:text-base font-black tracking-wide text-white dark:text-neutral-50 truncate max-w-full drop-shadow-sm leading-tight">
                     {fbrBusinessName.toUpperCase()}
                   </span>
                 ) : (
-                  <span className="text-base font-bold italic text-neutral-400 dark:text-neutral-500">No active gateway name</span>
+                  <span className="text-[11px] lg:text-[11px] xl:text-base font-bold italic text-neutral-400 dark:text-neutral-500">No gateway name</span>
                 )}
                 {fbrNtn && (
-                  <span className="text-xs lg:text-sm font-mono font-black text-[#FFFFFF] dark:text-[#00a876] bg-[#008060]/10 dark:bg-[#00a876]/10 border-2 border-[#008060]/20 dark:border-[#00a876]/20 px-2 sm:px-3 py-0.5 rounded-full shadow-inner tracking-wider">
+                  <span className="text-[10px] lg:text-[12px] xl:text-xs font-mono font-black text-[#FFFFFF] dark:text-[#00a876] bg-[#008060]/10 dark:bg-[#00a876]/10 border border-[#008060]/20 dark:border-[#00a876]/20 px-1.5 lg:px-1.5 xl:px-3 py-0.5 rounded-full shadow-inner tracking-wider">
                     NTN: {fbrNtn}
                   </span>
                 )}
@@ -371,16 +371,16 @@ export default function DashboardPage() {
               <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-neutral-200 dark:via-neutral-800 to-transparent" />
 
               {/* Dynamic Action Trigger Zone */}
-              <div className="h-10 sm:h-12 lg:h-14 flex overflow-hidden rounded-b-[22px]">
+              <div className="h-10 sm:h-12 lg:h-10 xl:h-14 flex overflow-hidden rounded-b-[22px]">
                 <button
                   onClick={() => router.push('/settings')}
-                  className="flex items-center justify-center gap-1.5 sm:gap-2 lg:gap-3 flex-1 bg-gradient-to-b from-neutral-50/50 to-neutral-100/80 dark:from-neutral-900/40 dark:to-neutral-900/90 border-t border-neutral-100 dark:border-neutral-800/50 transition-all duration-300 cursor-pointer px-3 sm:px-4 group/btn focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-1 focus-visible:ring-offset-[#008060]"
+                  className="flex items-center justify-center gap-1 lg:gap-1 xl:gap-3 flex-1 bg-gradient-to-b from-neutral-50/50 to-neutral-100/80 dark:from-neutral-900/40 dark:to-neutral-900/90 border-t border-neutral-100 dark:border-neutral-800/50 transition-all duration-300 cursor-pointer px-2 lg:px-1 xl:px-4 group/btn focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-1 focus-visible:ring-offset-[#008060]"
                 >
-                  <div className="relative h-6 w-6 lg:h-7 lg:w-7 rounded-lg lg:rounded-xl bg-gradient-to-br from-[#008060] to-[#00a876] flex items-center justify-center transform transition-all duration-500 shadow-md shadow-emerald-600/20">
-                    <div className="absolute inset-0 rounded-lg lg:rounded-xl bg-emerald-400/40 animate-pulse opacity-0 group-hover/btn:opacity-100 group-focus-visible/btn:opacity-100 transition-opacity duration-300 scale-125" />
-                    <Settings className="h-3.5 w-3.5 lg:h-4 lg:w-4 text-white relative z-10" />
+                  <div className="relative h-5 w-5 lg:h-5 lg:w-5 xl:h-7 xl:w-7 rounded-lg lg:rounded-lg xl:rounded-xl bg-gradient-to-br from-[#008060] to-[#00a876] flex items-center justify-center transform transition-all duration-500 shadow-md shadow-emerald-600/20">
+                    <div className="absolute inset-0 rounded-lg lg:rounded-lg xl:rounded-xl bg-emerald-400/40 animate-pulse opacity-0 group-hover/btn:opacity-100 group-focus-visible/btn:opacity-100 transition-opacity duration-300 scale-125" />
+                    <Settings className="h-3 w-3 lg:h-3 lg:w-3 xl:h-4 xl:w-4 text-white relative z-10" />
                   </div>
-                  <span className="text-xs lg:text-sm font-black tracking-tight text-neutral-800 dark:text-neutral-200 transition-colors duration-200">
+                  <span className="text-[10px] lg:text-[12px] xl:text-xs font-black tracking-tight text-neutral-800 dark:text-neutral-200 transition-colors duration-200">
                     Account Settings
                   </span>
                 </button>
@@ -434,7 +434,7 @@ export default function DashboardPage() {
 
         
 
-        <div className="flex-1 min-h-0 overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-auto">
           {recentInvoices.length > 0 ? (
             /* 🌟 Added light blue heading classes with explicit text colors for both theme layers */
             <RecentInvoices
