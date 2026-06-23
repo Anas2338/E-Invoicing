@@ -210,6 +210,10 @@ export function SaleInvoiceForm({
   const [isValidated, setIsValidated] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Form reset state — incrementing formKey triggers re-fetch of profile & invoice number
+  const [formKey, setFormKey] = useState(0);
+  const [pendingReset, setPendingReset] = useState(false);
+
   // Validation/Post result dialog
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogData, setDialogData] = useState<{
@@ -338,7 +342,7 @@ export function SaleInvoiceForm({
     };
 
     fetchUserProfile();
-  }, [isEditMode, masterData]);
+  }, [isEditMode, masterData, formKey]);
 
   // Auto-generate invoice number (only in create mode)
   useEffect(() => {
@@ -1485,6 +1489,7 @@ export function SaleInvoiceForm({
       const postResponse = await api.invoices.post(savedInvoiceId);
 
       if (postResponse.success) {
+        setPendingReset(true);
         toast.success(`Invoice posted successfully! FBR Number: ${postResponse.fbr_invoice_number || 'N/A'}`);
       }
 
@@ -1516,6 +1521,42 @@ export function SaleInvoiceForm({
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     handleValidate();
+  };
+
+  /** Clear the entire form after a successful post so it's ready for a new invoice */
+  const clearForm = () => {
+    setInvoiceNo('');
+    setInvoiceType('Sale Invoice');
+    setInvoiceDate(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' }));
+    setInvoiceRefNo('');
+    setScenarioId('SN001');
+    setTransactionTypeId('');
+    setSellerNTNCNIC('');
+    setSellerBusinessName('');
+    setSellerProvince('');
+    setSellerProvinceCode('');
+    setSellerAddress('');
+    setBuyerNTNCNIC('');
+    setBuyerBusinessName('');
+    setBuyerProvince('');
+    setBuyerProvinceCode('');
+    setBuyerAddress('');
+    setBuyerRegistrationType('Registered');
+    setItems([]);
+    setSavedInvoiceId(null);
+    setIsValidated(false);
+    setFieldErrors(new Set());
+    setManualFurtherTax(new Set());
+    setSelectedSavedItems({});
+    setBuyerVerificationMessage(null);
+    setRawQuantity('');
+    setRawItemRate('');
+    setValueExclTaxFocused(false);
+    setFocusedFields(new Set());
+    // Don't reset environment — it's auto-set from credentials
+    // Trigger re-fetch of profile (seller info) and invoice number
+    setPendingReset(false);
+    setFormKey(prev => prev + 1);
   };
 
   return (
@@ -1744,7 +1785,7 @@ export function SaleInvoiceForm({
               {/* <CardTitle>Buyer Information</CardTitle> */}
             {/* </CardHeader> */}
             <CardContent>
-              <div className='flex gap-2 xl:flex-nowrap xl:gap-0 xl:justify-between px-2 mb-2'>
+              <div className='flex gap-2 flex-wrap md:flex-nowrap xl:gap-0 xl:justify-between px-2 mb-2'>
                 {/* Buyer Business Name */}
                 <div className="relative w-full sm:w-[48%] md:w-[48%] xl:w-[490px]">
                   <Label className='pl-3 text-[14px] font-bold' htmlFor="buyerBusinessName">Business Name *</Label>
@@ -3103,7 +3144,12 @@ export function SaleInvoiceForm({
       {/* Validation/Post Result Dialog */}
       <ValidationResultDialog
         isOpen={dialogOpen}
-        onClose={() => setDialogOpen(false)}
+        onClose={() => {
+          setDialogOpen(false);
+          if (pendingReset) {
+            clearForm();
+          }
+        }}
         success={dialogData.success}
         title={dialogData.title}
         message={dialogData.message}

@@ -103,6 +103,8 @@ class FBRService:
                 response.raise_for_status()
 
                 uom_data = response.json()
+                if uom_data is None:
+                    uom_data = []
 
                 # Build mapping: code -> description
                 uom_mapping = {}

@@ -758,13 +758,20 @@ async def upload_saved_products(
                     continue
 
                 # Validate required fields
-                item_code = str(row['item_code']).strip()
-                item_name = str(row['item_name']).strip()
-                hs_code_input = str(row['hs_code']).strip()
-                product_description = str(row['product_description']).strip()
-                default_uom_input = str(row['default_uom']).strip()
-                default_rate = str(row['default_rate']).strip()
-                transaction_type_input = str(row['transaction_type']).strip()
+                # Cleanly convert Excel values — Pandas reads numbers as float (e.g. 19 -> 19.0)
+                def _clean_excel_str(raw):
+                    val = raw
+                    if isinstance(val, float) and val == int(val):
+                        val = int(val)
+                    return str(val).strip()
+
+                item_code = _clean_excel_str(row['item_code'])
+                item_name = _clean_excel_str(row['item_name'])
+                hs_code_input = _clean_excel_str(row['hs_code'])
+                product_description = _clean_excel_str(row['product_description'])
+                default_uom_input = _clean_excel_str(row['default_uom'])
+                default_rate = _clean_excel_str(row['default_rate'])
+                transaction_type_input = _clean_excel_str(row['transaction_type'])
 
                 if not all([item_code, item_name, hs_code_input, product_description, default_uom_input, default_rate, transaction_type_input]):
                     errors.append(f"Row {index + 2}: Missing required fields")
@@ -818,10 +825,13 @@ async def upload_saved_products(
                 sro_item_serial_no = None
 
                 if 'sro_schedule_no' in df.columns and not pd.isna(row['sro_schedule_no']):
-                    sro_schedule_no = str(row['sro_schedule_no']).strip()
+                    val = row['sro_schedule_no']
+                    if isinstance(val, float) and val == int(val):
+                        val = int(val)
+                    sro_schedule_no = str(val).strip()
 
                 if 'sro_item_serial_no' in df.columns and not pd.isna(row['sro_item_serial_no']):
-                    sro_item_serial_no = str(row['sro_item_serial_no']).strip()
+                    sro_item_serial_no = _clean_excel_str(row['sro_item_serial_no'])
 
                 # Create saved product
                 new_product = UserSavedProduct(
