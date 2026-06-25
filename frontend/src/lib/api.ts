@@ -149,6 +149,16 @@ export const api = {
         body: JSON.stringify(invoiceIds),
       });
     },
+
+    bulkPost: async (invoiceIds: string[], environment: string) => {
+      return fetchWithAuth('/fbr/bulk-post', {
+        method: 'POST',
+        body: JSON.stringify({
+          invoice_ids: invoiceIds,
+          environment: environment,
+        }),
+      });
+    },
   },
 
   // Dashboard endpoints

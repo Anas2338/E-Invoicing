@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { InvoiceTable } from '@/components/invoices/invoice-table';
 import { ValidationResultDialog } from '@/components/invoices/validation-result-dialog';
 import { api, ApiError } from '@/lib/api';
-import { Trash2, CheckCircle, RefreshCw, Printer, Loader2 } from 'lucide-react';
+import { Trash2, CheckCircle, RefreshCw, Printer, Loader2, Send } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 interface Invoice {
@@ -42,6 +42,7 @@ export default function InvoiceHistoryPage() {
   const [selectedInvoices, setSelectedInvoices] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [bulkValidating, setBulkValidating] = useState(false);
+  const [bulkPosting, setBulkPosting] = useState(false);
   const [bulkPrinting, setBulkPrinting] = useState(false);
   const [validatingInvoiceId, setValidatingInvoiceId] = useState<string | null>(null);
   const [postingInvoiceId, setPostingInvoiceId] = useState<string | null>(null);
@@ -445,6 +446,59 @@ export default function InvoiceHistoryPage() {
     }
   };
 
+  const handleBulkPost = async () => {
+    if (selectedInvoices.size === 0) return;
+
+    // Only post VALIDATED/TRANSFERRED invoices
+    const selectedIds = Array.from(selectedInvoices);
+    const postableInvoices = selectedIds.filter(id => {
+      const invoice = invoices.find(inv => inv.id === id);
+      return invoice?.status === 'VALIDATED' || invoice?.status === 'TRANSFERRED';
+    });
+
+    if (postableInvoices.length === 0) {
+      toast.error('No validated invoices selected for posting');
+      return;
+    }
+
+    // Determine environment from first postable invoice
+    const firstInvoice = invoices.find(inv => inv.id === postableInvoices[0]);
+    const environment = firstInvoice?.environment || 'SANDBOX';
+
+    if (!confirm(`Post ${postableInvoices.length} validated invoice${postableInvoices.length > 1 ? 's' : ''} to FBR?\n\nEnvironment: ${environment}`)) {
+      return;
+    }
+
+    setBulkPosting(true);
+    try {
+      const response = await api.invoices.bulkPost(postableInvoices, environment);
+
+      const successCount = response.successful_count || 0;
+      const failCount = response.failed_count || 0;
+
+      setDialogData({
+        success: failCount === 0,
+        title: failCount === 0 ? 'Bulk Posting Successful' : 'Bulk Posting Completed with Errors',
+        message: `Successfully posted ${successCount} invoice${successCount !== 1 ? 's' : ''}.${failCount > 0 ? ` Failed to post ${failCount} invoice${failCount !== 1 ? 's' : ''}.` : ''}`,
+        errors: response.results?.filter((r: any) => r.status === 'failed').map((r: any) => ({ message: r.error || 'Unknown error' })) || []
+      });
+      setDialogOpen(true);
+
+      setSelectedInvoices(new Set());
+      await fetchInvoices();
+    } catch (err) {
+      setDialogData({
+        success: false,
+        title: 'Bulk Posting Error',
+        message: err instanceof ApiError ? err.message : 'Failed to post invoices',
+        errors: []
+      });
+      setDialogOpen(true);
+    } finally {
+      setBulkPosting(false);
+    }
+  };
+
   const handleBulkPrint = async () => {
     if (selectedInvoices.size === 0) return;
 
@@ -571,16 +625,37 @@ export default function InvoiceHistoryPage() {
         {/* Action Bar — vertical, left of table */}
         <div className="flex flex-col items-center gap-1 sm:gap-1.5 pt-2 sm:pt-32 pr-1 sm:pr-1.5 flex-shrink-0">
           {(() => {
-            const hasPostedSelected = selectedInvoices.size > 0 && Array.from(selectedInvoices).some(
-              id => invoices.find(inv => inv.id === id)?.status === 'POSTED'
-            );
+            const selectedIds = Array.from(selectedInvoices);
+            const selectedData = selectedIds
+              .map(id => invoices.find(inv => inv.id === id))
+              .filter((inv): inv is Invoice => inv !== undefined);
+
+            const statusSet = new Set(selectedData.map(inv => inv.status));
+            const hasSelection = selectedInvoices.size > 0;
+
+            // Pure status sets (all selected invoices have the same status)
+            const allDraft = hasSelection && statusSet.size === 1 && statusSet.has('DRAFT');
+            const allValidated = hasSelection && statusSet.size === 1 && statusSet.has('VALIDATED');
+            const allPosted = hasSelection && statusSet.size === 1 && statusSet.has('POSTED');
+
+            // Mixed selection checks
+            const hasDraft = statusSet.has('DRAFT');
+            const hasValidated = statusSet.has('VALIDATED');
+            const hasPosted = statusSet.has('POSTED');
+            const hasFailed = statusSet.has('FAILED');
+
+            // Conditional button visibility
+            const showValidate = !hasSelection || (!allPosted && !allValidated && (allDraft || hasDraft || hasFailed));
+            const showPost = hasSelection && allValidated;
+            const showDelete = !hasSelection || (!allPosted && !hasPosted);
+
             return (
               <>
                 <Button
                   variant="outline"
                   size="icon"
                   onClick={() => fetchInvoices(true, true)}
-                  disabled={refreshing || hasPostedSelected}
+                  disabled={refreshing}
                   className="h-8 w-8 border-orange-200"
                   title="Refresh"
                 >
@@ -590,16 +665,30 @@ export default function InvoiceHistoryPage() {
                     <RefreshCw className="h-4 w-4" />
                   )}
                 </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={handleBulkValidate}
-                  disabled={bulkValidating || selectedInvoices.size === 0 || hasPostedSelected}
-                  className="h-8 w-8 border border-green-300 disabled:opacity-30 disabled:cursor-not-allowed"
-                  title="Validate selected"
-                >
-                  {bulkValidating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
-                </Button>
+                {showValidate && (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handleBulkValidate}
+                    disabled={bulkValidating || selectedInvoices.size === 0}
+                    className="h-8 w-8 border border-green-300 disabled:opacity-30 disabled:cursor-not-allowed"
+                    title="Validate selected"
+                  >
+                    {bulkValidating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                  </Button>
+                )}
+                {showPost && (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handleBulkPost}
+                    disabled={bulkPosting || selectedInvoices.size === 0}
+                    className="h-8 w-8 border border-blue-300 text-blue-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                    title="Post selected to FBR"
+                  >
+                    {bulkPosting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="icon"
@@ -614,16 +703,18 @@ export default function InvoiceHistoryPage() {
                     <Printer className="h-4 w-4" />
                   )}
                 </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  onClick={handleBulkDelete}
-                  disabled={bulkDeleting || selectedInvoices.size === 0 || hasPostedSelected}
-                  className="h-8 w-8 text-red-500 border-red-300 disabled:opacity-30 disabled:cursor-not-allowed"
-                  title="Delete selected"
-                >
-                  {bulkDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                </Button>
+                {showDelete && (
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handleBulkDelete}
+                    disabled={bulkDeleting || selectedInvoices.size === 0}
+                    className="h-8 w-8 text-red-500 border-red-300 disabled:opacity-30 disabled:cursor-not-allowed"
+                    title="Delete selected"
+                  >
+                    {bulkDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  </Button>
+                )}
               </>
             );
           })()}

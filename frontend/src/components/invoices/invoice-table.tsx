@@ -255,20 +255,26 @@ export function InvoiceTable({
                 />
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="date"
-                  value={dateFromFilter}
-                  onChange={(e) => onDateFromFilterChange(e.target.value)}
-                  placeholder="From date"
-                  className={filterInputClass}
-                />
-                <input
-                  type="date"
-                  value={dateToFilter}
-                  onChange={(e) => onDateToFilterChange(e.target.value)}
-                  placeholder="To date"
-                  className={filterInputClass}
-                />
+                <div className="relative">
+                  <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                  <input
+                    type="date"
+                    value={dateFromFilter}
+                    onChange={(e) => onDateFromFilterChange(e.target.value)}
+                    placeholder="From date"
+                    className={`${filterInputClass} pl-8`}
+                  />
+                </div>
+                <div className="relative">
+                  <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                  <input
+                    type="date"
+                    value={dateToFilter}
+                    onChange={(e) => onDateToFilterChange(e.target.value)}
+                    placeholder="To date"
+                    className={`${filterInputClass} pl-8`}
+                  />
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <input
@@ -686,18 +692,15 @@ export function InvoiceTable({
         </div>{/* end header wrapper */}
 
         {/*table 3 body — scrollable*/}
-        <div ref={bodyScrollRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden rounded-4xl bg-blue-50 border-2 border-blue-600">
+        {invoices.length === 0 ? (
+          <div className="flex-1 flex items-start justify-center">
+            <EmptyStateContent />
+          </div>
+        ) : (
+        <div className="flex-1 min-h-0 flex flex-col items-start">
+        <div ref={bodyScrollRef} className="w-full max-h-full overflow-y-auto overflow-x-hidden rounded-4xl bg-blue-50 border-2 border-blue-600">
         <table className="w-full table-fixed border-separate border-spacing-0">
           <tbody className=' border-1 border-blue-200'>
-            {invoices.length === 0 && (
-              <tr>
-                <td colSpan={onSelectionChange ? 8 : 7} className="py-0">
-                  <div className="bg-white dark:bg-neutral-950 rounded-2xl m-2">
-                    <EmptyStateContent />
-                  </div>
-                </td>
-              </tr>
-            )}
             {invoices.map((invoice) => {
               const canDelete = isDeletable(invoice.status);
               const isSelected = selectedInvoices.has(invoice.id);
@@ -847,6 +850,8 @@ export function InvoiceTable({
           </tbody>
         </table>
         </div>
+        </div>
+        )}
         </div>
         </div>
       </div>

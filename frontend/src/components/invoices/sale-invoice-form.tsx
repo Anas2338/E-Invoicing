@@ -1206,10 +1206,12 @@ export function SaleInvoiceForm({
     setBuyerBusinessName(value);
     setBuyerHighlightedIndex(-1);
 
-    // Filter saved buyers based on input
+    // Filter saved buyers based on input (search by name or NTN/CNIC)
     if (value.trim().length > 0) {
+      const searchTerm = value.toLowerCase();
       const filtered = savedBuyers.filter(buyer =>
-        buyer.buyer_business_name.toLowerCase().includes(value.toLowerCase())
+        buyer.buyer_business_name.toLowerCase().includes(searchTerm) ||
+        (buyer.buyer_ntn_cnic && buyer.buyer_ntn_cnic.toLowerCase().includes(searchTerm))
       );
       setBuyerSearchResults(filtered);
       setShowBuyerSuggestions(filtered.length > 0);
@@ -1574,14 +1576,14 @@ export function SaleInvoiceForm({
       {/* Form content - show immediately, disable fields until master data loads */}
       <div className="flex flex-col md:flex-row gap-4">
           {/* Action Sidebar — Left (stacks horizontally on mobile, vertical sidebar on desktop) */}
-          <div className="shrink-0 flex md:flex-col gap-2 md:sticky top-4 self-start order-1 md:order-none pt-0 md:pt-18 justify-center md:justify-start">
+          <div className="shrink-0 flex md:flex-col gap-2 md:sticky top-4 self-center md:self-start order-1 md:order-none pt-0 md:pt-18 justify-center md:justify-start w-full md:w-auto">
             {/* Save Draft Button */}
             <Button
               variant="outline"
               size="icon"
               type="button"
               onClick={handleSaveDraft}
-              disabled={isLoading || isSubmitting || isSaving || isValidating || isPosting}
+              disabled={isLoading || isSubmitting || isSaving || isValidating || isPosting || isValidated}
               className="h-8 w-8 border border-amber-200 disabled:opacity-30 disabled:cursor-not-allowed"
               title="Save as Draft"
             >
@@ -1800,7 +1802,10 @@ export function SaleInvoiceForm({
                         if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && savedBuyers.length > 0 && !showBuyerSuggestions) {
                           e.preventDefault();
                           const results = buyerBusinessName.trim().length > 0
-                            ? savedBuyers.filter(b => b.buyer_business_name.toLowerCase().includes(buyerBusinessName.toLowerCase()))
+                            ? savedBuyers.filter(b =>
+                                b.buyer_business_name.toLowerCase().includes(buyerBusinessName.toLowerCase()) ||
+                                (b.buyer_ntn_cnic && b.buyer_ntn_cnic.toLowerCase().includes(buyerBusinessName.toLowerCase()))
+                              )
                             : savedBuyers;
                           setBuyerSearchResults(results);
                           setShowBuyerSuggestions(true);
@@ -1837,9 +1842,11 @@ export function SaleInvoiceForm({
                       // Show all saved buyers when field is focused
                       if (savedBuyers.length > 0) {
                         if (buyerBusinessName.trim().length > 0) {
-                          // Filter based on current input
+                          // Filter based on current input (name or NTN/CNIC)
+                          const searchTerm = buyerBusinessName.toLowerCase();
                           const filtered = savedBuyers.filter(buyer =>
-                            buyer.buyer_business_name.toLowerCase().includes(buyerBusinessName.toLowerCase())
+                            buyer.buyer_business_name.toLowerCase().includes(searchTerm) ||
+                            (buyer.buyer_ntn_cnic && buyer.buyer_ntn_cnic.toLowerCase().includes(searchTerm))
                           );
                           setBuyerSearchResults(filtered);
                           setShowBuyerSuggestions(filtered.length > 0);
@@ -1865,7 +1872,7 @@ export function SaleInvoiceForm({
                     aria-autocomplete="list"
                   />
                   {showBuyerSuggestions && buyerSearchResults.length > 0 && (
-                    <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-y-auto" role="listbox">
+                    <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg max-h-[156px] overflow-y-auto" role="listbox">
                       {buyerSearchResults.map((buyer, index) => (
                         <div
                           key={`${buyer.buyer_ntn_cnic}-${buyer.buyer_business_name}-${index}`}
@@ -2426,11 +2433,11 @@ export function SaleInvoiceForm({
                         maxLength={14}
                         value={(() => {
                           const num = modalItem.valueSalesExcludingST;
-                          if (num === 0 && !valueExclTaxFocused) return '';
+                          if (num === 0) return '0';
                           if (valueExclTaxFocused) return num.toString();
                           return Number(num).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                         })()}
-                        onFocus={() => setValueExclTaxFocused(true)}
+                        onFocus={(e) => { setValueExclTaxFocused(true); e.target.select(); }}
                         onBlur={() => setValueExclTaxFocused(false)}
                         onChange={(e) => {
                           const val = e.target.value;
@@ -2438,10 +2445,13 @@ export function SaleInvoiceForm({
                             updateModalItem('valueSalesExcludingST', 0);
                             return;
                           }
-                          const num = parseFloat(val);
-                          if (isNaN(num)) return;
-                          if (num > 99999999999) return;
-                          updateModalItem('valueSalesExcludingST', num);
+                          if (/^\d*\.?\d*$/.test(val)) {
+                            const cleaned = val.replace(/^0+(\d)/, '$1');
+                            const num = parseFloat(cleaned);
+                            if (isNaN(num)) return;
+                            if (num > 99999999999) return;
+                            updateModalItem('valueSalesExcludingST', num);
+                          }
                         }}
                         required
                       />
@@ -2454,7 +2464,10 @@ export function SaleInvoiceForm({
                         inputMode="decimal"
                         maxLength={14}
                         value={formatAmount('fixedPrice', modalItem.fixedNotifiedValueOrRetailPrice ?? '0')}
-                        onFocus={() => setFocusedFields(prev => new Set(prev).add('fixedPrice'))}
+                        onFocus={(e) => {
+                          setFocusedFields(prev => new Set(prev).add('fixedPrice'));
+                          if (modalItem.fixedNotifiedValueOrRetailPrice === '0') e.target.select();
+                        }}
                         onBlur={() => {
                           setFocusedFields(prev => { const next = new Set(prev); next.delete('fixedPrice'); return next; });
                           const v = Number(modalItem.valueSalesExcludingST) || 0;
@@ -2470,7 +2483,15 @@ export function SaleInvoiceForm({
                           const val = e.target.value;
                           if (val.length > 14) return;
                           setFieldErrors(prev => { const next = new Set(prev); next.delete('fixedPrice'); return next; });
-                          updateModalItem('fixedNotifiedValueOrRetailPrice', val);
+                          if (val === '' || val === '-') {
+                            updateModalItem('fixedNotifiedValueOrRetailPrice', '0');
+                            return;
+                          }
+                          // Only allow valid decimal input and strip leading zeros (like Value Excl. Sales Tax does via parseFloat)
+                          if (/^\d*\.?\d*$/.test(val)) {
+                            const cleaned = val.replace(/^0+(\d)/, '$1');
+                            updateModalItem('fixedNotifiedValueOrRetailPrice', cleaned);
+                          }
                         }}
                         required
                       />

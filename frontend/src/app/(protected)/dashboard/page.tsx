@@ -226,7 +226,7 @@ export default function DashboardPage() {
       <div className="space-y-6 w-full max-w-[1600px] mx-auto px-4 md:px-6">
         <SaleInvoiceForm
           onSubmit={handleSubmit}
-          onCancel={() => setInvoiceType(null)}
+          onCancel={() => { window.location.reload(); }}
           isLoading={isSubmitting}
         />
       </div>
