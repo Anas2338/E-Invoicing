@@ -2,12 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import AutomationDashboard from '@/components/automation/AutomationDashboard';
 import { InvoiceTable } from '@/components/automation/InvoiceTable';
 import InvoiceDetail from '@/components/automation/InvoiceDetail';
 import { automationApi } from '@/services/automationApi';
-import { ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/providers/auth-provider';
 
@@ -48,16 +45,42 @@ export default function DashboardPage() {
     page_size: 20,
     total_pages: 0
   });
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState<{
+    status: string | null;
+    source: string | null;
+    date_from: string | null;
+    date_to: string | null;
+    amount?: string | null;
+    invoice_number?: string | null;
+    customer?: string | null;
+  }>({
     status: null,
     source: null,
     date_from: null,
-    date_to: null
+    date_to: null,
   });
 
   useEffect(() => {
     loadInvoices();
   }, [pagination.page, filters]);
+
+  const computeTotalAmount = (invoiceData: Record<string, any> | undefined | null): number => {
+    if (!invoiceData) return 0;
+    if (invoiceData.total_amount !== undefined && invoiceData.total_amount !== null) {
+      return Number(invoiceData.total_amount);
+    }
+    const items = invoiceData.items;
+    if (!items || !Array.isArray(items) || items.length === 0) return 0;
+    return items.reduce((sum: number, item: any) => {
+      const valueExclST = parseFloat(item.value_sales_excluding_st) || 0;
+      const salesTax = parseFloat(item.sales_tax_applicable) || 0;
+      const extraTax = parseFloat(item.extra_tax) || 0;
+      const furtherTax = parseFloat(item.further_tax) || 0;
+      const fedPayable = parseFloat(item.fed_payable) || 0;
+      const discount = parseFloat(item.discount) || 0;
+      return sum + valueExclST + salesTax + extraTax + furtherTax + fedPayable - discount;
+    }, 0);
+  };
 
   const loadInvoices = async () => {
     try {
@@ -68,14 +91,28 @@ export default function DashboardPage() {
         status: filters.status || undefined,
         source: filters.source || undefined,
         date_from: filters.date_from || undefined,
-        date_to: filters.date_to || undefined
+        date_to: filters.date_to || undefined,
+        invoice_number: filters.invoice_number || undefined,
+        customer: filters.customer || undefined
       });
-      setInvoices(response.invoices);
+
+      let filteredInvoices = response.invoices;
+
+      // Client-side amount filter (total_amount is computed from items, not stored in DB)
+      if (filters.amount) {
+        const term = filters.amount.toLowerCase();
+        filteredInvoices = filteredInvoices.filter((inv: any) => {
+          const amt = computeTotalAmount(inv.invoice_data);
+          return amt.toString().includes(term) || amt.toLocaleString('en-US').includes(term);
+        });
+      }
+
+      setInvoices(filteredInvoices);
       setPagination({
-        total: response.total,
-        page: response.page,
-        page_size: response.page_size,
-        total_pages: response.total_pages
+        total: filteredInvoices.length,
+        page: pagination.page,
+        page_size: pagination.page_size,
+        total_pages: Math.ceil(filteredInvoices.length / pagination.page_size)
       });
     } catch (error) {
       toast.error('Failed to load invoices');
@@ -91,23 +128,6 @@ export default function DashboardPage() {
 
   const handlePageChange = (page: number) => {
     setPagination({ ...pagination, page });
-  };
-
-  const handleDownload = async (sessionId: string) => {
-    try {
-      const blob = await automationApi.downloadExcel(sessionId);
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `invoice_session_${sessionId}.xlsx`;
-      document.body.appendChild(link);
-      link.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(link);
-      toast.success('Excel file downloaded successfully');
-    } catch (error) {
-      toast.error('Failed to download Excel file');
-    }
   };
 
   const handleRetry = async (invoiceId: string) => {
@@ -194,27 +214,16 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-7xl">
-      <div className="flex items-center gap-4 mb-6">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => router.push('/automation')}
-          className="flex items-center gap-2"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to Automation
-        </Button>
-      </div>
+    <div className="h-full flex flex-col pt-1 pb-2 max-w-[1600px] overflow-hidden">
 
-      <div className="mb-8">
+      {/* <div className="mb-8">
         <h1 className="text-3xl font-bold text-[#202223] dark:text-[#e3e3e3] mb-2">
           Automation Dashboard
         </h1>
         <p className="text-[#6d7175] dark:text-[#8c9196]">
           Monitor invoice processing status and view detailed statistics
         </p>
-      </div>
+      </div> */}
 
       {selectedInvoiceId ? (
         <div className="mb-8">
@@ -231,8 +240,7 @@ export default function DashboardPage() {
           />
         </div>
       ) : (
-        <div className="space-y-8">
-          <AutomationDashboard />
+        <div className="flex-1 min-h-0">
           <InvoiceTable
             invoices={invoices}
             loading={loading}
@@ -241,7 +249,7 @@ export default function DashboardPage() {
             onFilterChange={handleFilterChange}
             onPageChange={handlePageChange}
             onInvoiceClick={setSelectedInvoiceId}
-            onDownload={handleDownload}
+            onBack={() => router.push('/automation')}
             onRetry={handleRetry}
             retryingInvoiceId={retryingInvoiceId}
             onPause={handlePause}

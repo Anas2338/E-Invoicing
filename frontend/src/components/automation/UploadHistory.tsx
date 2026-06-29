@@ -4,7 +4,12 @@ import { useState, useEffect } from 'react';
 import { automationApi, UploadSession } from '@/services/automationApi';
 import { Trash2, AlertCircle, RefreshCw, FileX } from 'lucide-react';
 
-export default function UploadHistory() {
+interface UploadHistoryProps {
+  refreshKey?: number;
+  onLoading?: (loading: boolean) => void;
+}
+
+export default function UploadHistory({ refreshKey = 0, onLoading }: UploadHistoryProps) {
   const [sessions, setSessions] = useState<UploadSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -16,6 +21,7 @@ export default function UploadHistory() {
   const loadSessions = async () => {
     try {
       setLoading(true);
+      onLoading?.(true);
       setError(null);
       const response = await automationApi.getUploadSessions();
       setSessions(response.sessions);
@@ -23,12 +29,13 @@ export default function UploadHistory() {
       setError(err instanceof Error ? err.message : 'Failed to load upload sessions');
     } finally {
       setLoading(false);
+      onLoading?.(false);
     }
   };
 
   useEffect(() => {
     loadSessions();
-  }, []);
+  }, [refreshKey]);
 
   const handleDeleteSession = async (sessionId: string) => {
     try {
@@ -145,143 +152,141 @@ export default function UploadHistory() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-          Upload History ({sessions.length})
-        </h2>
-        <button
-          onClick={loadSessions}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-        >
-          <RefreshCw className="w-4 h-4" />
-          Refresh
-        </button>
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-          <thead className="bg-gray-50 dark:bg-gray-800">
+    <div className="overflow-x-auto rounded-2xl flex-1 min-h-0">
+      <div className="min-w-[830px] flex flex-col gap-2 h-full">
+        {/* Table 1: Column Headers (blue header) */}
+        <table className="w-full table-fixed bg-[#7c97f0] rounded-4xl flex-shrink-0 border-separate border-spacing-0">
+          <thead>
             <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="border-r-2 border-[#FFFFFF] w-[15%] px-2 py-2 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">
                 Upload Date
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="border-r-2 border-[#FFFFFF] w-[12%] px-2 py-2 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">
                 Status
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="border-r-2 border-[#FFFFFF] w-[10%] px-2 py-2 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">
                 Total
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="border-r-2 border-[#FFFFFF] w-[10%] px-2 py-2 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">
                 Pending
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="border-r-2 border-[#FFFFFF] w-[12%] px-2 py-2 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">
                 Transferred
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="border-r-2 border-[#FFFFFF] w-[10%] px-2 py-2 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">
                 Failed
               </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="border-r-2 border-[#FFFFFF] w-[10%] px-2 py-2 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">
                 Blocked
               </th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="w-[21%] px-2 py-2 text-center text-[10px] lg:text-xs font-bold text-black uppercase tracking-wider align-middle">
                 Actions
               </th>
             </tr>
           </thead>
-          <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
-            {sessions.map((session) => (
-              <tr key={session.id} className="hover:bg-gray-50 dark:hover:bg-gray-800">
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                  {formatDate(session.uploaded_at)}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm">
-                  {getStatusBadge(session.processing_status)}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                  {session.total_count}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-yellow-600 dark:text-yellow-400">
-                  {session.pending_count}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 dark:text-green-400">
-                  {session.transferred_count}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600 dark:text-red-400">
-                  {session.failed_count}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
-                  {session.blocked_count}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                  <div className="flex items-center justify-end gap-2">
-                    {session.can_delete ? (
-                      showDeleteConfirm === session.id ? (
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => handleDeleteSession(session.id)}
-                            disabled={deletingSessionId === session.id}
-                            className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 text-xs"
-                          >
-                            {deletingSessionId === session.id ? 'Deleting...' : 'Confirm'}
-                          </button>
-                          <button
-                            onClick={() => setShowDeleteConfirm(null)}
-                            disabled={deletingSessionId === session.id}
-                            className="px-3 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 text-xs"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setShowDeleteConfirm(session.id)}
-                          className="flex items-center gap-1 px-3 py-1 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
-                          title="Delete session and all invoices"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          Delete Session
-                        </button>
-                      )
-                    ) : session.can_delete_file ? (
-                      showDeleteFileConfirm === session.id ? (
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => handleDeleteExcelFile(session.id)}
-                            disabled={deletingFileId === session.id}
-                            className="px-3 py-1 bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50 text-xs"
-                          >
-                            {deletingFileId === session.id ? 'Deleting...' : 'Confirm'}
-                          </button>
-                          <button
-                            onClick={() => setShowDeleteFileConfirm(null)}
-                            disabled={deletingFileId === session.id}
-                            className="px-3 py-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600 text-xs"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setShowDeleteFileConfirm(session.id)}
-                          className="flex items-center gap-1 px-3 py-1 text-orange-600 dark:text-orange-400 hover:text-orange-800 dark:hover:text-orange-300"
-                          title="Delete Excel file only (keeps session and invoice records)"
-                        >
-                          <FileX className="w-4 h-4" />
-                          Delete Excel File
-                        </button>
-                      )
-                    ) : (
-                      <span className="text-gray-400 dark:text-gray-600 text-xs">
-                        {session.has_file ? 'Cannot delete (has non-transferred invoices)' : 'No file to delete'}
-                      </span>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
         </table>
+
+        {/* Table 2: Body — scrollable */}
+        <div className="flex-1 min-h-0 flex flex-col items-start">
+          <div className="w-full max-h-full overflow-y-auto overflow-x-hidden rounded-4xl bg-blue-50 border-2 border-blue-600">
+            <table className="w-full table-fixed border-separate border-spacing-0">
+              <tbody>
+                {sessions.map((session) => (
+                  <tr key={session.id} className="group transition-colors duration-150 hover:bg-slate-50/60">
+                    <td className="border-r-2 border-b-1 border-blue-200 px-3.5 py-4 align-middle text-xs lg:text-sm text-gray-900 dark:text-white w-[15%] text-center">
+                      {formatDate(session.uploaded_at)}
+                    </td>
+                    <td className="border-r-2 border-b-1 border-blue-200 px-3.5 py-4 align-middle text-center w-[12%]">
+                      <div className="flex justify-center">
+                        {getStatusBadge(session.processing_status)}
+                      </div>
+                    </td>
+                    <td className="border-r-2 border-b-1 border-blue-200 px-3.5 py-4 align-middle text-xs lg:text-sm font-semibold text-gray-900 dark:text-white w-[10%] text-center">
+                      {session.total_count}
+                    </td>
+                    <td className="border-r-2 border-b-1 border-blue-200 px-3.5 py-4 align-middle text-xs lg:text-sm font-semibold text-amber-600 dark:text-amber-400 w-[10%] text-center">
+                      {session.pending_count}
+                    </td>
+                    <td className="border-r-2 border-b-1 border-blue-200 px-3.5 py-4 align-middle text-xs lg:text-sm font-semibold text-emerald-600 dark:text-emerald-400 w-[12%] text-center">
+                      {session.transferred_count}
+                    </td>
+                    <td className="border-r-2 border-b-1 border-blue-200 px-3.5 py-4 align-middle text-xs lg:text-sm font-semibold text-red-600 dark:text-red-400 w-[10%] text-center">
+                      {session.failed_count}
+                    </td>
+                    <td className="border-r-2 border-b-1 border-blue-200 px-3.5 py-4 align-middle text-xs lg:text-sm font-semibold text-gray-600 dark:text-gray-400 w-[10%] text-center">
+                      {session.blocked_count}
+                    </td>
+                    <td className="border-b-1 border-blue-200 px-3.5 py-4 align-middle text-center w-[21%]">
+                      <div className="flex items-center justify-center gap-1.5">
+                        {session.can_delete ? (
+                          showDeleteConfirm === session.id ? (
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => handleDeleteSession(session.id)}
+                                disabled={deletingSessionId === session.id}
+                                className="px-2 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 text-[10px] font-semibold"
+                              >
+                                {deletingSessionId === session.id ? '...' : 'Confirm'}
+                              </button>
+                              <button
+                                onClick={() => setShowDeleteConfirm(null)}
+                                disabled={deletingSessionId === session.id}
+                                className="px-2 py-1 bg-gray-200 dark:bg-neutral-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-300 dark:hover:bg-neutral-600 text-[10px] font-semibold"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setShowDeleteConfirm(session.id)}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors text-[10px] font-semibold"
+                              title="Delete session and all invoices"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Delete
+                            </button>
+                          )
+                        ) : session.can_delete_file ? (
+                          showDeleteFileConfirm === session.id ? (
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => handleDeleteExcelFile(session.id)}
+                                disabled={deletingFileId === session.id}
+                                className="px-2 py-1 bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:opacity-50 text-[10px] font-semibold"
+                              >
+                                {deletingFileId === session.id ? '...' : 'Confirm'}
+                              </button>
+                              <button
+                                onClick={() => setShowDeleteFileConfirm(null)}
+                                disabled={deletingFileId === session.id}
+                                className="px-2 py-1 bg-gray-200 dark:bg-neutral-700 text-gray-700 dark:text-gray-300 rounded-md hover:bg-gray-300 dark:hover:bg-neutral-600 text-[10px] font-semibold"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setShowDeleteFileConfirm(session.id)}
+                              className="inline-flex items-center gap-1 px-2 py-1 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-md transition-colors text-[10px] font-semibold"
+                              title="Delete Excel file only"
+                            >
+                              <FileX className="w-3.5 h-3.5" />
+                              Delete File
+                            </button>
+                          )
+                        ) : (
+                          <span className="text-gray-400 dark:text-neutral-600 text-[10px]">
+                            {session.has_file ? 'Locked' : 'N/A'}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   );

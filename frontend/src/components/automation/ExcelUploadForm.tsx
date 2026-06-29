@@ -121,14 +121,15 @@ export default function ExcelUploadForm() {
   };
 
   return (
-    <div className="bg-white dark:bg-[#1a1a1a] rounded-2xl border border-[#e1e3e5] dark:border-[#2e2e2e] shadow-sm p-6">
-      {/* Download Template Section */}
-      <div className="mb-8 pb-6 border-b border-[#e1e3e5] dark:border-[#2e2e2e]">
-        <h2 className="text-xl font-bold text-[#202223] dark:text-[#e3e3e3] mb-3">Step 1: Download Template</h2>
-        <p className="text-[#6d7175] dark:text-[#8c9196] mb-4">
-          Download the Excel template with predefined columns for invoice data.
-        </p>
-        <button
+    <div className="bg-white dark:bg-[#1a1a1a] rounded-2xl border-2 border-blue-600 dark:border-[#2e2e2e] shadow-sm p-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Download Template Section */}
+        <div className="pb-6 lg:pb-0 border-b lg:border-b-0 border-blue-600 dark:border-[#2e2e2e] lg:border-r lg:pr-6">
+          <h2 className="text-xl font-bold text-[#202223] dark:text-[#e3e3e3] mb-3">Step 1: Download Template</h2>
+          <p className="text-[#6d7175] dark:text-[#8c9196] mb-4">
+            Download the Excel template with predefined columns for invoice data.
+          </p>
+          <button
           onClick={handleDownloadTemplate}
           className="inline-flex items-center h-10 px-4 py-2 bg-[#008060] text-white rounded-xl hover:bg-[#006e52] dark:bg-[#00a876] dark:hover:bg-[#008f64] transition-all duration-150 shadow-sm hover:shadow-md font-semibold"
         >
@@ -294,6 +295,7 @@ export default function ExcelUploadForm() {
             )}
           </button>
         </form>
+      </div>
       </div>
     </div>
   );

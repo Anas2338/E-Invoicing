@@ -18,7 +18,7 @@ interface InvoiceItem {
   productDescription: string;
   rate: string;
   uoM: string;
-  quantity: number;
+  quantity: number | '';
   itemRate: number;  // Unit price = valueSalesExcludingST / quantity (editable)
   totalValues: number;
   valueSalesExcludingST: number;
@@ -615,7 +615,7 @@ export function SaleInvoiceForm({
       productDescription: '',
       rate: '',
       uoM: 'NOS',
-      quantity: 1,
+      quantity: '',
       itemRate: 0,
       totalValues: 0,
       valueSalesExcludingST: 0,
@@ -1411,7 +1411,7 @@ export function SaleInvoiceForm({
       }
 
       toast.success('Invoice saved as draft');
-      router.push('/invoices/history');
+      clearForm();
     } catch (error) {
       console.error('Save draft error:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1561,8 +1561,58 @@ export function SaleInvoiceForm({
     setFormKey(prev => prev + 1);
   };
 
+  /** Track last Enter press for double-enter detection on buttons/selects */
+  const lastEnterRef = useRef<{ element: HTMLElement; time: number } | null>(null);
+
+  /** Focus the next focusable element after the current target */
+  const focusNextField = (form: HTMLElement, current: HTMLElement) => {
+    const focusable = form.querySelectorAll<HTMLElement>(
+      'input:not([disabled]):not([readonly]):not([tabindex="-1"]), ' +
+      'select:not([disabled]):not([tabindex="-1"]), ' +
+      'button:not([disabled]):not([tabindex="-1"]), ' +
+      'textarea:not([disabled]):not([readonly]):not([tabindex="-1"]), ' +
+      '[tabindex]:not([tabindex="-1"])'
+    );
+    const currentIndex = Array.from(focusable).indexOf(current);
+    if (currentIndex >= 0 && currentIndex < focusable.length - 1) {
+      focusable[currentIndex + 1]?.focus();
+    }
+  };
+
+  const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      const target = e.target as HTMLElement;
+      // Textareas — Enter advances to next field; use Shift+Enter for new line
+      if (target.tagName === 'TEXTAREA') {
+        e.preventDefault();
+        focusNextField(e.currentTarget, target);
+        return;
+      }
+
+      // Buttons (including shadcn Select triggers) — double-Enter to advance,
+      // first Enter lets the button handle normally (open dropdown / submit)
+      if (target.tagName === 'BUTTON') {
+        const now = Date.now();
+        const last = lastEnterRef.current;
+        if (last && last.element === target && now - last.time < 1000) {
+          // Second Enter on the same button — advance to next field
+          lastEnterRef.current = null;
+          e.preventDefault();
+          focusNextField(e.currentTarget, target);
+          return;
+        }
+        lastEnterRef.current = { element: target, time: now };
+        return; // First Enter — let the button handle it
+      }
+
+      // Inputs, selects, and other elements — single Enter advances
+      e.preventDefault();
+      focusNextField(e.currentTarget, target);
+    }
+  };
+
   return (
-    <form onSubmit={handleFormSubmit} className="space-y-6 h-full">
+    <form onSubmit={handleFormSubmit} onKeyDown={handleFormKeyDown} className="space-y-6 h-full">
       {/* Loading state */}
       {/* Error state */}
       {masterDataError && (

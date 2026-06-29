@@ -1,16 +1,18 @@
 'use client';
 
-import { Suspense, useEffect } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
 import UploadHistory from '@/components/automation/UploadHistory';
-import { ArrowLeft } from 'lucide-react';
-import Link from 'next/link';
+import { ArrowLeft, RefreshCw, Loader2 } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { toast } from 'react-toastify';
 
 export default function UploadHistoryPage() {
   const router = useRouter();
   const { user, loading } = useAuth();
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     if (!loading && user && !user.automation_enabled) {
@@ -34,49 +36,64 @@ export default function UploadHistoryPage() {
     return null;
   }
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="mb-6">
-          <Link
-            href="/automation"
-            className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white mb-4"
+    <div className="h-full flex flex-col pt-1 pb-2 max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 overflow-hidden">
+      <div className="flex gap-3 flex-1 min-h-0">
+        {/* Sidebar Action Buttons */}
+        <div className="flex flex-col items-center gap-1.5 flex-shrink-0 pt-1">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => router.push('/automation')}
+            className="h-10 lg:h-12 w-10 lg:w-12 border-slate-500 text-slate-600"
+            title="Back to Automation"
           >
-            <ArrowLeft className="w-4 h-4" />
-            Back to Automation
-          </Link>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Upload History
-          </h1>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">
-            View and manage your Excel upload sessions
-          </p>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setRefreshKey(k => k + 1)}
+            disabled={isRefreshing}
+            className="h-10 lg:h-12 w-10 lg:w-12 border-blue-500 text-blue-600 disabled:opacity-50"
+            title="Refresh"
+          >
+            {isRefreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          </Button>
         </div>
 
-        {/* Info Card */}
-        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
-          <h3 className="text-sm font-medium text-blue-900 dark:text-blue-200 mb-2">
-            About Upload Sessions
-          </h3>
-          <ul className="text-sm text-blue-800 dark:text-blue-300 space-y-1">
-            <li>• Each Excel file upload creates a new session</li>
-            <li>• You can delete sessions that have no submitted invoices</li>
-            <li>• Deleting a session removes all pending, failed, and blocked invoices from that upload</li>
-            <li>• Submitted invoices cannot be deleted for audit purposes</li>
-          </ul>
-        </div>
+        {/* Main Content */}
+        <div className="flex-1 min-w-0 flex flex-col">
+          <div className="flex-shrink-0 mb-4">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+              Upload History
+            </h1>
+          </div>
 
-        {/* Upload History Component */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
-          <Suspense
-            fallback={
-              <div className="flex items-center justify-center py-12">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              </div>
-            }
-          >
-            <UploadHistory />
-          </Suspense>
+          {/* Info Card */}
+          <div className="flex-shrink-0 bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-600 dark:border-blue-800 rounded-lg p-4 mb-4">
+            <h3 className="text-sm font-medium text-blue-900 dark:text-blue-200 mb-2">
+              About Upload Sessions
+            </h3>
+            <ul className="text-sm text-blue-800 dark:text-blue-300 space-y-1">
+              <li>• Each Excel file upload creates a new session</li>
+              <li>• You can delete sessions that have no submitted invoices</li>
+              <li>• Deleting a session removes all pending, failed, and blocked invoices from that upload</li>
+              <li>• Submitted invoices cannot be deleted for audit purposes</li>
+            </ul>
+          </div>
+
+          {/* Upload History Component */}
+          <div className="flex-1 min-h-0">
+            <Suspense
+              fallback={
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+              }
+            >
+              <UploadHistory refreshKey={refreshKey} onLoading={setIsRefreshing} />
+            </Suspense>
+          </div>
         </div>
       </div>
     </div>

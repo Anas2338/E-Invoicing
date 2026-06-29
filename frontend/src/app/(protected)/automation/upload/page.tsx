@@ -35,69 +35,58 @@ export default function UploadPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="max-w-3xl mx-auto">
-        <div className="flex items-center gap-4 mb-6">
+    <div className="container mx-auto px-4 py-3">
+      <div className="max-w-3xl lg:max-w-6xl mx-auto flex gap-3">
+        {/* Sidebar Action Buttons */}
+        <div className="flex flex-col items-center gap-1.5 flex-shrink-0 pt-1">
           <Button
             variant="outline"
-            size="sm"
+            size="icon"
             onClick={() => router.push('/automation')}
-            className="flex items-center gap-2"
+            className="h-10 lg:h-12 w-10 lg:w-12 border-slate-500 text-slate-600"
+            title="Back to Automation"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back to Automation
           </Button>
         </div>
 
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold mb-2 text-[#202223] dark:text-[#e3e3e3]">Upload Excel File</h1>
-          <p className="text-[#6d7175] dark:text-[#8c9196]">
-            Download the template, fill with invoice data, and upload for bulk scheduling
-          </p>
-        </div>
+        {/* Main Content */}
+        <div className="flex-1 min-w-0 flex flex-col">
+          <ExcelUploadForm />
 
-        <ExcelUploadForm />
-
-        <div className="mt-8 bg-[#fef3c7] dark:bg-[#451a03]/30 border border-[#fde68a] dark:border-[#451a03] rounded-xl p-6">
-          <h3 className="text-lg font-semibold mb-3 text-[#92400e] dark:text-[#fbbf24]">Important Notes</h3>
-          <ul className="space-y-2 text-[#6d7175] dark:text-[#8c9196] text-sm">
-            <li className="flex items-start">
-              <svg className="w-5 h-5 text-[#92400e] dark:text-[#fbbf24] mr-2 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-              </svg>
-              <span>Only one upload can be processed at a time per user</span>
-            </li>
-            <li className="flex items-start">
-              <svg className="w-5 h-5 text-[#92400e] dark:text-[#fbbf24] mr-2 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-              </svg>
-              <span>Invoice numbers must be unique within the Excel file</span>
-            </li>
-            <li className="flex items-start">
-              <svg className="w-5 h-5 text-[#92400e] dark:text-[#fbbf24] mr-2 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-              </svg>
-              <span>Invoices with past scheduled times will be marked as expired</span>
-            </li>
-            <li className="flex items-start">
-              <svg className="w-5 h-5 text-[#92400e] dark:text-[#fbbf24] mr-2 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-              </svg>
-              <span>Maximum file size: 10 MB, Maximum rows: 20,000</span>
-            </li>
-            <li className="flex items-start">
-              <svg className="w-5 h-5 text-[#92400e] dark:text-[#fbbf24] mr-2 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-              </svg>
-              <span>Invoices are validated immediately after upload via FBR integration</span>
-            </li>
-            <li className="flex items-start">
-              <svg className="w-5 h-5 text-[#92400e] dark:text-[#fbbf24] mr-2 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-              </svg>
-              <span>Validated invoices are automatically transferred to the main system every 5 minutes</span>
-            </li>
-          </ul>
+          <div className="mt-3 bg-[#fef3c7] dark:bg-[#451a03]/30 border-2 border-blue-600 dark:border-[#451a03] rounded-2xl p-6 lg:p-8 flex flex-col justify-center flex-1">
+            <h3 className="text-lg lg:text-xl font-bold mb-4 text-[#92400e] dark:text-[#fbbf24]">Important Notes</h3>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-2">
+              <ul className="text-sm lg:text-base text-[#6d7175] dark:text-[#8c9196] space-y-2.5">
+                <li className="flex items-start gap-2.5">
+                  <span className="text-[#92400e] dark:text-[#fbbf24] flex-shrink-0 text-xl leading-none mt-0.5">•</span>
+                  <span>Only one upload processed at a time per user</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="text-[#92400e] dark:text-[#fbbf24] flex-shrink-0 text-xl leading-none mt-0.5">•</span>
+                  <span>Invoice numbers must be unique within the Excel file</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="text-[#92400e] dark:text-[#fbbf24] flex-shrink-0 text-xl leading-none mt-0.5">•</span>
+                  <span>Invoices with past scheduled times marked as expired</span>
+                </li>
+              </ul>
+              <ul className="text-sm lg:text-base text-[#6d7175] dark:text-[#8c9196] space-y-2.5">
+                <li className="flex items-start gap-2.5">
+                  <span className="text-[#92400e] dark:text-[#fbbf24] flex-shrink-0 text-xl leading-none mt-0.5">•</span>
+                  <span>Max file size: 10 MB, Max rows: 20,000</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="text-[#92400e] dark:text-[#fbbf24] flex-shrink-0 text-xl leading-none mt-0.5">•</span>
+                  <span>Invoices validated immediately after upload via FBR integration</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="text-[#92400e] dark:text-[#fbbf24] flex-shrink-0 text-xl leading-none mt-0.5">•</span>
+                  <span>Validated invoices auto-transfer to main system every 5 min</span>
+                </li>
+              </ul>
+            </div>
+          </div>
         </div>
       </div>
     </div>

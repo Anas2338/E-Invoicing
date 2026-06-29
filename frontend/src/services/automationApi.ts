@@ -224,6 +224,8 @@ class AutomationApiClient {
     source?: string;
     date_from?: string;
     date_to?: string;
+    invoice_number?: string;
+    customer?: string;
     page?: number;
     page_size?: number;
   }): Promise<InvoiceListResponse> {
@@ -232,6 +234,8 @@ class AutomationApiClient {
     if (params.source) queryParams.append('source', params.source);
     if (params.date_from) queryParams.append('date_from', params.date_from);
     if (params.date_to) queryParams.append('date_to', params.date_to);
+    if (params.invoice_number) queryParams.append('invoice_number', params.invoice_number);
+    if (params.customer) queryParams.append('customer', params.customer);
     if (params.page) queryParams.append('page', params.page.toString());
     if (params.page_size) queryParams.append('page_size', params.page_size.toString());
 
@@ -259,12 +263,16 @@ class AutomationApiClient {
     source?: string;
     date_from?: string;
     date_to?: string;
+    invoice_number?: string;
+    customer?: string;
   }): Promise<{ invoice_ids: string[]; total: number }> {
     const queryParams = new URLSearchParams();
     if (params.status) queryParams.append('status', params.status);
     if (params.source) queryParams.append('source', params.source);
     if (params.date_from) queryParams.append('date_from', params.date_from);
     if (params.date_to) queryParams.append('date_to', params.date_to);
+    if (params.invoice_number) queryParams.append('invoice_number', params.invoice_number);
+    if (params.customer) queryParams.append('customer', params.customer);
 
     const response = await fetch(
       `${this.baseUrl}/automation/dashboard/invoices/ids?${queryParams}`,

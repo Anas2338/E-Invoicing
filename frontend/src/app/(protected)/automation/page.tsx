@@ -3,11 +3,10 @@
 import { useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
+import { Upload, LayoutDashboard, ClipboardList } from 'lucide-react';
 import { useAuth } from '@/providers/auth-provider';
 import { toast } from 'react-toastify';
-import type { Route } from 'next';
+import AutomationDashboard from '@/components/automation/AutomationDashboard';
 
 export default function AutomationPage() {
   const router = useRouter();
@@ -22,10 +21,13 @@ export default function AutomationPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#008060] dark:border-[#00a876] mx-auto"></div>
-          <p className="mt-4 text-[#6d7175] dark:text-[#8c9196]">Loading...</p>
+      <div className="flex items-center justify-center min-h-[70vh]">
+        <div className="text-center space-y-6">
+          <div className="relative w-16 h-16 sm:w-20 sm:h-20 mx-auto">
+            <div className="absolute inset-0 rounded-full border-4 border-emerald-500/20 animate-pulse" />
+            <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-emerald-600 dark:border-t-emerald-400 animate-spin" />
+          </div>
+          <p className="text-base sm:text-lg md:text-xl font-black text-neutral-600 dark:text-neutral-300 tracking-wide">Loading automation</p>
         </div>
       </div>
     );
@@ -36,103 +38,91 @@ export default function AutomationPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="flex items-center gap-4 mb-6">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => router.push('/dashboard')}
-            className="flex items-center gap-2"
+    <div className="h-full flex flex-col space-y-1 sm:space-y-2 pt-1 pb-2 px-3 sm:px-4 md:px-6 lg:px-8 w-full max-w-[1600px] mx-auto overflow-hidden">
+
+      {/* SECTION 1: Action Cards */}
+      <div className="flex-shrink-0">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+
+          {/* Upload Excel */}
+          <Link
+            href="/automation/upload"
+            className="relative group h-20 sm:h-24 lg:h-28 p-[1.5px] rounded-2xl sm:rounded-2xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(37,99,235,0.5)] focus-within:-translate-y-1 focus-within:shadow-[0_0_30px_rgba(37,99,235,0.5)]"
           >
-            <ArrowLeft className="h-4 w-4" />
-            Back to Dashboard
-          </Button>
-        </div>
-
-        <h1 className="text-3xl font-bold mb-6 text-[#202223] dark:text-[#e3e3e3]">Invoice Automation</h1>
-
-        <div className="bg-white dark:bg-[#1a1a1a] rounded-2xl border border-[#e1e3e5] dark:border-[#2e2e2e] shadow-sm p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-4 text-[#202223] dark:text-[#e3e3e3]">Welcome to AI-Powered Invoice Automation</h2>
-          <p className="text-[#6d7175] dark:text-[#8c9196] mb-4">
-            Automate your invoice submissions with our intelligent AI Agent and Excel-based bulk upload system.
-            Schedule invoices to be automatically validated immediately after upload and transferred to the main system every 5 minutes.
-          </p>
-
-          <div className="grid md:grid-cols-2 gap-6 mt-8">
-            <Link
-              href="/automation/upload"
-              className="block p-6 bg-[#dbeafe] dark:bg-[#1e3a8a]/30 rounded-xl border-2 border-[#bfdbfe] dark:border-[#1e3a8a] hover:border-[#60a5fa] dark:hover:border-[#60a5fa] transition-all duration-150 hover:shadow-md"
-            >
-              <div className="flex items-center mb-3">
-                <svg className="w-8 h-8 text-[#1e40af] dark:text-[#60a5fa] mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-                <h3 className="text-lg font-semibold text-[#202223] dark:text-[#e3e3e3]">Upload Excel</h3>
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-400 via-blue-500 to-indigo-600 opacity-80 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-300" />
+            <div className="relative h-full w-full flex flex-col items-center justify-center gap-1 rounded-[20px] bg-gradient-to-b from-blue-400 to-blue-500 text-white cursor-pointer px-4 border-2 border-white/90 shadow-lg focus:outline-none">
+              <div className="h-7 w-7 sm:h-8 sm:w-8 lg:h-10 lg:w-10 rounded-lg lg:rounded-xl bg-white/20 flex items-center justify-center transform group-hover:scale-110 group-focus-within:scale-110 transition-transform duration-300 border-2 border-white/30 shadow-lg">
+                <Upload className="h-4 w-4 sm:h-5 sm:w-5 text-white stroke-[2.5]" />
               </div>
-              <p className="text-[#6d7175] dark:text-[#8c9196]">
-                Download template, fill with invoice data, and upload for bulk scheduling
-              </p>
-            </Link>
+              <span className="text-[11px] sm:text-xs lg:text-sm font-black tracking-wide text-white drop-shadow-md">
+                Upload Excel
+              </span>
+            </div>
+          </Link>
 
-            <Link
-              href="/automation/dashboard"
-              className="block p-6 bg-[#d1fae5] dark:bg-[#064e3b]/30 rounded-xl border-2 border-[#a7f3d0] dark:border-[#065f46] hover:border-[#34d399] dark:hover:border-[#34d399] transition-all duration-150 hover:shadow-md"
-            >
-              <div className="flex items-center mb-3">
-                <svg className="w-8 h-8 text-[#065f46] dark:text-[#34d399] mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                </svg>
-                <h3 className="text-lg font-semibold text-[#202223] dark:text-[#e3e3e3]">Dashboard</h3>
+          {/* Dashboard */}
+          <Link
+            href="/automation/dashboard"
+            className="relative group h-20 sm:h-24 lg:h-28 p-[1.5px] rounded-2xl sm:rounded-2xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(22,163,74,0.5)] focus-within:-translate-y-1 focus-within:shadow-[0_0_30px_rgba(22,163,74,0.5)]"
+          >
+            <div className="absolute inset-0 bg-gradient-to-br from-emerald-400 via-green-500 to-teal-600 opacity-80 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-300" />
+            <div className="relative h-full w-full flex flex-col items-center justify-center gap-1 rounded-[20px] bg-gradient-to-b from-emerald-400 to-emerald-500 text-white cursor-pointer px-4 border-2 border-white/90 shadow-lg focus:outline-none">
+              <div className="h-7 w-7 sm:h-8 sm:w-8 lg:h-10 lg:w-10 rounded-lg lg:rounded-xl bg-white/20 flex items-center justify-center transform group-hover:scale-110 group-focus-within:scale-110 transition-transform duration-300 border-2 border-white/30 shadow-lg">
+                <LayoutDashboard className="h-4 w-4 sm:h-5 sm:w-5 text-white stroke-[2.5]" />
               </div>
-              <p className="text-[#6d7175] dark:text-[#8c9196]">
-                Monitor automation progress, view statistics, and manage scheduled invoices
-              </p>
-            </Link>
+              <span className="text-[11px] sm:text-xs lg:text-sm font-black tracking-wide text-white drop-shadow-md">
+                Invoice Dashboard
+              </span>
+            </div>
+          </Link>
 
-            <Link
-              href={"/automation/uploads" as Route}
-              className="block p-6 bg-[#ffedd5] dark:bg-[#431407]/30 rounded-xl border-2 border-[#fed7aa] dark:border-[#7c2d12] hover:border-[#fb923c] dark:hover:border-[#fb923c] transition-all duration-150 hover:shadow-md"
-            >
-              <div className="flex items-center mb-3">
-                <svg className="w-8 h-8 text-[#7c2d12] dark:text-[#fb923c] mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                <h3 className="text-lg font-semibold text-[#202223] dark:text-[#e3e3e3]">Upload History</h3>
+          {/* Upload History */}
+          <Link
+            href="/automation/uploads"
+            className="relative group h-20 sm:h-24 lg:h-28 p-[1.5px] rounded-2xl sm:rounded-2xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(234,88,12,0.5)] focus-within:-translate-y-1 focus-within:shadow-[0_0_30px_rgba(234,88,12,0.5)]"
+          >
+            <div className="absolute inset-0 bg-gradient-to-br from-orange-400 via-orange-500 to-red-600 opacity-80 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-300" />
+            <div className="relative h-full w-full flex flex-col items-center justify-center gap-1 rounded-[20px] bg-gradient-to-b from-orange-400 to-orange-500 text-white cursor-pointer px-4 border-2 border-white/90 shadow-lg focus:outline-none">
+              <div className="h-7 w-7 sm:h-8 sm:w-8 lg:h-10 lg:w-10 rounded-lg lg:rounded-xl bg-white/20 flex items-center justify-center transform group-hover:scale-110 group-focus-within:scale-110 transition-transform duration-300 border-2 border-white/30 shadow-lg">
+                <ClipboardList className="h-4 w-4 sm:h-5 sm:w-5 text-white stroke-[2.5]" />
               </div>
-              <p className="text-[#6d7175] dark:text-[#8c9196]">
-                View and manage your Excel upload sessions
-              </p>
-            </Link>
-          </div>
-        </div>
+              <span className="text-[11px] sm:text-xs lg:text-sm font-black tracking-wide text-white drop-shadow-md">
+                Upload History
+              </span>
+            </div>
+          </Link>
 
-        <div className="bg-[#dbeafe] dark:bg-[#1e3a8a]/30 border border-[#bfdbfe] dark:border-[#1e3a8a] rounded-xl p-6">
-          <h3 className="text-lg font-semibold mb-3 text-[#1e40af] dark:text-[#60a5fa]">How It Works</h3>
-          <ol className="space-y-3 text-[#6d7175] dark:text-[#8c9196]">
-            <li className="flex items-start">
-              <span className="flex-shrink-0 w-6 h-6 bg-[#1e40af] dark:bg-[#60a5fa] text-white dark:text-[#1e3a8a] rounded-full flex items-center justify-center text-sm font-semibold mr-3">1</span>
-              <span>Download the Excel template with predefined columns</span>
-            </li>
-            <li className="flex items-start">
-              <span className="flex-shrink-0 w-6 h-6 bg-[#1e40af] dark:bg-[#60a5fa] text-white dark:text-[#1e3a8a] rounded-full flex items-center justify-center text-sm font-semibold mr-3">2</span>
-              <span>Fill in your invoice data including scheduled date and time</span>
-            </li>
-            <li className="flex items-start">
-              <span className="flex-shrink-0 w-6 h-6 bg-[#1e40af] dark:bg-[#60a5fa] text-white dark:text-[#1e3a8a] rounded-full flex items-center justify-center text-sm font-semibold mr-3">3</span>
-              <span>Upload the completed Excel file for validation</span>
-            </li>
-            <li className="flex items-start">
-              <span className="flex-shrink-0 w-6 h-6 bg-[#1e40af] dark:bg-[#60a5fa] text-white dark:text-[#1e3a8a] rounded-full flex items-center justify-center text-sm font-semibold mr-3">4</span>
-              <span>Our AI Agent validates invoices immediately and transfers them to the main system at their scheduled times</span>
-            </li>
-            <li className="flex items-start">
-              <span className="flex-shrink-0 w-6 h-6 bg-[#1e40af] dark:bg-[#60a5fa] text-white dark:text-[#1e3a8a] rounded-full flex items-center justify-center text-sm font-semibold mr-3">5</span>
-              <span>Monitor progress and download updated Excel with submission results</span>
-            </li>
-          </ol>
         </div>
       </div>
+
+      {/* SECTION 2: Stats Cards */}
+      <div className="flex-shrink-0">
+        <AutomationDashboard />
+      </div>
+
+      {/* SECTION 3: How It Works — compact */}
+      <div className="bg-gradient-to-br from-blue-50/80 to-indigo-50/80 dark:from-[#0a1628]/80 dark:to-[#0f1a30]/80 rounded-2xl sm:rounded-3xl border-2 border-blue-700 dark:border-blue-900/40 shadow-xl p-3 sm:p-4">
+        <h3 className="text-sm sm:text-base font-black text-blue-900 dark:text-blue-300 mb-2 sm:mb-3 tracking-tight">How It Works</h3>
+        <ol className="space-y-1 sm:space-y-1.5">
+          {[
+            'Download the Excel template with predefined columns',
+            'Fill in your invoice data including scheduled date and time',
+            'Upload the completed Excel file for validation',
+            'Our AI Agent validates invoices immediately and transfers them to the main system at their scheduled times',
+            'Monitor progress and download updated Excel with submission results',
+          ].map((step, index) => (
+            <li key={index} className="flex items-start gap-2 sm:gap-3">
+              <span className="flex-shrink-0 w-5 h-5 sm:w-6 sm:h-6 bg-blue-600 dark:bg-blue-500 text-white rounded-full flex items-center justify-center text-[10px] sm:text-xs font-black shadow-md shadow-blue-600/30">
+                {index + 1}
+              </span>
+              <span className="text-[11px] sm:text-xs font-semibold text-neutral-700 dark:text-neutral-300 leading-relaxed pt-0.5">
+                {step}
+              </span>
+            </li>
+          ))}
+        </ol>
+      </div>
+
     </div>
   );
 }

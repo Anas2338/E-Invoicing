@@ -715,7 +715,7 @@ export function InvoiceTable({
                   }`}
                 >
                   {onSelectionChange && (
-                    <td className="border-r-2 border-b-1 border-blue-200 px-1 py-4 align-middle w-[4%]">
+                    <td className="border-r-2 border-b-1 border-blue-200 px-2.5 py-4 align-middle w-[4%]">
                       <Checkbox
                         checked={isSelected}
                         onCheckedChange={(checked) => handleSelectInvoice(invoice.id, checked as boolean)}

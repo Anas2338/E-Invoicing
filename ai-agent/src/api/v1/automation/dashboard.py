@@ -5,7 +5,7 @@ from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from sqlmodel import Session, select, and_, or_, func
+from sqlmodel import Session, select, and_, or_, func, cast, String
 from datetime import date
 import os
 
@@ -52,6 +52,8 @@ async def get_invoice_list(
     source: Optional[InvoiceSource] = Query(None, description="Filter by source"),
     date_from: Optional[date] = Query(None, description="Filter by scheduled date from"),
     date_to: Optional[date] = Query(None, description="Filter by scheduled date to"),
+    invoice_number: Optional[str] = Query(None, description="Filter by invoice number (partial match)"),
+    customer: Optional[str] = Query(None, description="Filter by buyer business name (partial match)"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     db: Session = Depends(get_automation_db)
@@ -63,6 +65,8 @@ async def get_invoice_list(
     - Status (pending, validated, transferred, transfer_failed, failed, expired, blocked)
     - Source (excel_upload, api, recurring)
     - Date range (scheduled_date)
+    - Invoice number (partial match)
+    - Customer/buyer business name (partial match, searches in invoice_data JSON)
 
     Returns paginated results with total count.
     """
@@ -81,6 +85,14 @@ async def get_invoice_list(
 
     if date_to:
         filters.append(AutomationInvoice.scheduled_date <= date_to)
+
+    if invoice_number:
+        filters.append(AutomationInvoice.invoice_number.ilike(f'%{invoice_number}%'))
+
+    if customer:
+        filters.append(
+            cast(AutomationInvoice.invoice_data['buyer_business_name'], String).ilike(f'%{customer}%')
+        )
 
     # Optimized count query - uses indexes directly without subquery
     count_query = select(func.count(AutomationInvoice.id)).where(and_(*filters))
@@ -120,6 +132,8 @@ async def get_all_invoice_ids(
     source: Optional[InvoiceSource] = Query(None, description="Filter by source"),
     date_from: Optional[date] = Query(None, description="Filter by scheduled date from"),
     date_to: Optional[date] = Query(None, description="Filter by scheduled date to"),
+    invoice_number: Optional[str] = Query(None, description="Filter by invoice number (partial match)"),
+    customer: Optional[str] = Query(None, description="Filter by buyer business name (partial match)"),
     db: Session = Depends(get_automation_db)
 ):
     """
@@ -141,6 +155,14 @@ async def get_all_invoice_ids(
 
     if date_to:
         filters.append(AutomationInvoice.scheduled_date <= date_to)
+
+    if invoice_number:
+        filters.append(AutomationInvoice.invoice_number.ilike(f'%{invoice_number}%'))
+
+    if customer:
+        filters.append(
+            cast(AutomationInvoice.invoice_data['buyer_business_name'], String).ilike(f'%{customer}%')
+        )
 
     count_query = select(func.count(AutomationInvoice.id)).where(and_(*filters))
     total = db.exec(count_query).one()

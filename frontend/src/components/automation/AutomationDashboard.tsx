@@ -2,15 +2,30 @@
 
 import { useEffect, useState } from 'react';
 import { automationApi, DashboardStats } from '@/services/automationApi';
+import { SummaryCard } from '@/components/dashboard/summary-card';
+import {
+  FileText,
+  Clock,
+  FileCheck,
+  PauseCircle,
+  Send,
+  AlertTriangle,
+  XCircle,
+  CalendarX
+} from 'lucide-react';
 
-export default function AutomationDashboard() {
+interface AutomationDashboardProps {
+  refreshTrigger?: number;
+}
+
+export default function AutomationDashboard({ refreshTrigger = 0 }: AutomationDashboardProps) {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadStats();
-  }, []);
+  }, [refreshTrigger]);
 
   const loadStats = async () => {
     try {
@@ -25,15 +40,18 @@ export default function AutomationDashboard() {
     }
   };
 
-  if (loading) {
+  if (loading && !stats) {
     return (
       <div className="flex items-center justify-center p-8">
-        <div className="text-[#6d7175] dark:text-[#8c9196]">Loading statistics...</div>
+        <div className="flex items-center gap-3">
+          <div className="animate-spin rounded-full h-5 w-5 border-2 border-[#008060] border-t-transparent" />
+          <span className="text-[#6d7175] dark:text-[#8c9196] text-sm font-medium">Loading statistics...</span>
+        </div>
       </div>
     );
   }
 
-  if (error) {
+  if (error && !stats) {
     return (
       <div className="bg-[#fef3f2] dark:bg-[#3d1e1e] border border-[#fecdca] dark:border-[#5c2b2b] rounded-xl p-4">
         <p className="text-[#d72c0d] dark:text-[#ff6f59]">{error}</p>
@@ -53,70 +71,75 @@ export default function AutomationDashboard() {
 
   const statCards = [
     {
-      label: 'Total Invoices',
-      value: stats.total_invoices,
-      color: 'bg-[#dbeafe] border-[#bfdbfe] text-[#1e40af] dark:bg-[#1e3a8a]/30 dark:border-[#1e3a8a] dark:text-[#60a5fa]',
+      title: 'Total Invoices',
+      count: stats.total_invoices,
+      icon: <FileText className="h-4 w-4 sm:h-5 sm:w-5 text-white" />,
+      color: 'bg-blue-600 dark:bg-blue-500 shadow-xl shadow-blue-500/30',
+      bg: 'bg-white dark:bg-[#1a1a1a] border-2 border-blue-400 dark:border-neutral-800/80 rounded-3xl shadow-lg p-4 text-xl',
     },
     {
-      label: 'Pending',
-      value: stats.pending_count,
-      color: 'bg-[#fef3c7] border-[#fde68a] text-[#92400e] dark:bg-[#451a03]/30 dark:border-[#451a03] dark:text-[#fbbf24]',
+      title: 'Pending',
+      count: stats.pending_count,
+      icon: <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-white" />,
+      color: 'bg-amber-500 dark:bg-amber-400 shadow-xl shadow-amber-500/30',
+      bg: 'bg-white dark:bg-[#1a1a1a] border-2 border-amber-400 dark:border-neutral-800/80 rounded-3xl shadow-lg p-4 text-xl',
     },
     {
-      label: 'Validated',
-      value: stats.validated_count,
-      color: 'bg-[#e0e7ff] border-[#c7d2fe] text-[#3730a3] dark:bg-[#312e81]/30 dark:border-[#312e81] dark:text-[#a5b4fc]',
+      title: 'Validated',
+      count: stats.validated_count,
+      icon: <FileCheck className="h-4 w-4 sm:h-5 sm:w-5 text-white" />,
+      color: 'bg-emerald-600 dark:bg-emerald-500 shadow-xl shadow-emerald-500/30',
+      bg: 'bg-white dark:bg-[#1a1a1a] border-2 border-emerald-400 dark:border-neutral-800/80 rounded-3xl shadow-lg p-4 text-xl',
     },
     {
-      label: 'Paused',
-      value: stats.paused_count,
-      color: 'bg-[#fef3c7] border-[#fde68a] text-[#92400e] dark:bg-[#451a03]/30 dark:border-[#451a03] dark:text-[#fbbf24]',
+      title: 'Paused',
+      count: stats.paused_count,
+      icon: <PauseCircle className="h-4 w-4 sm:h-5 sm:w-5 text-white" />,
+      color: 'bg-amber-500 dark:bg-amber-400 shadow-xl shadow-amber-500/30',
+      bg: 'bg-white dark:bg-[#1a1a1a] border-2 border-amber-400 dark:border-neutral-800/80 rounded-3xl shadow-lg p-4 text-xl',
     },
     {
-      label: 'Transferred',
-      value: stats.transferred_count,
-      color: 'bg-[#d1fae5] border-[#a7f3d0] text-[#065f46] dark:bg-[#064e3b]/30 dark:border-[#065f46] dark:text-[#34d399]',
+      title: 'Transferred',
+      count: stats.transferred_count,
+      icon: <Send className="h-4 w-4 sm:h-5 sm:w-5 text-white" />,
+      color: 'bg-purple-600 dark:bg-purple-500 shadow-xl shadow-purple-500/30',
+      bg: 'bg-white dark:bg-[#1a1a1a] border-2 border-purple-400 dark:border-neutral-800/80 rounded-3xl shadow-lg p-4 text-xl',
     },
     {
-      label: 'Transfer Failed',
-      value: stats.transfer_failed_count,
-      color: 'bg-[#ffedd5] border-[#fed7aa] text-[#7c2d12] dark:bg-[#431407]/30 dark:border-[#7c2d12] dark:text-[#fb923c]',
+      title: 'Transfer Failed',
+      count: stats.transfer_failed_count,
+      icon: <AlertTriangle className="h-4 w-4 sm:h-5 sm:w-5 text-white" />,
+      color: 'bg-orange-600 dark:bg-orange-500 shadow-xl shadow-orange-500/30',
+      bg: 'bg-white dark:bg-[#1a1a1a] border-2 border-orange-400 dark:border-neutral-800/80 rounded-3xl shadow-lg p-4 text-xl',
     },
     {
-      label: 'Failed',
-      value: stats.failed_count,
-      color: 'bg-[#fee2e2] border-[#fecaca] text-[#991b1b] dark:bg-[#7f1d1d]/30 dark:border-[#7f1d1d] dark:text-[#f87171]',
+      title: 'Failed',
+      count: stats.failed_count,
+      icon: <XCircle className="h-4 w-4 sm:h-5 sm:w-5 text-white" />,
+      color: 'bg-rose-600 dark:bg-rose-500 shadow-xl shadow-rose-500/30',
+      bg: 'bg-white dark:bg-[#1a1a1a] border-2 border-rose-400 dark:border-neutral-800/80 rounded-3xl shadow-lg p-4 text-xl',
     },
     {
-      label: 'Expired',
-      value: stats.expired_count,
-      color: 'bg-[#f6f6f7] border-[#e1e3e5] text-[#6d7175] dark:bg-[#2e2e2e] dark:border-[#404040] dark:text-[#8c9196]',
+      title: 'Expired',
+      count: stats.expired_count,
+      icon: <CalendarX className="h-4 w-4 sm:h-5 sm:w-5 text-white" />,
+      color: 'bg-slate-500 dark:bg-slate-400 shadow-xl shadow-slate-500/30',
+      bg: 'bg-white dark:bg-[#1a1a1a] border-2 border-slate-400 dark:border-neutral-800/80 rounded-3xl shadow-lg p-4 text-xl',
     },
   ];
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-[#202223] dark:text-[#e3e3e3]">Dashboard Statistics</h2>
-        <button
-          onClick={loadStats}
-          className="text-sm text-[#008060] dark:text-[#00a876] hover:text-[#006e52] dark:hover:text-[#008f64] font-semibold transition-colors duration-150"
-        >
-          Refresh
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {statCards.map((card) => (
-          <div
-            key={card.label}
-            className={`border-2 rounded-xl p-6 ${card.color} transition-all duration-150 hover:shadow-md`}
-          >
-            <div className="text-sm font-semibold mb-2">{card.label}</div>
-            <div className="text-3xl font-bold">{card.value}</div>
-          </div>
-        ))}
-      </div>
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3">
+      {statCards.map((card) => (
+        <SummaryCard
+          key={card.title}
+          title={card.title}
+          count={card.count}
+          icon={card.icon}
+          color={card.color}
+          bg={card.bg}
+        />
+      ))}
     </div>
   );
 }
