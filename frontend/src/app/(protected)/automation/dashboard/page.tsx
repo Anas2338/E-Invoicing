@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { ArrowLeft, X } from 'lucide-react';
 import { InvoiceTable } from '@/components/automation/InvoiceTable';
 import InvoiceDetail from '@/components/automation/InvoiceDetail';
 import { automationApi } from '@/services/automationApi';
@@ -214,7 +216,7 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="h-full flex flex-col pt-1 pb-2 max-w-[1600px] overflow-hidden">
+    <div className="h-full flex flex-col pt-1 pb-2 max-w-[1600px] overflow-y-auto">
 
       {/* <div className="mb-8">
         <h1 className="text-3xl font-bold text-[#202223] dark:text-[#e3e3e3] mb-2">
@@ -226,18 +228,35 @@ export default function DashboardPage() {
       </div> */}
 
       {selectedInvoiceId ? (
-        <div className="mb-8">
-          <button
-            onClick={() => setSelectedInvoiceId(null)}
-            className="mb-4 text-sm text-[#008060] dark:text-[#00a876] hover:text-[#006e52] dark:hover:text-[#008f64] font-semibold flex items-center gap-1"
-          >
-            ← Back to list
-          </button>
-          <InvoiceDetail
-            invoiceId={selectedInvoiceId}
-            onClose={() => setSelectedInvoiceId(null)}
-            onUpdate={loadInvoices}
-          />
+        <div className="flex gap-4 flex-1 min-h-0">
+          {/* Sidebar Action Buttons */}
+          <div className="flex flex-col items-center gap-1.5 flex-shrink-0 pt-1">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setSelectedInvoiceId(null)}
+              className="h-10 lg:h-12 w-10 lg:w-12 border-slate-500 text-slate-600"
+              title="Back to list"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setSelectedInvoiceId(null)}
+              className="h-10 lg:h-12 w-10 lg:w-12 border-red-400 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20"
+              title="Close"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="flex-1 min-w-0 overflow-y-auto">
+            <InvoiceDetail
+              invoiceId={selectedInvoiceId}
+              onClose={() => setSelectedInvoiceId(null)}
+              onUpdate={loadInvoices}
+            />
+          </div>
         </div>
       ) : (
         <div className="flex-1 min-h-0">

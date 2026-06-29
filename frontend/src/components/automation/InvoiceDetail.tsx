@@ -190,16 +190,8 @@ export default function InvoiceDetail({ invoiceId, onClose, onUpdate }: InvoiceD
           Invoice Details: {invoice.invoice_number}
         </h2>
         <div className="flex items-center gap-2">
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="text-[#6d7175] dark:text-[#8c9196] hover:text-[#202223] dark:hover:text-[#e3e3e3] transition-colors"
-            >
-              ✕
-            </button>
-          )}
+          </div>
         </div>
-      </div>
 
       {/* Action Buttons */}
       <div className="flex gap-2">

@@ -13,16 +13,16 @@ import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/providers/auth-provider';
 import { invoiceService } from '@/lib/api/api-client';
 import { toast } from 'react-toastify';
-import { 
-  FileSpreadsheet, 
-  ArrowLeft, 
-  ShoppingCart, 
-  Package, 
-  Settings, 
-  FileText, 
-  Layers, 
-  FileCheck, 
-  Send, 
+import {
+  FileSpreadsheet,
+  ArrowLeft,
+  ShoppingCart,
+  Package,
+  Settings,
+  FileText,
+  Layers,
+  FileCheck,
+  Send,
   AlertTriangle,
   ArrowRight
 } from 'lucide-react';
@@ -235,17 +235,23 @@ export default function DashboardPage() {
 
   if (invoiceType === 'excel') {
     return (
-      <div className="space-y-6 w-full max-w-[1600px] mx-auto px-4 md:px-6 py-4">
-        <Button
-          variant="ghost"
-          size="lg"
-          onClick={() => setInvoiceType(null)}
-          className="flex items-center gap-3 text-lg font-black text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 transition-colors px-0 hover:bg-transparent"
-        >
-          <ArrowLeft className="h-6 w-6 stroke-[3]" />
-          Back to Dashboard
-        </Button>
-        <ManualExcelUploadForm />
+      <div className="container mx-auto px-4 py-3">
+        <div className="max-w-3xl lg:max-w-6xl mx-auto flex gap-3">
+          <div className="flex flex-col items-center gap-1.5 flex-shrink-0 pt-1">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setInvoiceType(null)}
+              className="h-10 lg:h-12 w-10 lg:w-12 border-slate-500 text-slate-600"
+              title="Back to Dashboard"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="flex-1 min-w-0">
+            <ManualExcelUploadForm />
+          </div>
+        </div>
       </div>
     );
   }
@@ -432,7 +438,7 @@ export default function DashboardPage() {
       {/* SECTION 3: Main Ledger Stream Records Header & Lists */}
       <div className="flex-1 flex flex-col min-h-0">
 
-        
+
 
         <div className="flex-1 min-h-0 overflow-auto">
           {recentInvoices.length > 0 ? (

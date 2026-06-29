@@ -276,6 +276,16 @@ def parse_excel_for_manual_invoice(
             "withholding_tax_amount": withholding_tax_amount,
         }
 
+        buyer_ntn_cnic = _clean_ntn_cnic(row['buyer_ntn_cnic'])
+        buyer_registration_type = str(row['buyer_registration_type']).strip() if pd.notna(row['buyer_registration_type']) else "Registered"
+
+        if buyer_registration_type == "Registered" and not buyer_ntn_cnic:
+            validation_errors.append(
+                f"Row {excel_row} (Invoice {invoice_number}): "
+                f"buyer NTN/CNIC is required for registered buyers."
+            )
+            continue
+
         if invoice_number not in invoice_groups:
             invoice_groups[invoice_number] = {
                 "external_id": invoice_number,
@@ -286,11 +296,11 @@ def parse_excel_for_manual_invoice(
                 "seller_business_name": seller_info.get("seller_business_name", ""),
                 "seller_province": seller_info.get("seller_province", ""),
                 "seller_address": seller_info.get("seller_address", ""),
-                "buyer_ntn_cnic": _clean_ntn_cnic(row['buyer_ntn_cnic']),
+                "buyer_ntn_cnic": buyer_ntn_cnic,
                 "buyer_business_name": str(row['buyer_business_name']).strip() if pd.notna(row['buyer_business_name']) else "",
                 "buyer_province": str(row['buyer_province']).strip() if pd.notna(row['buyer_province']) else "",
                 "buyer_address": str(row['buyer_address']).strip() if pd.notna(row['buyer_address']) else "",
-                "buyer_registration_type": str(row['buyer_registration_type']).strip() if pd.notna(row['buyer_registration_type']) else "Registered",
+                "buyer_registration_type": buyer_registration_type,
                 "invoice_ref_no": "",
                 "scenario_id": "",
                 "items": [],

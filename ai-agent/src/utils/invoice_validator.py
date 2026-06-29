@@ -239,11 +239,16 @@ class InvoiceValidator:
         if not is_valid:
             return False, f"Seller {error}"
 
-        # Validate buyer NTN/CNIC (empty is allowed — buyer may not have NTN/CNIC)
+        # Validate buyer NTN/CNIC (required for registered buyers, optional for unregistered)
         buyer_ntn = invoice_data.get('buyer_ntn_cnic', '')
-        is_valid, error = InvoiceValidator.validate_ntn_or_cnic(buyer_ntn, allow_empty=True)
+        buyer_reg_type = invoice_data.get('buyer_registration_type', '').strip()
+        allow_empty_buyer_ntn = buyer_reg_type != "Registered"
+        is_valid, error = InvoiceValidator.validate_ntn_or_cnic(buyer_ntn, allow_empty=allow_empty_buyer_ntn)
         if not is_valid:
-            return False, f"Buyer {error}"
+            error_msg = error
+            if buyer_reg_type == "Registered" and not buyer_ntn:
+                error_msg = "Buyer NTN/CNIC is required for registered buyers"
+            return False, error_msg
 
         # Validate seller province
         seller_province = invoice_data.get('seller_province', '')

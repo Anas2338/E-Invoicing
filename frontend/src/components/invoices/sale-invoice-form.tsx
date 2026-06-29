@@ -1328,6 +1328,10 @@ export function SaleInvoiceForm({
       toast.error('Buyer Address is required');
       return false;
     }
+    if (buyerRegistrationType === 'Registered' && !buyerNTNCNIC.trim()) {
+      toast.error('Buyer NTN/CNIC is required for registered buyers');
+      return false;
+    }
     if (buyerRegistrationType === 'Unregistered') {
       const itemsWithoutFurtherTax = items.filter(item => String(item.furtherTax ?? '').trim() === '');
       if (itemsWithoutFurtherTax.length > 0) {
@@ -1742,6 +1746,7 @@ export function SaleInvoiceForm({
                     type="date"
                     value={invoiceDate}
                     onChange={(e) => setInvoiceDate(e.target.value)}
+                    max={todayKarachi}
                     required
                   />
                 </div>
