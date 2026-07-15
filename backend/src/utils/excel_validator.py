@@ -72,10 +72,6 @@ class ExcelValidator:
 
         # Income tax
         "income_tax",
-
-        # Status fields
-        "status",
-        "reason"
     ]
 
     # Maximum file size in bytes (10 MB)

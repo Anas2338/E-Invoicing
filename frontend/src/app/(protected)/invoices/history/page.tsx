@@ -182,7 +182,7 @@ export default function InvoiceHistoryPage() {
   };
 
   const handleViewInvoice = (id: string) => {
-    router.push(`/invoices/${id}` as any);
+    router.push(`/invoices/${id}/edit` as any);
   };
 
   const handleEditInvoice = (id: string) => {

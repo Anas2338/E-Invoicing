@@ -53,13 +53,29 @@ MANUAL_TEMPLATE_COLUMNS = [
     "discount",
     "income_tax",
     "withholding_tax_amount",
-    "status",
-    "reason",
 ]
 
 
-def generate_manual_excel_template() -> BytesIO:
-    """Generate Excel template for manual invoice upload (no scheduled_date/scheduled_time)."""
+def generate_manual_excel_template(
+    invoice_types: list[str] | None = None,
+    provinces: list[str] | None = None,
+) -> BytesIO:
+    """Generate Excel template for manual invoice upload with dropdown validations.
+
+    Args:
+        invoice_types: Valid invoice type names (e.g. ['Sale Invoice', 'Debit Note']).
+                       Falls back to default list if None.
+        provinces: Valid province names (e.g. ['PUNJAB', 'SINDH', ...]).
+                   Falls back to default list if None.
+    """
+    if not invoice_types:
+        invoice_types = ["Sale Invoice", "Debit Note"]
+    if not provinces:
+        provinces = [
+            "PUNJAB", "SINDH", "KPK", "BALOCHISTAN",
+            "ISLAMABAD", "GILGIT BALTISTAN", "AZAD JAMMU KASHMIR"
+        ]
+
     df = pd.DataFrame(columns=MANUAL_TEMPLATE_COLUMNS)
 
     sample_row = pd.DataFrame([{
@@ -74,13 +90,11 @@ def generate_manual_excel_template() -> BytesIO:
         "saved_item_code": "ITEM001",
         "quantity": "2",
         "value_sales_excluding_st": "50000",
-        "fixed_notified_value_or_retail_price": "0",
+        "fixed_notified_value_or_retail_price": "50000",
         "further_tax": "0",
         "discount": "0",
         "income_tax": "236G",
         "withholding_tax_amount": "50",
-        "status": "",
-        "reason": "",
     }])
     df = pd.concat([df, sample_row], ignore_index=True)
 
@@ -92,15 +106,43 @@ def generate_manual_excel_template() -> BytesIO:
         worksheet = writer.sheets['Invoices']
 
         from openpyxl.utils import get_column_letter
+        from openpyxl.worksheet.datavalidation import DataValidation
 
-        column_widths = [
-            15, 15, 12, 15, 25, 15, 30, 20,
-            20, 10, 20, 25, 12, 12, 12, 20, 12, 30,
-        ]
-
-        for idx, width in enumerate(column_widths, start=1):
+        # — Column widths (auto-fit based on header text) —
+        column_headers = MANUAL_TEMPLATE_COLUMNS
+        for idx, header in enumerate(column_headers, start=1):
             col_letter = get_column_letter(idx)
+            # Calculate width: header length + padding, with min/max bounds
+            width = max(len(header) + 3, 12)
+            width = min(width, 40)
             worksheet.column_dimensions[col_letter].width = width
+
+        # — Freeze the header row so it stays visible when scrolling —
+        worksheet.freeze_panes = 'A2'
+
+        # — Data validation dropdowns (inline comma-separated lists) —
+        last_data_row = 1048576  # covers entire column (Excel max rows)
+
+        option_sets: dict[str, list[str]] = {
+            'B': invoice_types,                          # invoice_type
+            'F': provinces,                              # buyer_province
+            'H': ["Registered", "Unregistered"],         # buyer_registration_type
+            'O': ["236G", "236H"],                       # income_tax
+        }
+
+        for col_letter, values in option_sets.items():
+            options_str = ','.join(values)
+            dv = DataValidation(
+                type='list',
+                formula1=f'"{options_str}"',
+                allow_blank=True,
+            )
+            dv.error = 'Please select a valid value from the dropdown list.'
+            dv.errorTitle = 'Invalid value'
+            dv.prompt = 'Select from the dropdown list'
+            dv.promptTitle = 'Valid options'
+            worksheet.add_data_validation(dv)
+            dv.add(f'{col_letter}2:{col_letter}{last_data_row}')
 
     output.seek(0)
     return output
@@ -173,6 +215,7 @@ def parse_excel_for_manual_invoice(
 
     today = date.today()
     invoice_groups: dict[str, dict] = {}
+    seen_invoice_numbers: set[str] = set()  # track duplicates within the same file
     validation_errors = []
 
     for row_idx, row in df.iterrows():
@@ -185,6 +228,14 @@ def parse_excel_for_manual_invoice(
                 f"invoice number already exists in your history."
             )
             continue
+
+        if invoice_number in seen_invoice_numbers:
+            validation_errors.append(
+                f"Row {excel_row} (Invoice {invoice_number}): "
+                f"duplicate invoice number within the same Excel file."
+            )
+            continue
+        seen_invoice_numbers.add(invoice_number)
 
         saved_item_code = str(row['saved_item_code']).strip() if pd.notna(row['saved_item_code']) else ""
         if not saved_item_code:
@@ -277,12 +328,65 @@ def parse_excel_for_manual_invoice(
         }
 
         buyer_ntn_cnic = _clean_ntn_cnic(row['buyer_ntn_cnic'])
+        buyer_business_name = str(row['buyer_business_name']).strip() if pd.notna(row['buyer_business_name']) else ""
+        buyer_province = str(row['buyer_province']).strip() if pd.notna(row['buyer_province']) else ""
+        buyer_address = str(row['buyer_address']).strip() if pd.notna(row['buyer_address']) else ""
         buyer_registration_type = str(row['buyer_registration_type']).strip() if pd.notna(row['buyer_registration_type']) else "Registered"
 
         if buyer_registration_type == "Registered" and not buyer_ntn_cnic:
             validation_errors.append(
                 f"Row {excel_row} (Invoice {invoice_number}): "
                 f"buyer NTN/CNIC is required for registered buyers."
+            )
+            continue
+
+        if not buyer_business_name:
+            validation_errors.append(
+                f"Row {excel_row} (Invoice {invoice_number}): "
+                f"buyer business name is required."
+            )
+            continue
+
+        if not buyer_province:
+            validation_errors.append(
+                f"Row {excel_row} (Invoice {invoice_number}): "
+                f"buyer province is required."
+            )
+            continue
+
+        if not buyer_address:
+            validation_errors.append(
+                f"Row {excel_row} (Invoice {invoice_number}): "
+                f"buyer address is required."
+            )
+            continue
+
+        if quantity <= 0:
+            validation_errors.append(
+                f"Row {excel_row} (Invoice {invoice_number}): "
+                f"quantity must be greater than 0."
+            )
+            continue
+
+        if value_sales_excluding_st <= 0:
+            validation_errors.append(
+                f"Row {excel_row} (Invoice {invoice_number}): "
+                f"value_sales_excluding_st must be greater than 0."
+            )
+            continue
+
+        if fixed_notified_value_or_retail_price < value_sales_excluding_st:
+            validation_errors.append(
+                f"Row {excel_row} (Invoice {invoice_number}): "
+                f"fixed_notified_value_or_retail_price ({fixed_notified_value_or_retail_price}) "
+                f"must be equal to or greater than value_sales_excluding_st ({value_sales_excluding_st})."
+            )
+            continue
+
+        if discount > value_sales_excluding_st:
+            validation_errors.append(
+                f"Row {excel_row} (Invoice {invoice_number}): "
+                f"discount ({discount}) cannot exceed value_sales_excluding_st ({value_sales_excluding_st})."
             )
             continue
 
@@ -297,9 +401,9 @@ def parse_excel_for_manual_invoice(
                 "seller_province": seller_info.get("seller_province", ""),
                 "seller_address": seller_info.get("seller_address", ""),
                 "buyer_ntn_cnic": buyer_ntn_cnic,
-                "buyer_business_name": str(row['buyer_business_name']).strip() if pd.notna(row['buyer_business_name']) else "",
-                "buyer_province": str(row['buyer_province']).strip() if pd.notna(row['buyer_province']) else "",
-                "buyer_address": str(row['buyer_address']).strip() if pd.notna(row['buyer_address']) else "",
+                "buyer_business_name": buyer_business_name,
+                "buyer_province": buyer_province,
+                "buyer_address": buyer_address,
                 "buyer_registration_type": buyer_registration_type,
                 "invoice_ref_no": "",
                 "scenario_id": "",

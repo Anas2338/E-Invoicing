@@ -87,14 +87,33 @@ def create_invoice(
 
 @router.get("/excel/template/download")
 def download_manual_excel_template(
+    db = Depends(get_database_session),
     user_id: str = Depends(require_authentication)
 ):
     """
     Download Excel template for manual invoice upload.
-    Template includes income_tax column (236G/236H).
-    Does NOT include scheduled_date/scheduled_time (those are automation-only).
+    Template includes dropdown validations on invoice_type, buyer_province,
+    buyer_registration_type, and income_tax columns — values are fetched
+    from FBR master data.
     """
-    template_file = generate_manual_excel_template()
+    from src.models.fbr_master_data import FBRInvoiceType, FBRProvince
+
+    # Fetch master data for dropdowns
+    invoice_types = [
+        t.name for t in db.query(FBRInvoiceType).all()
+    ] or ["Sale Invoice", "Debit Note"]
+
+    provinces = [
+        p.name for p in db.query(FBRProvince).all()
+    ] or [
+        "PUNJAB", "SINDH", "KPK", "BALOCHISTAN",
+        "ISLAMABAD", "GILGIT BALTISTAN", "AZAD JAMMU KASHMIR"
+    ]
+
+    template_file = generate_manual_excel_template(
+        invoice_types=invoice_types,
+        provinces=provinces,
+    )
 
     return StreamingResponse(
         template_file,
