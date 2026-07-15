@@ -206,7 +206,7 @@ def get_unified_invoice_history(
     date_from: Optional[date] = Query(None, description="Filter by date from"),
     date_to: Optional[date] = Query(None, description="Filter by date to"),
     page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    page_size: int = Query(100000, ge=1, description="Items per page"),
     db = Depends(get_database_session)
 ):
     """

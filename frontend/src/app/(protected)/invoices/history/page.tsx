@@ -83,8 +83,8 @@ export default function InvoiceHistoryPage() {
       }
       setError(null);
 
-      // Fetch all invoices (max page_size = 100 per backend limit)
-      const response = await api.invoices.getUnifiedHistory({ page_size: 100 });
+      // Fetch all invoices (no limit — loads everything)
+      const response = await api.invoices.getUnifiedHistory({ page_size: 100000 });
 
       // Transform backend data to match our interface
       const transformedInvoices: Invoice[] = response.invoices

@@ -860,8 +860,12 @@ export function SaleInvoiceForm({
             // Mark this item as manually edited to prevent auto-override by buyer type change
             const idx = editingItemIndex !== null ? editingItemIndex : items.length;
             setManualFurtherTax(prev => new Set(prev).add(idx));
-          }
-          if (field !== 'furtherTax' && field !== 'discount' && buyerRegistrationType === 'Unregistered') {
+          } else if (
+            field !== 'discount' &&
+            buyerRegistrationType === 'Unregistered' &&
+            // Only auto-calc for new items, or existing items not previously marked manual
+            (editingItemIndex === null || !manualFurtherTax.has(editingItemIndex))
+          ) {
             furtherTax = baseValue * 0.04;
           }
           const extraTax = Number(updated.extraTax) || 0;
@@ -1280,8 +1284,7 @@ export function SaleInvoiceForm({
           let furtherTax = Number(updatedItems[index].furtherTax) || 0;
           if (field === 'furtherTax') {
             setManualFurtherTax(prev => new Set(prev).add(index));
-          }
-          if (!manualFurtherTax.has(index) && field !== 'discount' && buyerRegistrationType === 'Unregistered') {
+          } else if (!manualFurtherTax.has(index) && field !== 'discount' && buyerRegistrationType === 'Unregistered') {
             furtherTax = baseValue * 0.04;
           }
 
