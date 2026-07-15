@@ -182,7 +182,12 @@ export default function InvoiceHistoryPage() {
   };
 
   const handleViewInvoice = (id: string) => {
-    router.push(`/invoices/${id}/edit` as any);
+    const invoice = invoices.find(inv => inv.id === id);
+    if (invoice?.status === 'POSTED') {
+      router.push(`/invoices/${id}` as any);
+    } else {
+      router.push(`/invoices/${id}/edit` as any);
+    }
   };
 
   const handleEditInvoice = (id: string) => {
