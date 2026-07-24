@@ -77,21 +77,55 @@ async def auto_posting_job():
                 for invoice in invoices:
                     try:
                         # Post invoice to FBR using PostingService
+                        # Pass user's auto-posting environment so token is selected
+                        # based on user's configured preference, not invoice.environment
                         is_posted, reference_number, response_data = await posting_service.post_single_invoice(
                             db=db,
                             invoice=invoice,
-                            user_id=str(user.id)
+                            user_id=str(user.id),
+                            posting_environment=user.auto_posting_environment,
                         )
 
                         if is_posted:
                             total_posted += 1
+                            # Create posting log and increment daily counter
+                            auto_service.create_posting_log(
+                                user_id=user.id,
+                                invoice_id=invoice.id,
+                                action='auto',
+                                result='success',
+                                environment=user.auto_posting_environment,
+                            )
+                            auto_service.increment_daily_counter(
+                                user.id,
+                                current_datetime,
+                                user.auto_posting_start_time,
+                                user.auto_posting_end_time,
+                            )
                             logger.info(f"Posted invoice {invoice.id} to FBR: {reference_number}")
                         else:
                             total_failed += 1
-                            logger.warning(f"Failed to post invoice {invoice.id}: {response_data.get('error')}")
+                            error_msg = response_data.get('error', 'Posting failed') if isinstance(response_data, dict) else str(response_data)
+                            auto_service.create_posting_log(
+                                user_id=user.id,
+                                invoice_id=invoice.id,
+                                action='auto',
+                                result='failure',
+                                environment=user.auto_posting_environment,
+                                error_details={'error': error_msg},
+                            )
+                            logger.warning(f"Failed to post invoice {invoice.id}: {error_msg}")
 
                     except Exception as e:
                         total_failed += 1
+                        auto_service.create_posting_log(
+                            user_id=user.id,
+                            invoice_id=invoice.id,
+                            action='auto',
+                            result='failure',
+                            environment=user.auto_posting_environment,
+                            error_details={'error': str(e)},
+                        )
                         logger.error(f"Error posting invoice {invoice.id}: {e}")
 
             logger.info(f"Auto-posting completed: {total_posted} posted, {total_failed} failed")

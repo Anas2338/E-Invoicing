@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Dict, Any
 from uuid import UUID
+import uuid
 import asyncio
 from pydantic import BaseModel
 
@@ -20,7 +21,7 @@ from src.api.deps import get_database_session
 from src.models.invoice import Invoice, InvoiceStatus
 from src.models.fbr_response import FBRResponse
 from src.models.user import User
-from src.utils.helpers import generate_correlation_id
+
 from src.utils.logging import log_audit_event
 
 
@@ -282,7 +283,7 @@ async def bulk_post_invoices(
 
         # Create and return bulk response
         return BulkPostingResponse(
-            request_id=UUID(int=hash(generate_correlation_id())) if generate_correlation_id() else UUID(int=0),
+            request_id=uuid.uuid4(),
             total_count=len(bulk_request.invoice_ids),
             successful_count=successful_count,
             failed_count=failed_count,

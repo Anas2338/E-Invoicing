@@ -8,6 +8,8 @@ from src.models.invoice import Invoice, InvoiceStatus
 from src.models.fbr_response import FBRResponse
 from src.schemas.fbr import BulkPostingResult, FBREnvironment
 from src.services.fbr_client import FBRClient
+from src.services.fbr_service import fbr_service
+from src.utils.encryption import get_encryption_service
 from src.utils.helpers import generate_correlation_id
 
 
@@ -23,14 +25,21 @@ class PostingService:
         self.fbr_client = FBRClient()
 
     async def post_single_invoice(self, db: Session, invoice: Invoice,
-                                user_id: str) -> Tuple[bool, Optional[str], Dict[str, Any]]:
+                                user_id: str,
+                                posting_environment: str | None = None) -> Tuple[bool, Optional[str], Dict[str, Any]]:
         """
         Post a single validated invoice to FBR.
+
+        Uses the same fbr_service.post_invoice path as the manual single-invoice
+        posting endpoint for consistency and correctness.
 
         Args:
             db: Database session
             invoice: Invoice object to post
             user_id: ID of the user initiating the posting
+            posting_environment: Optional environment override for token selection.
+                When provided (e.g., from auto-posting scheduler), uses this to pick
+                the FBR token. When None (manual posting), falls back to invoice.environment.
 
         Returns:
             Tuple of (success, reference_number, response_data)
@@ -45,31 +54,48 @@ class PostingService:
         if not user:
             raise ValueError("User not found")
 
-        # Get the appropriate encrypted token based on environment
-        encrypted_token = None
-        if invoice.environment == "SANDBOX":
-            encrypted_token = user.fbr_sandbox_token
-        else:
-            encrypted_token = user.fbr_production_token
+        # Determine which environment's token to use:
+        # - Auto-posting: use the provided posting_environment (user.auto_posting_environment)
+        # - Manual posting: use the invoice's own environment
+        target_environment = posting_environment or (
+            invoice.environment.value if hasattr(invoice.environment, 'value') else str(invoice.environment)
+        )
 
-        if not encrypted_token:
-            encrypted_token = user.fbr_access_token
+        # Get the appropriate encrypted token based on target environment
+        encrypted_token = None
+        if target_environment.upper() == "SANDBOX":
+            encrypted_token = user.fbr_sandbox_token or user.fbr_access_token
+        else:
+            encrypted_token = user.fbr_production_token or user.fbr_access_token
 
         if not encrypted_token:
             raise ValueError("FBR access token not configured")
 
+        # Decrypt the token before using it
+        encryption_service = get_encryption_service()
         try:
-            # Post to FBR using user credentials
-            is_posted, response_data, reference_number = await self.fbr_client.post_invoice_with_user_credentials(
-                invoice.invoice_data,
-                invoice.environment,
-                encrypted_token
+            access_token = encryption_service.decrypt(encrypted_token)
+        except Exception as decrypt_error:
+            logger.error(f"Failed to decrypt FBR token for user {user_id}: {decrypt_error}")
+            raise ValueError(f"FBR token decryption failed: {str(decrypt_error)}")
+
+        try:
+            # Post to FBR using fbr_service.
+            # When posting_environment is provided (auto-posting), use it for the
+            # FBR URL so the URL matches the token's environment. When None
+            # (manual posting), falls back to invoice.environment — unchanged behavior.
+            fbr_response = await fbr_service.post_invoice(
+                invoice, access_token, db=db,
+                environment_override=posting_environment
             )
 
-            if is_posted:
+            # Parse the response using the same parser as the manual endpoint
+            is_success, fbr_invoice_number, error_message = fbr_service.parse_posting_response(fbr_response)
+
+            if is_success:
                 # Update invoice status to posted
                 invoice.status = InvoiceStatus.POSTED
-                invoice.fbr_reference_number = reference_number
+                invoice.fbr_reference_number = fbr_invoice_number
                 invoice.posted_at = datetime.utcnow()
                 invoice.updated_at = datetime.utcnow()
 
@@ -78,21 +104,20 @@ class PostingService:
                 db.commit()
                 db.refresh(invoice)
 
-                logger.info(f"Invoice {invoice.id} posted successfully with reference {reference_number}")
+                logger.info(f"Invoice {invoice.id} posted successfully with reference {fbr_invoice_number}")
+                return is_success, fbr_invoice_number, fbr_response
             else:
                 # Update invoice status to failed
                 invoice.status = InvoiceStatus.FAILED
-                if "errors" in response_data:
-                    invoice.validation_errors = response_data["errors"]
+                invoice.validation_errors = {"error": error_message}
                 invoice.updated_at = datetime.utcnow()
 
                 # Update the invoice in database
                 db.add(invoice)
                 db.commit()
 
-                logger.warning(f"Invoice {invoice.id} posting failed: {response_data.get('error')}")
-
-            return is_posted, reference_number, response_data
+                logger.warning(f"Invoice {invoice.id} posting failed: {error_message}")
+                return is_success, None, {"error": error_message or "Posting failed"}
 
         except Exception as e:
             # Handle posting error
@@ -161,12 +186,15 @@ class PostingService:
                     failed_count += 1
                     continue
 
-                # Temporarily update environment if needed
-                original_environment = invoice.environment
-                if environment.upper() != original_environment.value:
-                    # In a real system, you might want to validate this change
-                    # For now, we'll allow it
-                    pass
+                # Verify environment consistency (handle both enum and plain string)
+                original_env = invoice.environment
+                original_env_value = original_env.value if hasattr(original_env, 'value') else str(original_env)
+                if environment.upper() != original_env_value.upper():
+                    # Environment mismatch — log warning but proceed with invoice's own environment
+                    logger.warning(
+                        f"Environment mismatch for invoice {invoice_id}: "
+                        f"request={environment}, invoice={original_env_value}"
+                    )
 
                 # Post the invoice
                 is_posted, reference_number, response_data = await self.post_single_invoice(
@@ -270,7 +298,7 @@ class PostingService:
         Returns:
             Dictionary containing the posting request payload
         """
-        target_environment = environment or invoice.environment.value
+        target_environment = environment or (invoice.environment.value if hasattr(invoice.environment, 'value') else str(invoice.environment))
 
         # Prepare payload according to FBR technical specification
         payload = {

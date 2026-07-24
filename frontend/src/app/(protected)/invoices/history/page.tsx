@@ -367,11 +367,11 @@ export default function InvoiceHistoryPage() {
   const handleBulkValidate = async () => {
     if (selectedInvoices.size === 0) return;
 
-    // Filter to only include DRAFT invoices (skip VALIDATED, FAILED, POSTED)
+    // Filter to include DRAFT and FAILED invoices (allows retry for failed ones)
     const selectedInvoicesList = Array.from(selectedInvoices);
     const validatableInvoices = selectedInvoicesList.filter(id => {
       const invoice = invoices.find(inv => inv.id === id);
-      return invoice?.status === 'DRAFT';
+      return invoice?.status === 'DRAFT' || invoice?.status === 'FAILED';
     });
 
     const skippedCount = selectedInvoicesList.length - validatableInvoices.length;
@@ -381,7 +381,7 @@ export default function InvoiceHistoryPage() {
       setDialogData({
         success: false,
         title: 'No Validatable Invoices Selected',
-        message: 'Only DRAFT invoices can be validated.',
+        message: 'Only DRAFT or FAILED invoices can be validated.',
         errors: []
       });
       setDialogOpen(true);
@@ -424,7 +424,7 @@ export default function InvoiceHistoryPage() {
       }
 
       // Show result dialog
-      const skippedMessage = skippedCount > 0 ? ` ${skippedCount} invoice${skippedCount > 1 ? 's were' : ' was'} skipped (already validated/posted).` : '';
+      const skippedMessage = skippedCount > 0 ? ` ${skippedCount} invoice${skippedCount > 1 ? 's were' : ' was'} skipped (only DRAFT and FAILED invoices can be validated).` : '';
       setDialogData({
         success: failCount === 0,
         title: failCount === 0 ? 'Bulk Validation Successful' : 'Bulk Validation Completed with Errors',
@@ -485,7 +485,7 @@ export default function InvoiceHistoryPage() {
         success: failCount === 0,
         title: failCount === 0 ? 'Bulk Posting Successful' : 'Bulk Posting Completed with Errors',
         message: `Successfully posted ${successCount} invoice${successCount !== 1 ? 's' : ''}.${failCount > 0 ? ` Failed to post ${failCount} invoice${failCount !== 1 ? 's' : ''}.` : ''}`,
-        errors: response.results?.filter((r: any) => r.status === 'failed').map((r: any) => ({ message: r.error || 'Unknown error' })) || []
+        errors: response.results?.filter((r: any) => r.status === 'failed').map((r: any) => ({ error: r.error || 'Unknown error', itemSNo: String(r.invoice_id).slice(0, 8) })) || []
       });
       setDialogOpen(true);
 

@@ -320,7 +320,8 @@ class FBRService:
                 }, fbr_data
 
     async def post_invoice(
-        self, invoice: Invoice, access_token: str, db: Optional[Session] = None
+        self, invoice: Invoice, access_token: str, db: Optional[Session] = None,
+        environment_override: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Post a validated invoice to FBR.
@@ -329,6 +330,9 @@ class FBRService:
             invoice: Invoice object to post (must be validated first)
             access_token: Bearer token for FBR API authentication
             db: Optional database session; if provided, an FBRResponse audit record is created
+            environment_override: Optional environment to use for the FBR URL instead of
+                invoice.environment. Used by auto-posting to post to the user's configured
+                environment even when the invoice was created in a different one.
 
         Returns:
             FBR posting response including FBR invoice number
@@ -336,12 +340,13 @@ class FBRService:
         Raises:
             httpx.HTTPError: If API call fails
         """
-        url = self._get_post_url(invoice.environment)
+        target_environment = environment_override or invoice.environment
+        url = self._get_post_url(target_environment)
         correlation_id = str(invoice.id)
         start_ms = int(time.time() * 1000)
 
         # Fetch UoM mappings from FBR API
-        uom_mapping = await self._fetch_uom_mappings(access_token, invoice.environment)
+        uom_mapping = await self._fetch_uom_mappings(access_token, target_environment)
 
         fbr_data = await self._transform_invoice_to_fbr_format(invoice, uom_mapping)
 
@@ -350,7 +355,7 @@ class FBRService:
             "Content-Type": "application/json"
         }
 
-        logger.info(f"Posting invoice {invoice.id} to FBR ({invoice.environment})")
+        logger.info(f"Posting invoice {invoice.id} to FBR ({target_environment})")
         logger.debug(f"FBR posting payload: {fbr_data}")
 
         async with httpx.AsyncClient(timeout=self.timeout, verify=False) as client:

@@ -78,7 +78,7 @@ export function Navigation() {
                 onClick={() => router.push('/dashboard')}
                 className="text-2xl font-bold text-[#008060] dark:text-[#00a876] hover:text-[#006e52] dark:hover:text-[#008f64] transition-colors cursor-pointer tracking-tight"
               >
-                E-Invoicing
+                Taxntec
               </button>
             </div>
             {/* Desktop Navigation */}

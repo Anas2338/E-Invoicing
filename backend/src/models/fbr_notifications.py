@@ -7,8 +7,8 @@ from sqlalchemy import Column, String, Integer, Text, DateTime, Boolean, JSON, I
 from sqlalchemy.sql import func
 from sqlalchemy.ext.declarative import declarative_base
 
-# Use the same base as fbr_master_data
-from src.models.fbr_master_data import FBRBase
+# Use the same base as fbr_master_data (relative import within the models package)
+from .fbr_master_data import FBRBase
 
 
 class FBRChangeNotification(FBRBase):
