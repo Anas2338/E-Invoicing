@@ -283,7 +283,7 @@ def parse_excel_for_manual_invoice(
         quantity = float(row['quantity']) if pd.notna(row['quantity']) else 0
         value_sales_excluding_st = float(row['value_sales_excluding_st']) if pd.notna(row['value_sales_excluding_st']) else 0
         fixed_notified_value_or_retail_price = float(row['fixed_notified_value_or_retail_price']) if pd.notna(row['fixed_notified_value_or_retail_price']) else 0
-        further_tax = float(row['further_tax']) if pd.notna(row['further_tax']) else 0
+        further_tax = round(float(row['further_tax']), 0) if pd.notna(row['further_tax']) else 0
         discount = float(row['discount']) if pd.notna(row.get('discount')) else 0
 
         # Parse withholding_tax_amount from Excel (optional, auto-calc if omitted)
@@ -299,8 +299,8 @@ def parse_excel_for_manual_invoice(
 
         tax_rate = float(saved_item.default_rate) if saved_item.default_rate else 18.0
         base_value = max(value_sales_excluding_st, fixed_notified_value_or_retail_price)
-        sales_tax_applicable = (base_value * tax_rate) / 100
-        total_values = base_value + sales_tax_applicable + further_tax - discount
+        sales_tax_applicable = round((base_value * tax_rate) / 100, 2)
+        total_values = round(base_value + sales_tax_applicable + further_tax - discount, 2)
 
         uom_code = saved_item.default_uom or "NOS"
 

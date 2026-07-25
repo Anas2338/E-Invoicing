@@ -1,4 +1,4 @@
-# CLAUDE.md — FBR E-Invoicing Portal
+﻿# CLAUDE.md — FBR E-Invoicing Portal
 
 ## Project Overview
 

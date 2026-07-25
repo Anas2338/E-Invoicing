@@ -1,0 +1,226 @@
+openapi: "3.0.3"
+info:
+  title: Bulk Invoice Operations API
+  description: Non-blocking background bulk validation and posting endpoints for invoice history
+  version: "1.0.0"
+
+servers:
+  - url: http://localhost:8001/api/v1
+    description: Development server
+
+paths:
+  /invoices/bulk-validate:
+    post:
+      summary: Start background bulk validation
+      description: |
+        Initiates validation of selected draft/failed invoices against FBR in the background.
+        Returns immediately with a task_id. The frontend polls /invoices/bulk-task/{task_id}
+        for progress. Only one bulk operation per user at a time.
+      tags: [Invoices]
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkValidateRequest"
+      responses:
+        "200":
+          description: Operation started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkOperationResponse"
+        "400":
+          description: No validatable invoices or operation already in progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Not authenticated
+
+  /invoices/bulk-post:
+    post:
+      summary: Start background bulk posting
+      description: |
+        Initiates posting of selected validated invoices to FBR in the background.
+        Returns immediately with a task_id. Only one bulk operation per user at a time.
+      tags: [Invoices]
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkPostRequest"
+      responses:
+        "200":
+          description: Operation started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkOperationResponse"
+        "400":
+          description: No postable invoices or operation already in progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Not authenticated
+
+  /invoices/bulk-task/{task_id}:
+    get:
+      summary: Get bulk operation status
+      description: Poll for progress of a background bulk operation.
+      tags: [Invoices]
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: task_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Current operation status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkOperationStatusResponse"
+        "404":
+          description: Task not found (may have been cleaned up)
+        "401":
+          description: Not authenticated
+
+  /invoices/bulk-tasks/active:
+    get:
+      summary: Get user's active bulk tasks
+      description: |
+        Returns all currently-processing bulk tasks for the authenticated user.
+        Used for recovery after page navigation or browser close/reopen.
+      tags: [Invoices]
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: List of active tasks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActiveBulkTasksResponse"
+        "401":
+          description: Not authenticated
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: access_token
+
+  schemas:
+    BulkValidateRequest:
+      type: object
+      required: [invoice_ids]
+      properties:
+        invoice_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+          description: Draft or failed invoice IDs to validate
+
+    BulkPostRequest:
+      type: object
+      required: [invoice_ids, environment]
+      properties:
+        invoice_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+          description: Validated or transferred invoice IDs to post
+        environment:
+          type: string
+          enum: [SANDBOX, PRODUCTION]
+          description: FBR environment to post to
+
+    BulkOperationResponse:
+      type: object
+      properties:
+        task_id:
+          type: string
+          format: uuid
+          description: ID to poll for progress
+        message:
+          type: string
+          example: "Validation started for 10 invoices"
+
+    BulkOperationStatusResponse:
+      type: object
+      properties:
+        task_id:
+          type: string
+          format: uuid
+        operation_type:
+          type: string
+          enum: [bulk_validate, bulk_post]
+        status:
+          type: string
+          enum: [processing, completed, partially_completed, failed]
+        total_count:
+          type: integer
+        processed_count:
+          type: integer
+        success_count:
+          type: integer
+        failure_count:
+          type: integer
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/BulkOperationError"
+        progress_percentage:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    BulkOperationError:
+      type: object
+      properties:
+        invoice_id:
+          type: string
+        invoice_number:
+          type: string
+        error:
+          type: string
+
+    ActiveBulkTasksResponse:
+      type: object
+      properties:
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/BulkOperationStatusResponse"
+
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: string

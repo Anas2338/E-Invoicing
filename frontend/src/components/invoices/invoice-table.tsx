@@ -726,11 +726,11 @@ export function InvoiceTable({
                     </td>
                   )}
                   <td className="px-1 py-4 align-middle w-[11%] border-r-2 border-b-1 border-blue-200">
-                    <div className="text-[11px] lg:text-[13px] xl:text-sm font-medium text-slate-700 truncate">{invoice.invoiceNumber}</div>
+                    <div className="text-[11px] lg:text-[13px] xl:text-sm font-medium text-slate-700">{invoice.invoiceNumber}</div>
                     <div className="text-[9px] lg:text-[10px] xl:text-xs font-medium text-slate-500 truncate mt-0.5">{invoice.invoiceType}</div>
                   </td>
                   <td className="px-1 py-4 align-middle w-[16%] border-r-2 border-blue-200 border-b-1">
-                    <div className="text-[11px] lg:text-[13px] xl:text-sm font-medium text-slate-700 truncate">
+                    <div className="text-[11px] lg:text-[13px] xl:text-sm font-medium text-slate-700">
                       {invoice.fbrReferenceNumber || '—'}
                     </div>
                   </td>
