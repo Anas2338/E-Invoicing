@@ -18,10 +18,10 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T001 Create `BulkOperationTask` SQLModel with enums (`BulkOperationType`, `BulkOperationStatus`) in `backend/src/models/bulk_operation.py`
-- [ ] T002 [P] Export `BulkOperationTask` from `backend/src/models/__init__.py`
-- [ ] T003 [P] Create request/response Pydantic schemas (`BulkValidateRequest`, `BulkPostRequest`, `BulkOperationResponse`, `BulkOperationStatusResponse`, `BulkOperationError`, `ActiveBulkTasksResponse`) in `backend/src/schemas/bulk_operation.py`
-- [ ] T004 Generate Alembic migration for `bulk_operation_task` table — run `uv run alembic revision --autogenerate -m "add bulk_operation_task"` and verify the generated migration creates all columns matching data-model.md
+- [X] T001 Create `BulkOperationTask` SQLModel with enums (`BulkOperationType`, `BulkOperationStatus`) in `backend/src/models/bulk_operation.py`
+- [X] T002 [P] Export `BulkOperationTask` from `backend/src/models/__init__.py`
+- [X] T003 [P] Create request/response Pydantic schemas (`BulkValidateRequest`, `BulkPostRequest`, `BulkOperationResponse`, `BulkOperationStatusResponse`, `BulkOperationError`, `ActiveBulkTasksResponse`) in `backend/src/schemas/bulk_operation.py`
+- [X] T004 Generate Alembic migration for `bulk_operation_task` table — run `uv run alembic revision --autogenerate -m "add bulk_operation_task"` and verify the generated migration creates all columns matching data-model.md
 
 **Checkpoint**: Foundation ready — bulk_operation_task table exists, schemas available for service and endpoint code.
 
@@ -35,18 +35,18 @@
 
 ### Tests for Bulk Operation Service (TDD — write first, ensure red)
 
-- [ ] T005 [P] [US1] Write `test_bulk_validate_service` — test that `BulkOperationService.bulk_validate_invoices` validates each invoice, increments processed_count, records errors, sets status to `completed` or `partially_completed` in `backend/tests/test_bulk_operation_service.py`
-- [ ] T006 [P] [US2] Write `test_bulk_post_service` — test that `BulkOperationService.bulk_post_invoices` posts each invoice via `PostingService`, updates counters, handles per-invoice failures, and sets correct terminal status in `backend/tests/test_bulk_operation_service.py`
-- [ ] T007 [P] [US1] Write `test_bulk_validate_partial_failure` — test that when some invoices fail validation, service continues processing remaining invoices and final status is `partially_completed` with correct error list in `backend/tests/test_bulk_operation_service.py`
-- [ ] T008 [P] [US2] Write `test_bulk_post_partial_failure` — test that when some invoices fail posting, service continues and records per-invoice FBR errors in `backend/tests/test_bulk_operation_service.py`
-- [ ] T009 [P] [US1] Write `test_bulk_validate_empty_batch` — test that service handles empty invoice list gracefully (sets status to `completed`, zero success/failure) in `backend/tests/test_bulk_operation_service.py`
+- [X] T005 [P] [US1] Write `test_bulk_validate_service` — test that `BulkOperationService.bulk_validate_invoices` validates each invoice, increments processed_count, records errors, sets status to `completed` or `partially_completed` in `backend/tests/test_bulk_operation_service.py`
+- [X] T006 [P] [US2] Write `test_bulk_post_service` — test that `BulkOperationService.bulk_post_invoices` posts each invoice via `PostingService`, updates counters, handles per-invoice failures, and sets correct terminal status in `backend/tests/test_bulk_operation_service.py`
+- [X] T007 [P] [US1] Write `test_bulk_validate_partial_failure` — test that when some invoices fail validation, service continues processing remaining invoices and final status is `partially_completed` with correct error list in `backend/tests/test_bulk_operation_service.py`
+- [X] T008 [P] [US2] Write `test_bulk_post_partial_failure` — test that when some invoices fail posting, service continues and records per-invoice FBR errors in `backend/tests/test_bulk_operation_service.py`
+- [X] T009 [P] [US1] Write `test_bulk_validate_empty_batch` — test that service handles empty invoice list gracefully (sets status to `completed`, zero success/failure) in `backend/tests/test_bulk_operation_service.py`
 
 ### Implementation for Bulk Operation Service
 
-- [ ] T010 [US1] Implement `BulkOperationService.bulk_validate_invoices` async generator method that validates each invoice against FBR, updates `processed_count`, `success_count`, `failure_count`, `errors` in `backend/src/services/bulk_operation_service.py`
-- [ ] T011 [US2] Implement `BulkOperationService.bulk_post_invoices` async generator method that posts each validated invoice to FBR via `PostingService.post_single_invoice`, updates progress counters in `backend/src/services/bulk_operation_service.py`
-- [ ] T012 [US1] Implement `BulkOperationService.update_task_status` helper to atomically update task counters and set terminal status (`completed` / `partially_completed` / `failed`) in `backend/src/services/bulk_operation_service.py`
-- [ ] T013 [US1] Implement `BulkOperationService.get_task` — read single task by id + user_id (with 404 if not found) in `backend/src/services/bulk_operation_service.py`
+- [X] T010 [US1] Implement `BulkOperationService.bulk_validate_invoices` async generator method that validates each invoice against FBR, updates `processed_count`, `success_count`, `failure_count`, `errors` in `backend/src/services/bulk_operation_service.py`
+- [X] T011 [US2] Implement `BulkOperationService.bulk_post_invoices` async generator method that posts each validated invoice to FBR via `PostingService.post_single_invoice`, updates progress counters in `backend/src/services/bulk_operation_service.py`
+- [X] T012 [US1] Implement `BulkOperationService.update_task_status` helper to atomically update task counters and set terminal status (`completed` / `partially_completed` / `failed`) in `backend/src/services/bulk_operation_service.py`
+- [X] T013 [US1] Implement `BulkOperationService.get_task` — read single task by id + user_id (with 404 if not found) in `backend/src/services/bulk_operation_service.py`
 
 **Checkpoint**: BulkOperationService processes invoices in background, updates DB counters, handles failures per-invoice.
 
@@ -60,19 +60,19 @@
 
 ### Tests for Endpoints (TDD — write first, ensure red)
 
-- [ ] T014 [P] [US1] Write `test_bulk_validate_endpoint` — test that `POST /api/v1/invoices/bulk-validate` returns 200 with `task_id` and starts background processing in `backend/tests/test_bulk_operation_endpoints.py`
-- [ ] T015 [P] [US2] Write `test_bulk_post_endpoint` — test that `POST /api/v1/invoices/bulk-post` returns 200 with `task_id` and processes invoices in `backend/tests/test_bulk_operation_endpoints.py`
-- [ ] T016 [P] [US1] Write `test_bulk_task_status_endpoint` — test that `GET /api/v1/invoices/bulk-task/{task_id}` returns current progress with all fields (status, counters, progress_percentage) in `backend/tests/test_bulk_operation_endpoints.py`
-- [ ] T017 [P] [US2] Write `test_bulk_post_requires_environment` — test that `POST /api/v1/invoices/bulk-post` returns 422 when `environment` is missing in `backend/tests/test_bulk_operation_endpoints.py`
-- [ ] T018 [P] [US1] Write `test_bulk_endpoints_unauthorized` — test that all new endpoints return 401 when not authenticated in `backend/tests/test_bulk_operation_endpoints.py`
-- [ ] T019 [P] [US2] Write `test_bulk_task_status_not_found` — test that `GET /api/v1/invoices/bulk-task/nonexistent-uuid` returns 404 in `backend/tests/test_bulk_operation_endpoints.py`
+- [X] T014 [P] [US1] Write `test_bulk_validate_endpoint` — test that `POST /api/v1/invoices/bulk-validate` returns 200 with `task_id` and starts background processing in `backend/tests/test_bulk_operation_endpoints.py`
+- [X] T015 [P] [US2] Write `test_bulk_post_endpoint` — test that `POST /api/v1/invoices/bulk-post` returns 200 with `task_id` and processes invoices in `backend/tests/test_bulk_operation_endpoints.py`
+- [X] T016 [P] [US1] Write `test_bulk_task_status_endpoint` — test that `GET /api/v1/invoices/bulk-task/{task_id}` returns current progress with all fields (status, counters, progress_percentage) in `backend/tests/test_bulk_operation_endpoints.py`
+- [X] T017 [P] [US2] Write `test_bulk_post_requires_environment` — test that `POST /api/v1/invoices/bulk-post` returns 422 when `environment` is missing in `backend/tests/test_bulk_operation_endpoints.py`
+- [X] T018 [P] [US1] Write `test_bulk_endpoints_unauthorized` — test that all new endpoints return 401 when not authenticated in `backend/tests/test_bulk_operation_endpoints.py`
+- [X] T019 [P] [US2] Write `test_bulk_task_status_not_found` — test that `GET /api/v1/invoices/bulk-task/nonexistent-uuid` returns 404 in `backend/tests/test_bulk_operation_endpoints.py`
 
 ### Implementation for Endpoints
 
-- [ ] T020 [P] [US1] Implement `POST /api/v1/invoices/bulk-validate` — creates `BulkOperationTask`, enqueues `BulkOperationService.bulk_validate_invoices` via `BackgroundTasks`, returns `BulkOperationResponse` in `backend/src/api/v1/invoices.py`
-- [ ] T021 [P] [US2] Implement `POST /api/v1/invoices/bulk-post` — creates `BulkOperationTask`, enqueues `BulkOperationService.bulk_post_invoices` via `BackgroundTasks`, returns `BulkOperationResponse` in `backend/src/api/v1/invoices.py`
-- [ ] T022 [P] [US1] Implement `GET /api/v1/invoices/bulk-task/{task_id}` — reads task from service, returns `BulkOperationStatusResponse` with computed `progress_percentage` in `backend/src/api/v1/invoices.py`
-- [ ] T023 [US1] Register all new endpoint imports and rate limiting at the top of `backend/src/api/v1/invoices.py`
+- [X] T020 [P] [US1] Implement `POST /api/v1/invoices/bulk-validate` — creates `BulkOperationTask`, enqueues `BulkOperationService.bulk_validate_invoices` via `BackgroundTasks`, returns `BulkOperationResponse` in `backend/src/api/v1/invoices.py`
+- [X] T021 [P] [US2] Implement `POST /api/v1/invoices/bulk-post` — creates `BulkOperationTask`, enqueues `BulkOperationService.bulk_post_invoices` via `BackgroundTasks`, returns `BulkOperationResponse` in `backend/src/api/v1/invoices.py`
+- [X] T022 [P] [US1] Implement `GET /api/v1/invoices/bulk-task/{task_id}` — reads task from service, returns `BulkOperationStatusResponse` with computed `progress_percentage` in `backend/src/api/v1/invoices.py`
+- [X] T023 [US1] Register all new endpoint imports and rate limiting at the top of `backend/src/api/v1/invoices.py`
 
 **Checkpoint**: All 3 core backend endpoints working — bulk-validate, bulk-post, bulk-task status. Can test via Swagger UI.
 
@@ -86,20 +86,20 @@
 
 ### Tests for Frontend (TDD — write first, ensure red)
 
-- [ ] T024 [P] [US1] Write `BulkOperationContext` tests — test `startOperation` registers a new operation, polling fetches status updates, `removeOperation` cleans up, and completed tasks auto-remove after timeout in `frontend/__tests__/BulkOperationContext.test.tsx`
-- [ ] T025 [P] [US1] Write `BulkOperationContext` localStorage persistence tests — test that operations survive in localStorage across component unmount/remount in `frontend/__tests__/BulkOperationContext.test.tsx`
-- [ ] T026 [P] [US1] Write `BulkOperationProgress` component tests — test that progress card renders operation type, progress bar, processed/success/failure counts, and completion state shows summary in `frontend/__tests__/BulkOperationProgress.test.tsx`
+- [X] T024 [P] [US1] Write `BulkOperationContext` tests — test `startOperation` registers a new operation, polling fetches status updates, `removeOperation` cleans up, and completed tasks auto-remove after timeout in `frontend/__tests__/BulkOperationContext.test.tsx`
+- [X] T025 [P] [US1] Write `BulkOperationContext` localStorage persistence tests — test that operations survive in localStorage across component unmount/remount in `frontend/__tests__/BulkOperationContext.test.tsx`
+- [X] T026 [P] [US1] Write `BulkOperationProgress` component tests — test that progress card renders operation type, progress bar, processed/success/failure counts, and completion state shows summary in `frontend/__tests__/BulkOperationProgress.test.tsx`
 
 ### Implementation for Frontend
 
-- [ ] T027 [P] [US1] Add 4 API functions (`bulkValidateBackground`, `bulkPostBackground`, `getBulkTaskStatus`, `getActiveBulkTasks`) to `api.invoices` in `frontend/src/lib/api.ts`
-- [ ] T028 [US1] Create `BulkOperationContext` and `BulkOperationProvider` with polling (every 3s), localStorage persistence, completed-task auto-removal (10s delay), and `useBulkOperation` hook in `frontend/src/contexts/BulkOperationContext.tsx`
-- [ ] T029 [US1] Create `BulkOperationProgress` component showing operation type badge, progress bar with percentage, processed/success/failure counts, completion summary with error details expandable, and dismiss button in `frontend/src/components/invoices/BulkOperationProgress.tsx`
-- [ ] T030 [US1] Wire `BulkOperationProvider` in `frontend/src/app/(protected)/layout.tsx` — wrap children alongside existing `UploadSessionProvider`
-- [ ] T031 [US1] Replace `handleBulkValidate` in history page — fire-and-forget via `bulkValidateBackground`, call `startOperation` from context, remove sequential `for...of` loop, clear selection, show toast in `frontend/src/app/(protected)/invoices/history/page.tsx`
-- [ ] T032 [US2] Replace `handleBulkPost` in history page — fire-and-forget via `bulkPostBackground`, call `startOperation` from context, remove synchronous bulkPost call, show toast in `frontend/src/app/(protected)/invoices/history/page.tsx`
-- [ ] T033 [US1] Add `BulkOperationProgress` rendering in history page below the action sidebar — show when any active bulk operations exist, use `useBulkOperation()` hook in `frontend/src/app/(protected)/invoices/history/page.tsx`
-- [ ] T034 [US1] Add completion toast listener — when operation status becomes `completed` or `partially_completed`, show a toast notification with success/failure summary on any page in `frontend/src/contexts/BulkOperationContext.tsx`
+- [X] T027 [P] [US1] Add 4 API functions (`bulkValidateBackground`, `bulkPostBackground`, `getBulkTaskStatus`, `getActiveBulkTasks`) to `api.invoices` in `frontend/src/lib/api.ts`
+- [X] T028 [US1] Create `BulkOperationContext` and `BulkOperationProvider` with polling (every 3s), localStorage persistence, completed-task auto-removal (10s delay), and `useBulkOperation` hook in `frontend/src/contexts/BulkOperationContext.tsx`
+- [X] T029 [US1] Create `BulkOperationProgress` component showing operation type badge, progress bar with percentage, processed/success/failure counts, completion summary with error details expandable, and dismiss button in `frontend/src/components/invoices/BulkOperationProgress.tsx`
+- [X] T030 [US1] Wire `BulkOperationProvider` in `frontend/src/app/(protected)/layout.tsx` — wrap children alongside existing `UploadSessionProvider`
+- [X] T031 [US1] Replace `handleBulkValidate` in history page — fire-and-forget via `bulkValidateBackground`, call `startOperation` from context, remove sequential `for...of` loop, clear selection, show toast in `frontend/src/app/(protected)/invoices/history/page.tsx`
+- [X] T032 [US2] Replace `handleBulkPost` in history page — fire-and-forget via `bulkPostBackground`, call `startOperation` from context, remove synchronous bulkPost call, show toast in `frontend/src/app/(protected)/invoices/history/page.tsx`
+- [X] T033 [US1] Add `BulkOperationProgress` rendering in history page below the action sidebar — show when any active bulk operations exist, use `useBulkOperation()` hook in `frontend/src/app/(protected)/invoices/history/page.tsx`
+- [X] T034 [US1] Add completion toast listener — when operation status becomes `completed` or `partially_completed`, show a toast notification with success/failure summary on any page in `frontend/src/contexts/BulkOperationContext.tsx`
 
 **Checkpoint**: Full MVP working — user can fire bulk operations, see progress, navigate freely, get completion toasts. Everything additive — existing features untouched.
 
@@ -113,13 +113,13 @@
 
 ### Implementation for Recovery
 
-- [ ] T035 [P] [US3] Implement `GET /api/v1/invoices/bulk-tasks/active` endpoint — returns all `processing` tasks for authenticated user in `backend/src/api/v1/invoices.py`
-- [ ] T036 [US3] Add recovery-on-mount in `BulkOperationContext` — on provider mount, fetch `GET /invoices/bulk-tasks/active` and re-register any still-processing tasks from backend in `frontend/src/contexts/BulkOperationContext.tsx`
+- [X] T035 [P] [US3] Implement `GET /api/v1/invoices/bulk-tasks/active` endpoint — returns all `processing` tasks for authenticated user in `backend/src/api/v1/invoices.py`
+- [X] T036 [US3] Add recovery-on-mount in `BulkOperationContext` — on provider mount, fetch `GET /invoices/bulk-tasks/active` and re-register any still-processing tasks from backend in `frontend/src/contexts/BulkOperationContext.tsx`
 
 ### Tests for Recovery
 
-- [ ] T037 [P] [US3] Write `test_bulk_tasks_active_endpoint` — test that `GET /api/v1/invoices/bulk-tasks/active` returns only this user's processing tasks in `backend/tests/test_bulk_operation_endpoints.py`
-- [ ] T038 [P] [US3] Write `test_bulk_tasks_active_empty` — test that endpoint returns empty list when user has no active tasks in `backend/tests/test_bulk_operation_endpoints.py`
+- [X] T037 [P] [US3] Write `test_bulk_tasks_active_endpoint` — test that `GET /api/v1/invoices/bulk-tasks/active` returns only this user's processing tasks in `backend/tests/test_bulk_operation_endpoints.py`
+- [X] T038 [P] [US3] Write `test_bulk_tasks_active_empty` — test that endpoint returns empty list when user has no active tasks in `backend/tests/test_bulk_operation_endpoints.py`
 
 **Checkpoint**: Operations survive page navigation and tab close/reopen.
 
@@ -133,13 +133,13 @@
 
 ### Tests for Concurrency Protection
 
-- [ ] T039 [P] [US4] Write `test_concurrent_operation_blocked` — test that starting a second bulk operation while one is processing returns 400 with appropriate error in `backend/tests/test_bulk_operation_endpoints.py`
-- [ ] T040 [P] [US4] Write `test_concurrent_operation_allowed_after_completion` — test that a new operation is accepted after the previous one has completed in `backend/tests/test_bulk_operation_endpoints.py`
+- [X] T039 [P] [US4] Write `test_concurrent_operation_blocked` — test that starting a second bulk operation while one is processing returns 400 with appropriate error in `backend/tests/test_bulk_operation_endpoints.py`
+- [X] T040 [P] [US4] Write `test_concurrent_operation_allowed_after_completion` — test that a new operation is accepted after the previous one has completed in `backend/tests/test_bulk_operation_endpoints.py`
 
 ### Implementation for Concurrency Protection
 
-- [ ] T041 [US4] Add active-operation check in bulk validate/post endpoints — query for existing `processing` tasks for this user, return 400 if found in `backend/src/api/v1/invoices.py`
-- [ ] T042 [US4] Add frontend guard — disable validate/post bulk buttons when any operation is active in `BulkOperationContext` (expose `hasActiveOperation`), show tooltip "Operation in progress" in `frontend/src/app/(protected)/invoices/history/page.tsx`
+- [X] T041 [US4] Add active-operation check in bulk validate/post endpoints — query for existing `processing` tasks for this user, return 400 if found in `backend/src/api/v1/invoices.py`
+- [X] T042 [US4] Add frontend guard — disable validate/post bulk buttons when any operation is active in `BulkOperationContext` (expose `hasActiveOperation`), show tooltip "Operation in progress" in `frontend/src/app/(protected)/invoices/history/page.tsx`
 
 **Checkpoint**: Users cannot accidentally start conflicting operations.
 
@@ -149,9 +149,9 @@
 
 **Purpose**: Cleanup, maintenance, and final validation.
 
-- [ ] T043 [P] Add cleanup job `cleanup_completed_bulk_tasks` to scheduler — runs every 10 minutes, deletes rows where `status IN ('completed','failed','partially_completed') AND completed_at < NOW() - 5 minutes` in `backend/src/services/scheduler.py`
-- [ ] T044 Update quickstart.md verification checklist — mark all tested items and confirm no regressions in existing functionality
-- [ ] T045 Run full test suite: `cd backend && uv run pytest tests/test_bulk_operation_service.py tests/test_bulk_operation_endpoints.py -v` and `cd frontend && npm run test -- __tests__/BulkOperationContext.test.tsx __tests__/BulkOperationProgress.test.tsx`
+- [X] T043 [P] Add cleanup job `cleanup_completed_bulk_tasks` to scheduler — runs every 10 minutes, deletes rows where `status IN ('completed','failed','partially_completed') AND completed_at < NOW() - 5 minutes` in `backend/src/services/scheduler.py`
+- [X] T044 Update quickstart.md verification checklist — mark all tested items and confirm no regressions in existing functionality
+- [X] T045 Run full test suite: `cd backend && uv run pytest tests/test_bulk_operation_service.py tests/test_bulk_operation_endpoints.py -v` and `cd frontend && npm run test -- __tests__/BulkOperationContext.test.tsx __tests__/BulkOperationProgress.test.tsx`
 
 **Checkpoint**: DB stays clean, tests pass, feature ready for deployment.
 

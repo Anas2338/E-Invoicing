@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { Navigation } from '@/components/navigation';
 import { UploadSessionProvider } from '@/contexts/UploadSessionContext';
+import { BulkOperationProvider } from '@/contexts/BulkOperationContext';
 import { ValidationProgressWidget } from '@/components/automation/ValidationProgressWidget';
 
 export default function ProtectedLayout({
@@ -38,13 +39,15 @@ export default function ProtectedLayout({
 
   return (
     <UploadSessionProvider>
-      <div className="h-screen overflow-y-auto bg-[#f5f5f4] dark:bg-[#0a0a0a] flex flex-col">
-        <Navigation />
-        <div className="flex-1 min-h-0 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-1">
-          {children}
+      <BulkOperationProvider>
+        <div className="h-screen overflow-y-auto bg-[#f5f5f4] dark:bg-[#0a0a0a] flex flex-col">
+          <Navigation />
+          <div className="flex-1 min-h-0 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-1">
+            {children}
+          </div>
+          <ValidationProgressWidget />
         </div>
-        <ValidationProgressWidget />
-      </div>
+      </BulkOperationProvider>
     </UploadSessionProvider>
   );
 }

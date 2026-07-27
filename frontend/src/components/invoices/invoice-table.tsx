@@ -36,6 +36,7 @@ interface InvoiceTableProps {
   validatingInvoiceId?: string | null;
   postingInvoiceId?: string | null;
   deletingInvoiceId?: string | null;
+  processingInvoiceIds?: string[];
   invoiceNumberFilter?: string;
   onInvoiceNumberFilterChange?: (value: string) => void;
   dateFromFilter?: string;
@@ -72,6 +73,7 @@ export function InvoiceTable({
   validatingInvoiceId = null,
   postingInvoiceId = null,
   deletingInvoiceId = null,
+  processingInvoiceIds = [],
   invoiceNumberFilter = '',
   onInvoiceNumberFilterChange = () => {},
   dateFromFilter = '',
@@ -416,7 +418,8 @@ export function InvoiceTable({
                       variant="outline"
                       size="sm"
                       onClick={() => onView(invoice.id)}
-                      className="flex-1 min-w-[80px] h-9 text-xs rounded-xl font-semibold border-slate-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-slate-700 dark:text-neutral-300 hover:bg-slate-50 dark:hover:bg-neutral-800"
+                      disabled={processingInvoiceIds.includes(invoice.id)}
+                      className="flex-1 min-w-[80px] h-9 text-xs rounded-xl font-semibold border-slate-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-slate-700 dark:text-neutral-300 hover:bg-slate-50 dark:hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed"
                     >
                       <Eye className="h-4 w-4 mr-1.5 opacity-80" />
                       View
@@ -427,7 +430,7 @@ export function InvoiceTable({
                       variant="outline"
                       size="sm"
                       onClick={() => onValidate(invoice.id)}
-                      disabled={validatingInvoiceId === invoice.id}
+                      disabled={validatingInvoiceId === invoice.id || processingInvoiceIds.includes(invoice.id)}
                       className="flex-1 min-w-[80px] h-9 text-xs rounded-xl font-semibold border-amber-200 text-amber-700 bg-amber-50/50 hover:bg-amber-50 dark:border-amber-500/30 dark:text-amber-400 dark:bg-amber-500/5 dark:hover:bg-amber-500/10"
                     >
                       {validatingInvoiceId === invoice.id ? (
@@ -443,7 +446,7 @@ export function InvoiceTable({
                       variant="outline"
                       size="sm"
                       onClick={() => onValidate(invoice.id)}
-                      disabled={validatingInvoiceId === invoice.id}
+                      disabled={validatingInvoiceId === invoice.id || processingInvoiceIds.includes(invoice.id)}
                       className="flex-1 min-w-[80px] h-9 text-xs rounded-xl font-semibold border-emerald-500/40 text-emerald-600 bg-emerald-50/40 hover:bg-emerald-500 hover:text-white dark:border-emerald-500/30 dark:text-emerald-400 dark:bg-emerald-500/5 dark:hover:bg-emerald-500 dark:hover:text-neutral-950 transition-all"
                     >
                       {validatingInvoiceId === invoice.id ? (
@@ -459,7 +462,7 @@ export function InvoiceTable({
                       variant="outline"
                       size="sm"
                       onClick={() => onPost(invoice.id)}
-                      disabled={postingInvoiceId === invoice.id}
+                      disabled={postingInvoiceId === invoice.id || processingInvoiceIds.includes(invoice.id)}
                       className="flex-1 min-w-[80px] h-9 text-xs rounded-xl font-semibold border-blue-200 text-blue-700 bg-blue-50/50 hover:bg-blue-50 dark:border-blue-500/30 dark:text-blue-400 dark:bg-blue-500/5 dark:hover:bg-blue-500/10"
                     >
                       {postingInvoiceId === invoice.id ? (
@@ -485,7 +488,7 @@ export function InvoiceTable({
                       variant="outline"
                       size="sm"
                       onClick={() => onDelete(invoice.id)}
-                      disabled={deletingInvoiceId === invoice.id}
+                      disabled={deletingInvoiceId === invoice.id || processingInvoiceIds.includes(invoice.id)}
                       className="flex-1 min-w-[80px] h-9 text-xs rounded-xl font-semibold border-rose-100 text-rose-600 bg-rose-50/30 hover:bg-rose-50 dark:border-rose-950 dark:text-rose-400 dark:bg-rose-950/20 dark:hover:bg-rose-950/40"
                     >
                       {deletingInvoiceId === invoice.id ? (
@@ -762,7 +765,8 @@ export function InvoiceTable({
                           variant="outline"
                           size="icon"
                           onClick={() => onView(invoice.id)}
-                          className="h-10 w-10 rounded-lg border-slate-200 dark:border-neutral-800 hover:text-emerald-500 dark:hover:text-emerald-400 shadow-sm transition-all duration-100"
+                          disabled={processingInvoiceIds.includes(invoice.id)}
+                          className="h-10 w-10 rounded-lg border-slate-200 dark:border-neutral-800 hover:text-emerald-500 dark:hover:text-emerald-400 shadow-sm transition-all duration-100 disabled:opacity-30 disabled:cursor-not-allowed"
                           title="View"
                         >
                           <Eye className="h-4 w-4" />
@@ -773,7 +777,7 @@ export function InvoiceTable({
                           variant="outline"
                           size="icon"
                           onClick={() => onValidate(invoice.id)}
-                          disabled={validatingInvoiceId === invoice.id}
+                          disabled={validatingInvoiceId === invoice.id || processingInvoiceIds.includes(invoice.id)}
                           className="h-10 w-10 rounded-lg border-amber-200 text-amber-600 bg-amber-50/30 hover:bg-amber-50 dark:border-amber-500/30 dark:text-amber-400 dark:bg-amber-500/5 dark:hover:bg-amber-500/20 shadow-sm"
                           title="Validate"
                         >
@@ -789,7 +793,7 @@ export function InvoiceTable({
                           variant="outline"
                           size="icon"
                           onClick={() => onValidate(invoice.id)}
-                          disabled={validatingInvoiceId === invoice.id}
+                          disabled={validatingInvoiceId === invoice.id || processingInvoiceIds.includes(invoice.id)}
                           className="h-10 w-10 rounded-lg border-emerald-500/30 text-emerald-600 bg-emerald-50/20 hover:bg-emerald-500 hover:text-white dark:border-emerald-500/30 dark:text-emerald-400 dark:bg-emerald-500/5 dark:hover:bg-emerald-500 dark:hover:text-neutral-950 shadow-sm transition-all"
                           title="Retry"
                         >
@@ -805,7 +809,7 @@ export function InvoiceTable({
                           variant="outline"
                           size="icon"
                           onClick={() => onPost(invoice.id)}
-                          disabled={postingInvoiceId === invoice.id}
+                          disabled={postingInvoiceId === invoice.id || processingInvoiceIds.includes(invoice.id)}
                           className="h-10 w-10 rounded-lg border-blue-200 text-blue-600 bg-blue-50/30 hover:bg-blue-50 dark:border-blue-500/30 dark:text-blue-400 dark:bg-blue-500/5 dark:hover:bg-blue-500/20 shadow-sm"
                           title="Post to FBR"
                         >
@@ -831,7 +835,7 @@ export function InvoiceTable({
                           variant="outline"
                           size="icon"
                           onClick={() => onDelete(invoice.id)}
-                          disabled={deletingInvoiceId === invoice.id}
+                          disabled={deletingInvoiceId === invoice.id || processingInvoiceIds.includes(invoice.id)}
                           className="h-10 w-10 rounded-lg border-rose-100 text-rose-500 hover:text-rose-600 bg-rose-50/20 dark:border-rose-950/60 dark:text-rose-400 dark:bg-rose-950/20 dark:hover:bg-rose-900/40 shadow-sm transition-all"
                           title="Delete"
                         >

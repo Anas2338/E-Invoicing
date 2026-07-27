@@ -469,6 +469,56 @@ class InvoiceService:
 
         return count
 
+    def get_adjacent_invoices(self, db: Session, invoice_id: UUID, user_id: UUID) -> dict:
+        """
+        Get the previous and next invoice IDs for navigation.
+
+        Args:
+            db: Database session
+            invoice_id: ID of the current invoice
+            user_id: ID of the requesting user
+
+        Returns:
+            Dictionary with prev_id and next_id (both nullable UUIDs)
+        """
+        # Get the current invoice for its created_at timestamp
+        current = db.exec(
+            select(Invoice.created_at)
+            .where(Invoice.id == invoice_id)
+            .where(Invoice.user_id == user_id)
+            .where(Invoice.is_deleted == False)
+        ).first()
+
+        if not current:
+            return {"prev_id": None, "next_id": None}
+
+        created_at = current  # scalar value from single-column select
+
+        # Find previous invoice (created before current, most recent first)
+        prev_result = db.exec(
+            select(Invoice.id)
+            .where(Invoice.user_id == user_id)
+            .where(Invoice.is_deleted == False)
+            .where(Invoice.created_at < created_at)
+            .order_by(Invoice.created_at.desc())
+            .limit(1)
+        ).first()
+
+        # Find next invoice (created after current, oldest first)
+        next_result = db.exec(
+            select(Invoice.id)
+            .where(Invoice.user_id == user_id)
+            .where(Invoice.is_deleted == False)
+            .where(Invoice.created_at > created_at)
+            .order_by(Invoice.created_at.asc())
+            .limit(1)
+        ).first()
+
+        return {
+            "prev_id": str(prev_result) if prev_result else None,
+            "next_id": str(next_result) if next_result else None,
+        }
+
     def validate_invoice_transition(self, current_status: InvoiceStatus, target_status: InvoiceStatus) -> bool:
         """
         Validate if a status transition is allowed according to the state machine.

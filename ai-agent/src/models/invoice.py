@@ -90,7 +90,7 @@ class InvoiceBase(SQLModel):
     buyer_business_name: str = Field(sa_column=Column(String, nullable=False))
     buyer_province: str = Field(sa_column=Column(String, nullable=False))
     buyer_address: str = Field(sa_column=Column(String, nullable=False))
-    buyer_registration_type: str = Field(sa_column=Column(String, nullable=False))  # "Registered", "Unregistered"
+    buyer_registration_type: str = Field(sa_column=Column(String, nullable=False))  # "Registered", "Unregistered", "Final Consumer"
     invoice_ref_no: Optional[str] = Field(default=None)  # Required only for debit/credit notes
     scenario_id: Optional[str] = Field(default=None)  # Required for sandbox testing (e.g., "SN001")
     income_tax: str = Field(default="236G", sa_column=Column(String, nullable=False))  # Income tax type: "236G" or "236H"
@@ -181,7 +181,7 @@ class InvoiceCreate(SQLModel):
     buyer_business_name: str
     buyer_province: str
     buyer_address: str
-    buyer_registration_type: str  # "Registered", "Unregistered"
+    buyer_registration_type: str  # "Registered", "Unregistered", "Final Consumer"
     invoice_ref_no: Optional[str] = None  # Required only for debit/credit notes
     scenario_id: Optional[str] = None  # Required for sandbox testing (e.g., "SN001")
     income_tax: str = "236G"  # Income tax type: "236G" or "236H"

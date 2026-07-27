@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { SaleInvoiceForm } from '@/components/invoices/sale-invoice-form';
 import { invoiceService } from '@/lib/api/api-client';
 import { ArrowLeft } from 'lucide-react';
@@ -14,6 +13,7 @@ export default function EditInvoicePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isReadOnly, setIsReadOnly] = useState(false);
   const router = useRouter();
   const params = useParams();
   const invoiceId = params.id as string;
@@ -35,8 +35,10 @@ export default function EditInvoicePage() {
         return;
       }
 
-      // Check if invoice can be edited (DRAFT, VALIDATED, or FAILED invoices)
-      if (invoice.status !== 'DRAFT' && invoice.status !== 'VALIDATED' && invoice.status !== 'FAILED') {
+      // If invoice is POSTED, show in read-only mode instead of error
+      if (invoice.status === 'POSTED') {
+        setIsReadOnly(true);
+      } else if (invoice.status !== 'DRAFT' && invoice.status !== 'VALIDATED' && invoice.status !== 'FAILED') {
         setError('Only draft, validated, or failed invoices can be edited. This invoice has status: ' + invoice.status);
         return;
       }
@@ -51,6 +53,7 @@ export default function EditInvoicePage() {
   };
 
   const handleSubmit = async (data: any) => {
+    if (isReadOnly) return;
     setIsSubmitting(true);
     try {
       const response = await invoiceService.updateInvoice(invoiceId, data);
@@ -111,43 +114,15 @@ export default function EditInvoicePage() {
   }
 
   return (
-    <div className="space-y-6 pb-8">
-      {/* Back to History Button
-      <div className="flex items-center gap-4">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => router.push('/invoices/history')}
-          className="flex items-center gap-2"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to History
-        </Button>
-      </div>
-
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-[#202223] dark:text-[#e3e3e3]">Edit Invoice</h1>
-          <p className="mt-2 text-[#6d7175] dark:text-[#8c9196]">
-            Edit invoice #{invoice?.external_id || invoice?.id}
-          </p>
-        </div>
-      </div> */}
-
-      {/* <Card>
-        {/* <CardHeader>
-          <CardTitle>Invoice Details</CardTitle>
-        </CardHeader> */}
-        {/* <CardContent> */} */
+    <div className="space-y-6">
           <SaleInvoiceForm
             onSubmit={handleSubmit}
             onCancel={handleCancel}
             isSubmitting={isSubmitting}
             initialData={invoice}
-            isEditMode={true}
+            isEditMode={!isReadOnly}
+            isReadOnly={isReadOnly}
           />
-        {/* </CardContent>
-      </Card> */}
     </div>
   );
 }

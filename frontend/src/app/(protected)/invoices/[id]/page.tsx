@@ -6,18 +6,26 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { invoiceService } from '@/lib/api/api-client';
-import { ArrowLeft, Edit, CheckCircle, Send } from 'lucide-react';
+import { api } from '@/lib/api';
+import { ArrowLeft, ChevronLeft, ChevronRight, Edit, CheckCircle, Send } from 'lucide-react';
 
 export default function InvoiceDetailsPage() {
   const [invoice, setInvoice] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [prevId, setPrevId] = useState<string | null>(null);
+  const [nextId, setNextId] = useState<string | null>(null);
+  const [navLoading, setNavLoading] = useState(false);
   const router = useRouter();
   const params = useParams();
   const invoiceId = params.id as string;
 
   useEffect(() => {
     fetchInvoice();
+    // Reset nav state immediately so stale IDs don't keep buttons enabled
+    setPrevId(null);
+    setNextId(null);
+    fetchAdjacent();
   }, [invoiceId]);
 
   const fetchInvoice = async () => {
@@ -39,6 +47,23 @@ export default function InvoiceDetailsPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchAdjacent = async () => {
+    try {
+      const result = await api.invoices.getAdjacent(invoiceId);
+      setPrevId(result.prev_id || null);
+      setNextId(result.next_id || null);
+    } catch (err) {
+      console.error('Error fetching adjacent invoices:', err);
+      setPrevId(null);
+      setNextId(null);
+    }
+  };
+
+  const navigateToInvoice = (id: string) => {
+    setNavLoading(true);
+    router.push(`/invoices/${id}`);
   };
 
   const getStatusColor = (status: string) => {
@@ -75,11 +100,33 @@ export default function InvoiceDetailsPage() {
   if (error) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center justify-between">
           <Button variant="ghost" onClick={() => router.push('/invoices/history')}>
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to History
           </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              disabled={!prevId || navLoading}
+              onClick={() => prevId && navigateToInvoice(prevId)}
+              className="h-8 w-8"
+              title="Previous Invoice"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              disabled={!nextId || navLoading}
+              onClick={() => nextId && navigateToInvoice(nextId)}
+              className="h-8 w-8"
+              title="Next Invoice"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
         <div className="bg-[#fef3f2] dark:bg-[#3d1e1e] border border-[#fecdca] dark:border-[#5c2b2b] rounded-xl p-4">
           <div className="flex">
@@ -100,8 +147,8 @@ export default function InvoiceDetailsPage() {
 
   return (
     <div className="space-y-6 pb-8">
-      {/* Back to History Button */}
-      <div className="flex items-center gap-4">
+      {/* Top Bar: Back to History + Navigation */}
+      <div className="flex items-center justify-between">
         <Button
           variant="outline"
           size="sm"
@@ -111,6 +158,28 @@ export default function InvoiceDetailsPage() {
           <ArrowLeft className="h-4 w-4" />
           Back to History
         </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            disabled={!prevId || navLoading}
+            onClick={() => prevId && navigateToInvoice(prevId)}
+            className="h-8 w-8"
+            title="Previous Invoice"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            disabled={!nextId || navLoading}
+            onClick={() => nextId && navigateToInvoice(nextId)}
+            className="h-8 w-8"
+            title="Next Invoice"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       {/* Header */}

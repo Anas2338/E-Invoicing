@@ -8,6 +8,7 @@ import { ValidationResultDialog } from '@/components/invoices/validation-result-
 import { api, ApiError } from '@/lib/api';
 import { Trash2, CheckCircle, RefreshCw, Printer, Loader2, Send } from 'lucide-react';
 import { toast } from 'react-toastify';
+import { useBulkOperation } from '@/contexts/BulkOperationContext';
 
 interface Invoice {
   id: string;
@@ -27,6 +28,7 @@ interface Invoice {
 
 export default function InvoiceHistoryPage() {
   const router = useRouter();
+  const { startOperation, hasActiveOperation, processingInvoiceIds } = useBulkOperation();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,7 +39,7 @@ export default function InvoiceHistoryPage() {
   const [dateToFilter, setDateToFilter] = useState('');
   const [buyerNameFilter, setBuyerNameFilter] = useState('');
   const [amountFilter, setAmountFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('DRAFT');
   const [fbrRefFilter, setFbrRefFilter] = useState('');
   const [selectedInvoices, setSelectedInvoices] = useState<Set<string>>(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -378,83 +380,33 @@ export default function InvoiceHistoryPage() {
 
     // If no validatable invoices, show message
     if (validatableInvoices.length === 0) {
-      setDialogData({
-        success: false,
-        title: 'No Validatable Invoices Selected',
-        message: 'Only DRAFT or FAILED invoices can be validated.',
-        errors: []
-      });
-      setDialogOpen(true);
+      toast.error('No DRAFT or FAILED invoices selected for validation.');
       return;
     }
 
     // Show confirmation with info about skipped invoices
     const confirmMessage = skippedCount > 0
-      ? `Validate ${validatableInvoices.length} invoice${validatableInvoices.length > 1 ? 's' : ''} with FBR?\n\n${skippedCount} non-draft invoice${skippedCount > 1 ? 's' : ''} will be skipped.\n\nThis will validate each invoice one by one.`
-      : `Validate ${validatableInvoices.length} selected invoice${validatableInvoices.length > 1 ? 's' : ''} with FBR?\n\nThis will validate each invoice one by one.`;
+      ? `Validate ${validatableInvoices.length} invoice${validatableInvoices.length > 1 ? 's' : ''} with FBR?\n\n${skippedCount} non-draft invoice${skippedCount > 1 ? 's' : ''} will be skipped.`
+      : `Validate ${validatableInvoices.length} selected invoice${validatableInvoices.length > 1 ? 's' : ''} with FBR?`;
 
     if (!confirm(confirmMessage)) {
       return;
     }
 
-    setBulkValidating(true);
-    let successCount = 0;
-    let failCount = 0;
-    const errors: string[] = [];
-
     try {
-      // Validate each DRAFT invoice one by one
-      for (const invoiceId of validatableInvoices) {
-        const invoice = invoices.find(inv => inv.id === invoiceId);
-
-        try {
-          setValidatingInvoiceId(invoiceId);
-          const response = await api.invoices.validate(invoiceId);
-
-          if (response.success) {
-            successCount++;
-          } else {
-            failCount++;
-            errors.push(`${invoice?.invoiceNumber || invoiceId}: ${response.message || 'Validation failed'}`);
-          }
-        } catch (err) {
-          failCount++;
-          errors.push(`${invoice?.invoiceNumber || invoiceId}: ${err instanceof ApiError ? err.message : 'Failed'}`);
-        }
-      }
-
-      // Show result dialog
-      const skippedMessage = skippedCount > 0 ? ` ${skippedCount} invoice${skippedCount > 1 ? 's were' : ' was'} skipped (only DRAFT and FAILED invoices can be validated).` : '';
-      setDialogData({
-        success: failCount === 0,
-        title: failCount === 0 ? 'Bulk Validation Successful' : 'Bulk Validation Completed with Errors',
-        message: `Successfully validated ${successCount} invoice${successCount !== 1 ? 's' : ''}.${failCount > 0 ? ` Failed to validate ${failCount} invoice${failCount !== 1 ? 's' : ''}.` : ''}${skippedMessage}`,
-        errors: errors.length > 0 ? errors.map(err => ({ message: err })) : []
-      });
-      setDialogOpen(true);
-
-      // Clear selection and refresh
+      const response = await api.invoices.bulkValidateBackground(validatableInvoices);
+      startOperation(response.task_id, 'bulk_validate', validatableInvoices.length, validatableInvoices);
       setSelectedInvoices(new Set());
-      await fetchInvoices();
+      toast.success(`Validation started for ${validatableInvoices.length} invoice(s).`, { autoClose: 3000 });
     } catch (err) {
-      setDialogData({
-        success: false,
-        title: 'Bulk Validation Error',
-        message: 'An unexpected error occurred during bulk validation.',
-        errors: []
-      });
-      setDialogOpen(true);
-      console.error('Error during bulk validation:', err);
-    } finally {
-      setBulkValidating(false);
-      setValidatingInvoiceId(null);
+      toast.error(err instanceof ApiError ? err.message : 'Failed to start validation.');
     }
   };
 
   const handleBulkPost = async () => {
     if (selectedInvoices.size === 0) return;
 
-    // Only post VALIDATED/TRANSFERRED invoices
+    // Only post VALIDATED invoices
     const selectedIds = Array.from(selectedInvoices);
     const postableInvoices = selectedIds.filter(id => {
       const invoice = invoices.find(inv => inv.id === id);
@@ -474,33 +426,13 @@ export default function InvoiceHistoryPage() {
       return;
     }
 
-    setBulkPosting(true);
     try {
-      const response = await api.invoices.bulkPost(postableInvoices, environment);
-
-      const successCount = response.successful_count || 0;
-      const failCount = response.failed_count || 0;
-
-      setDialogData({
-        success: failCount === 0,
-        title: failCount === 0 ? 'Bulk Posting Successful' : 'Bulk Posting Completed with Errors',
-        message: `Successfully posted ${successCount} invoice${successCount !== 1 ? 's' : ''}.${failCount > 0 ? ` Failed to post ${failCount} invoice${failCount !== 1 ? 's' : ''}.` : ''}`,
-        errors: response.results?.filter((r: any) => r.status === 'failed').map((r: any) => ({ error: r.error || 'Unknown error', itemSNo: String(r.invoice_id).slice(0, 8) })) || []
-      });
-      setDialogOpen(true);
-
+      const response = await api.invoices.bulkPostBackground(postableInvoices, environment);
+      startOperation(response.task_id, 'bulk_post', postableInvoices.length, postableInvoices);
       setSelectedInvoices(new Set());
-      await fetchInvoices();
+      toast.success(`Posting started for ${postableInvoices.length} invoice(s) to ${environment}.`, { autoClose: 3000 });
     } catch (err) {
-      setDialogData({
-        success: false,
-        title: 'Bulk Posting Error',
-        message: err instanceof ApiError ? err.message : 'Failed to post invoices',
-        errors: []
-      });
-      setDialogOpen(true);
-    } finally {
-      setBulkPosting(false);
+      toast.error(err instanceof ApiError ? err.message : 'Failed to start posting.');
     }
   };
 
@@ -675,9 +607,9 @@ export default function InvoiceHistoryPage() {
                     variant="outline"
                     size="icon"
                     onClick={handleBulkValidate}
-                    disabled={bulkValidating || selectedInvoices.size === 0}
+                    disabled={hasActiveOperation || selectedInvoices.size === 0}
                     className="h-8 w-8 border border-green-300 disabled:opacity-30 disabled:cursor-not-allowed"
-                    title="Validate selected"
+                    title={hasActiveOperation ? 'Operation in progress' : 'Validate selected'}
                   >
                     {bulkValidating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
                   </Button>
@@ -687,9 +619,9 @@ export default function InvoiceHistoryPage() {
                     variant="outline"
                     size="icon"
                     onClick={handleBulkPost}
-                    disabled={bulkPosting || selectedInvoices.size === 0}
+                    disabled={hasActiveOperation || selectedInvoices.size === 0}
                     className="h-8 w-8 border border-blue-300 text-blue-600 disabled:opacity-30 disabled:cursor-not-allowed"
-                    title="Post selected to FBR"
+                    title={hasActiveOperation ? 'Operation in progress' : 'Post selected to FBR'}
                   >
                     {bulkPosting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                   </Button>
@@ -744,6 +676,7 @@ export default function InvoiceHistoryPage() {
           validatingInvoiceId={validatingInvoiceId}
           postingInvoiceId={postingInvoiceId}
           deletingInvoiceId={deletingInvoiceId}
+          processingInvoiceIds={processingInvoiceIds}
           invoiceNumberFilter={invoiceNumberFilter}
           onInvoiceNumberFilterChange={setInvoiceNumberFilter}
           dateFromFilter={dateFromFilter}

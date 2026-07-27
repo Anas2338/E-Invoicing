@@ -79,6 +79,10 @@ export const api = {
       return fetchWithAuth(`/invoices/${id}`);
     },
 
+    getAdjacent: async (id: string) => {
+      return fetchWithAuth(`/invoices/${id}/adjacent`);
+    },
+
     create: async (data: any) => {
       return fetchWithAuth('/invoices', {
         method: 'POST',
@@ -157,6 +161,38 @@ export const api = {
           invoice_ids: invoiceIds,
           environment: environment,
         }),
+      });
+    },
+
+    // Background bulk operations (non-blocking)
+    bulkValidateBackground: async (invoiceIds: string[]) => {
+      return fetchWithAuth('/invoices/bulk-validate', {
+        method: 'POST',
+        body: JSON.stringify({ invoice_ids: invoiceIds }),
+      });
+    },
+
+    bulkPostBackground: async (invoiceIds: string[], environment: string) => {
+      return fetchWithAuth('/invoices/bulk-post', {
+        method: 'POST',
+        body: JSON.stringify({
+          invoice_ids: invoiceIds,
+          environment: environment,
+        }),
+      });
+    },
+
+    getBulkTaskStatus: async (taskId: string) => {
+      return fetchWithAuth(`/invoices/bulk-task/${taskId}`);
+    },
+
+    getActiveBulkTasks: async () => {
+      return fetchWithAuth('/invoices/bulk-tasks/active');
+    },
+
+    cancelBulkTask: async (taskId: string) => {
+      return fetchWithAuth(`/invoices/bulk-task/${taskId}/cancel`, {
+        method: 'POST',
       });
     },
   },

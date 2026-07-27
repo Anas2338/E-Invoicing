@@ -280,11 +280,11 @@ def parse_excel_for_manual_invoice(
                 )
                 continue
 
-        quantity = float(row['quantity']) if pd.notna(row['quantity']) else 0
-        value_sales_excluding_st = float(row['value_sales_excluding_st']) if pd.notna(row['value_sales_excluding_st']) else 0
-        fixed_notified_value_or_retail_price = float(row['fixed_notified_value_or_retail_price']) if pd.notna(row['fixed_notified_value_or_retail_price']) else 0
+        quantity = round(float(row['quantity']), 2) if pd.notna(row['quantity']) else 0
+        value_sales_excluding_st = round(float(row['value_sales_excluding_st']), 2) if pd.notna(row['value_sales_excluding_st']) else 0
+        fixed_notified_value_or_retail_price = round(float(row['fixed_notified_value_or_retail_price']), 2) if pd.notna(row['fixed_notified_value_or_retail_price']) else 0
         further_tax = round(float(row['further_tax']), 0) if pd.notna(row['further_tax']) else 0
-        discount = float(row['discount']) if pd.notna(row.get('discount')) else 0
+        discount = round(float(row['discount']), 2) if pd.notna(row.get('discount')) else 0
 
         # Parse withholding_tax_amount from Excel (optional, auto-calc if omitted)
         withholding_tax_amount = None
@@ -375,7 +375,8 @@ def parse_excel_for_manual_invoice(
             )
             continue
 
-        if fixed_notified_value_or_retail_price < value_sales_excluding_st:
+        # Fixed/Retail Price >= Value Excl validation enforced only for 3rd Schedule Goods
+        if saved_item.transaction_type == '3rd Schedule Goods' and fixed_notified_value_or_retail_price < value_sales_excluding_st:
             validation_errors.append(
                 f"Row {excel_row} (Invoice {invoice_number}): "
                 f"fixed_notified_value_or_retail_price ({fixed_notified_value_or_retail_price}) "

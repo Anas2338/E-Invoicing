@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Trash2, Plus, Loader2, AlertCircle, Building2, MapPin, FileText, Pencil, Check, X, CheckCircle, Send, Save, XCircle } from 'lucide-react';
+import { Trash2, Plus, Loader2, AlertCircle, Building2, MapPin, FileText, Pencil, Check, X, CheckCircle, Send, Save, XCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { masterDataService, fbrIntegrationService, type AllMasterData } from '@/lib/api/api-client';
 import { api } from '@/lib/api';
 import { toast } from 'react-toastify';
@@ -44,6 +44,7 @@ interface SaleInvoiceFormProps {
   isSubmitting?: boolean;
   initialData?: any;
   isEditMode?: boolean;
+  isReadOnly?: boolean;
 }
 
 export function SaleInvoiceForm({
@@ -52,7 +53,8 @@ export function SaleInvoiceForm({
   isLoading,
   isSubmitting,
   initialData,
-  isEditMode = false
+  isEditMode = false,
+  isReadOnly = false
 }: SaleInvoiceFormProps) {
   const router = useRouter();
 
@@ -75,6 +77,13 @@ export function SaleInvoiceForm({
   const [environment, setEnvironment] = useState<'SANDBOX' | 'PRODUCTION'>('SANDBOX');
   const [transactionTypeId, setTransactionTypeId] = useState<string>('');
 
+  // Derived: whether the selected transaction type is "3rd Schedule Goods" (code "06")
+  const isThirdScheduleGoods = useMemo(() => {
+    if (!transactionTypeId || !masterData?.transaction_types) return false;
+    const tt = masterData.transaction_types.find(t => t.code === transactionTypeId);
+    return tt?.name?.trim() === '3rd Schedule Goods';
+  }, [transactionTypeId, masterData]);
+
   // Seller information state
   const [sellerNTNCNIC, setSellerNTNCNIC] = useState('');
   const [sellerBusinessName, setSellerBusinessName] = useState('');
@@ -88,7 +97,7 @@ export function SaleInvoiceForm({
   const [buyerProvince, setBuyerProvince] = useState('');
   const [buyerProvinceCode, setBuyerProvinceCode] = useState('');
   const [buyerAddress, setBuyerAddress] = useState('');
-  const [buyerRegistrationType, setBuyerRegistrationType] = useState<'Registered' | 'Unregistered'>('Registered');
+  const [buyerRegistrationType, setBuyerRegistrationType] = useState<'Registered' | 'Unregistered' | 'Final Consumer'>('Registered');
 
   // Saved buyers state for autocomplete
   const [savedBuyers, setSavedBuyers] = useState<Array<any>>([]);
@@ -209,6 +218,11 @@ export function SaleInvoiceForm({
   const [savedInvoiceId, setSavedInvoiceId] = useState<string | null>(null);
   const [isValidated, setIsValidated] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Navigation state (for edit mode — navigate between invoices)
+  const [prevId, setPrevId] = useState<string | null>(null);
+  const [nextId, setNextId] = useState<string | null>(null);
+  const [navLoading, setNavLoading] = useState(false);
 
   // Form reset state — incrementing formKey triggers re-fetch of profile & invoice number
   const [formKey, setFormKey] = useState(0);
@@ -365,9 +379,9 @@ export function SaleInvoiceForm({
     fetchNextInvoiceNumber();
   }, [isEditMode, invoiceNo]);
 
-  // Populate form with initial data when in edit mode
+  // Populate form with initial data when in edit or read-only mode
   useEffect(() => {
-    if (isEditMode && initialData) {
+    if (initialData) {
       // Populate invoice header
       setInvoiceNo(initialData.external_id || '');
       setInvoiceType(initialData.invoice_type || 'Sale Invoice');
@@ -499,6 +513,35 @@ export function SaleInvoiceForm({
     }
   }, [isEditMode, initialData, masterData, savedItems]);
 
+  // Fetch adjacent invoice IDs for navigation (edit or read-only mode)
+  useEffect(() => {
+    if ((!isEditMode && !isReadOnly) || !initialData?.id) {
+      // Clear nav state when conditions aren't met (e.g., create mode)
+      setPrevId(null);
+      setNextId(null);
+      return;
+    }
+
+    // Reset nav state immediately so stale IDs from previous navigation
+    // don't keep buttons enabled during the async fetch
+    setPrevId(null);
+    setNextId(null);
+
+    const fetchAdjacent = async () => {
+      try {
+        const result = await api.invoices.getAdjacent(initialData.id);
+        setPrevId(result.prev_id || null);
+        setNextId(result.next_id || null);
+      } catch (err) {
+        console.error('Error fetching adjacent invoices:', err);
+        setPrevId(null);
+        setNextId(null);
+      }
+    };
+
+    fetchAdjacent();
+  }, [isEditMode, initialData?.id]);
+
   // Verify buyer registration with FBR
   const verifyBuyerRegistration = useCallback(async (ntnCnic: string) => {
     if (!ntnCnic || ntnCnic.length < 7) {
@@ -514,7 +557,7 @@ export function SaleInvoiceForm({
 
       if (result.success) {
         // Automatically update registration type based on FBR response
-        setBuyerRegistrationType(result.registration_type as 'Registered' | 'Unregistered');
+        setBuyerRegistrationType(result.registration_type as 'Registered' | 'Unregistered' | 'Final Consumer');
 
         // Show success message
         if (result.is_registered) {
@@ -568,7 +611,7 @@ export function SaleInvoiceForm({
   //   return () => clearTimeout(timeoutId);
   // }, [buyerNTNCNIC, verifyBuyerRegistration]);
 
-  // Auto-calculate Further Tax for all items when buyer registration type changes
+  // Auto-calculate Further Tax and Income Tax Type for all items when buyer registration type changes
   useEffect(() => {
     setItems(prevItems => {
       return prevItems.map((item, idx) => {
@@ -579,17 +622,30 @@ export function SaleInvoiceForm({
         const extraTax = Number(item.extraTax) || 0;
 
         if (buyerRegistrationType === 'Unregistered') {
+          // Reset income tax type if it was set to None by Final Consumer
+          const resetItem = { ...item, incomeTaxType: item.incomeTaxType === 'None' ? '236G' : item.incomeTaxType };
           // Calculate 4% of Value Excl. Sales Tax (skip if user manually set furtherTax)
           if (valueExclTax > 0 && !manualFurtherTax.has(idx)) {
             const furtherTax = valueExclTax * 0.04;
             // Total Value = Value Excl. Tax + Sales Tax + Further Tax + Extra Tax - Discount
             const totalValue = valueExclTax + salesTax + furtherTax + extraTax - discount;
             return {
-              ...item,
+              ...resetItem,
               furtherTax: parseFloat(furtherTax.toFixed(2)),
-              totalValues: parseFloat(totalValue.toFixed(2))
+              totalValues: parseFloat(totalValue.toFixed(2)),
             };
           }
+          return resetItem;
+        } else if (buyerRegistrationType === 'Final Consumer') {
+          // For Final Consumer: clear further tax, set income tax to None, WHT to 0
+          const totalValue = valueExclTax + salesTax + extraTax - discount;
+          return {
+            ...item,
+            furtherTax: 0,
+            totalValues: parseFloat(totalValue.toFixed(2)),
+            incomeTaxType: 'None',
+            withholdingTaxAmount: 0,
+          };
         } else {
           // Clear Further Tax for Registered buyers and recalculate Total Value
           // Total Value = Value Excl. Tax + Sales Tax + Extra Tax - Discount (no Further Tax)
@@ -597,7 +653,9 @@ export function SaleInvoiceForm({
           return {
             ...item,
             furtherTax: 0,
-            totalValues: parseFloat(totalValue.toFixed(2))
+            totalValues: parseFloat(totalValue.toFixed(2)),
+            // Reset income tax type if it was set to None by Final Consumer
+            incomeTaxType: item.incomeTaxType === 'None' ? '236G' : item.incomeTaxType,
           };
         }
         return item;
@@ -629,7 +687,7 @@ export function SaleInvoiceForm({
       discount: 0,
       saleType: transactionTypeName,
       sroItemSerialNo: '',
-      incomeTaxType: '236G',
+      incomeTaxType: buyerRegistrationType === 'Final Consumer' ? 'None' : '236G',
       withholdingTaxAmount: 0
     };
     setModalItem(newItem);
@@ -671,8 +729,10 @@ export function SaleInvoiceForm({
       toast.error('Value Excl. Sales Tax is required');
       return;
     }
-    if (!modalItem.fixedNotifiedValueOrRetailPrice || modalItem.fixedNotifiedValueOrRetailPrice.trim() === '') {
-      toast.error('Fixed/Retail Price is required');
+    // Fixed/Retail Price is mandatory for 3rd Schedule Goods, optional for others
+    const itemIsThirdSchedule = modalItem.saleType === '3rd Schedule Goods';
+    if (itemIsThirdSchedule && (!modalItem.fixedNotifiedValueOrRetailPrice || modalItem.fixedNotifiedValueOrRetailPrice.trim() === '')) {
+      toast.error('Fixed/Retail Price is required for 3rd Schedule Goods');
       return;
     }
     if (modalItem.salesTaxWithheldAtSource.trim() === '') {
@@ -684,10 +744,10 @@ export function SaleInvoiceForm({
       return;
     }
 
-    // Validate Fixed/Retail Price >= Value Excl. Sales Tax
+    // Validate Fixed/Retail Price >= Value Excl. Sales Tax (mandatory for 3rd Schedule Goods)
     const valueExclTax = Number(modalItem.valueSalesExcludingST) || 0;
     const fixedPrice = Number(modalItem.fixedNotifiedValueOrRetailPrice) || 0;
-    if (fixedPrice < valueExclTax) {
+    if (itemIsThirdSchedule && fixedPrice < valueExclTax) {
       toast.error('Fixed/Retail Price must be equal to or greater than Value Excl. Sales Tax');
       return;
     }
@@ -810,7 +870,7 @@ export function SaleInvoiceForm({
 
     // Calculate withholding tax from current modalItem values
     const valueExclTax = Number(modalItem.valueSalesExcludingST) || 0;
-    const whtRate = (modalItem.incomeTaxType || '236G') === '236H' ? 0.005 : 0.001;
+    const whtRate = modalItem.incomeTaxType === 'None' ? 0 : (modalItem.incomeTaxType || '236G') === '236H' ? 0.005 : 0.001;
 
     setModalItem(prev => ({
       ...prev,
@@ -834,7 +894,7 @@ export function SaleInvoiceForm({
       // Auto-calculate withholding tax when income_tax_type or value_sales_excluding_st changes
       if (field === 'incomeTaxType' || field === 'valueSalesExcludingST') {
         const valueExclTax = Number(updated.valueSalesExcludingST) || 0;
-        const rate = updated.incomeTaxType === '236H' ? 0.005 : 0.001;
+        const rate = updated.incomeTaxType === 'None' ? 0 : updated.incomeTaxType === '236H' ? 0.005 : 0.001;
         updated.withholdingTaxAmount = parseFloat((valueExclTax * rate).toFixed(2));
       }
 
@@ -1255,7 +1315,7 @@ export function SaleInvoiceForm({
       // Auto-calculate withholding tax when income_tax_type or value_sales_excluding_st changes
       if (field === 'incomeTaxType' || field === 'valueSalesExcludingST') {
         const valueExclTax = Number(updatedItems[index].valueSalesExcludingST) || 0;
-        const rate = updatedItems[index].incomeTaxType === '236H' ? 0.005 : 0.001;
+        const rate = updatedItems[index].incomeTaxType === 'None' ? 0 : updatedItems[index].incomeTaxType === '236H' ? 0.005 : 0.001;
         updatedItems[index].withholdingTaxAmount = parseFloat((valueExclTax * rate).toFixed(2));
       }
 
@@ -1630,6 +1690,18 @@ export function SaleInvoiceForm({
         </Card>
       )}
 
+      {/* Read-only banner */}
+      {isReadOnly && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-3 flex items-center gap-2">
+          <svg className="h-5 w-5 text-blue-600 dark:text-blue-400 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+          </svg>
+          <p className="text-sm text-blue-700 dark:text-blue-300 font-medium">
+            Viewing posted invoice — all fields are read-only
+          </p>
+        </div>
+      )}
+
       {/* Form content - show immediately, disable fields until master data loads */}
       <div className="flex flex-col md:flex-row gap-4">
           {/* Action Sidebar — Left (stacks horizontally on mobile, vertical sidebar on desktop) */}
@@ -1640,7 +1712,7 @@ export function SaleInvoiceForm({
               size="icon"
               type="button"
               onClick={handleSaveDraft}
-              disabled={isLoading || isSubmitting || isSaving || isValidating || isPosting || isValidated}
+              disabled={isLoading || isSubmitting || isSaving || isValidating || isPosting || isValidated || isReadOnly}
               className="h-8 w-8 border border-amber-200 disabled:opacity-30 disabled:cursor-not-allowed"
               title="Save as Draft"
             >
@@ -1658,7 +1730,7 @@ export function SaleInvoiceForm({
                 size="icon"
                 type="button"
                 onClick={handleValidate}
-                disabled={isLoading || isSubmitting || isValidating || isPosting || isSaving}
+                disabled={isLoading || isSubmitting || isValidating || isPosting || isSaving || isReadOnly}
                 className="h-8 w-8 border border-green-400 disabled:opacity-30 disabled:cursor-not-allowed"
                 title="Validate with FBR"
               >
@@ -1674,7 +1746,7 @@ export function SaleInvoiceForm({
                 size="icon"
                 type="button"
                 onClick={handlePost}
-                disabled={isLoading || isSubmitting || isPosting || isValidating}
+                disabled={isLoading || isSubmitting || isPosting || isValidating || isReadOnly}
                 className="h-8 w-8 border-[#1e40af] text-[#1e40af]  disabled:opacity-30 disabled:cursor-not-allowed"
                 title="Post to FBR"
               >
@@ -1692,16 +1764,64 @@ export function SaleInvoiceForm({
               size="icon"
               type="button"
               onClick={onCancel}
-              disabled={isLoading || isSubmitting || isSaving || isValidating || isPosting}
+              disabled={isLoading || isSubmitting || isSaving || isValidating || isPosting || isReadOnly}
               className="h-8 w-8 text-red-500 hover:text-red-600 border-red-300 dark:border-red-800 disabled:opacity-30 disabled:cursor-not-allowed"
               title="Cancel"
             >
               <X className="h-4 w-4" />
             </Button>
+
+            {/* Navigation separator and buttons (edit/read-only mode) */}
+            {(isEditMode || isReadOnly) && (
+              <>
+                {/* Previous Invoice */}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  type="button"
+                  disabled={!prevId || navLoading || isSaving || isValidating || isPosting}
+                  onClick={() => {
+                    if (prevId) {
+                      setNavLoading(true);
+                      router.push(`/invoices/${prevId}/edit`);
+                    }
+                  }}
+                  className="h-8 w-8 border border-blue-400 disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="Previous Invoice"
+                >
+                  {navLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ChevronLeft className="h-4 w-4" />
+                  )}
+                </Button>
+                {/* Next Invoice */}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  type="button"
+                  disabled={!nextId || navLoading || isSaving || isValidating || isPosting}
+                  onClick={() => {
+                    if (nextId) {
+                      setNavLoading(true);
+                      router.push(`/invoices/${nextId}/edit`);
+                    }
+                  }}
+                  className="h-8 w-8 border border-blue-400 disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="Next Invoice"
+                >
+                  {navLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                </Button>
+              </>
+            )}
           </div>
 
           {/* Main Form Content */}
-          <div className="flex-1 min-w-0 space-y-1 pb-24 sm:pb-4">
+          <div className={`flex-1 min-w-0 space-y-1 pb-24 sm:pb-4 ${isReadOnly ? 'pointer-events-none opacity-70' : ''}`}>
           {/* Invoice Header */}
           <Card>
             <CardContent>
@@ -1981,8 +2101,8 @@ export function SaleInvoiceForm({
                 {/* Buyer Type */}
                 <div className='w-full min-w-[80px] sm:w-[48%] md:w-[17%] xl:w-[120px]'>
                   <Label className='pl-3 text-[14px] font-bold' htmlFor="buyerRegistrationType">Type *</Label>
-                  <Select value={buyerRegistrationType} onValueChange={(val) => setBuyerRegistrationType(val as 'Registered' | 'Unregistered')}>
-                    <SelectTrigger className='!w-full' disabled={isVerifyingBuyer}>
+                  <Select value={buyerRegistrationType} onValueChange={(val) => setBuyerRegistrationType(val as 'Registered' | 'Unregistered' | 'Final Consumer')}>
+                    <SelectTrigger className='!w-full !text-[10px]' disabled={isVerifyingBuyer}>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -2515,7 +2635,7 @@ export function SaleInvoiceForm({
                       />
                     </div>
                     <div className='w-full min-w-[120px] flex-1'>
-                      <Label>Fixed/Retail Price *</Label>
+                      <Label>Fixed/Retail Price {modalItem.saleType === '3rd Schedule Goods' ? '*' : '(Optional)'}</Label>
                       <Input
                         className={`w-full text-[12px] h-[30px] text-right glow-border ${errorBorder('fixedPrice')}`}
                         type="text"
@@ -2528,14 +2648,16 @@ export function SaleInvoiceForm({
                         }}
                         onBlur={() => {
                           setFocusedFields(prev => { const next = new Set(prev); next.delete('fixedPrice'); return next; });
-                          const v = Number(modalItem.valueSalesExcludingST) || 0;
-                          const f = Number(modalItem.fixedNotifiedValueOrRetailPrice) || 0;
-                          if (f > 0 && f < v) {
-                            setFieldErrors(prev => new Set(prev).add('fixedPrice'));
-                            toast.error('Fixed/Retail Price must be equal to or greater than Value Excl. Sales Tax');
-                          } else {
-                            setFieldErrors(prev => { const next = new Set(prev); next.delete('fixedPrice'); return next; });
+                          if (modalItem.saleType === '3rd Schedule Goods') {
+                            const v = Number(modalItem.valueSalesExcludingST) || 0;
+                            const f = Number(modalItem.fixedNotifiedValueOrRetailPrice) || 0;
+                            if (f > 0 && f < v) {
+                              setFieldErrors(prev => new Set(prev).add('fixedPrice'));
+                              toast.error('Fixed/Retail Price must be equal to or greater than Value Excl. Sales Tax');
+                              return;
+                            }
                           }
+                          setFieldErrors(prev => { const next = new Set(prev); next.delete('fixedPrice'); return next; });
                         }}
                         onChange={(e) => {
                           const val = e.target.value;
@@ -2551,7 +2673,7 @@ export function SaleInvoiceForm({
                             updateModalItem('fixedNotifiedValueOrRetailPrice', cleaned);
                           }
                         }}
-                        required
+                        required={modalItem.saleType === '3rd Schedule Goods'}
                       />
                     </div>
                     <div className='w-full min-w-[120px] flex-1'>
@@ -2707,6 +2829,7 @@ export function SaleInvoiceForm({
                             <SelectValue placeholder="236G" />
                           </SelectTrigger>
                           <SelectContent>
+                            <SelectItem value="None">None</SelectItem>
                             <SelectItem value="236G">236G (0.1%)</SelectItem>
                             <SelectItem value="236H">236H (0.5%)</SelectItem>
                           </SelectContent>

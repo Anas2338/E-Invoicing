@@ -68,10 +68,14 @@ class TransferService:
         Ensure every item has income_tax_type and withholding_tax_amount.
         Auto-defaults to fallback_income_tax and calculates WHT if missing.
         """
-        WHT_RATES = {"236G": 0.001, "236H": 0.005}
+        WHT_RATES = {"236G": 0.001, "236H": 0.005, "None": 0}
         for item in items:
             if not item.get("income_tax_type"):
                 item["income_tax_type"] = fallback_income_tax
+            # If income tax type is None, set WHT to 0 and skip auto-calc
+            if item["income_tax_type"] == "None":
+                item["withholding_tax_amount"] = 0
+                continue
             if not item.get("withholding_tax_amount") and item.get("value_sales_excluding_st"):
                 rate = WHT_RATES.get(item["income_tax_type"], 0.001)
                 item["withholding_tax_amount"] = round(float(item["value_sales_excluding_st"]) * rate, 2)

@@ -5,8 +5,10 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import { NotificationDropdown } from '@/components/notifications/notification-dropdown';
-import { Home, FileText, LogOut, Menu, X, Zap, Bell, HelpCircle } from 'lucide-react';
+import { Home, FileText, LogOut, Menu, X, Zap, Bell, HelpCircle, ClipboardList } from 'lucide-react';
 import { notificationService } from '@/lib/api/api-client';
+import { useBulkOperation } from '@/contexts/BulkOperationContext';
+import { BulkOperationProgress } from '@/components/invoices/BulkOperationProgress';
 
 
 export function Navigation() {
@@ -16,6 +18,8 @@ export function Navigation() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
   const [notificationDropdownOpen, setNotificationDropdownOpen] = useState(false);
+  const [bulkOpDropdownOpen, setBulkOpDropdownOpen] = useState(false);
+  const { activeOperations, hasActiveOperation } = useBulkOperation();
   const fetchingRef = useRef(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -106,6 +110,26 @@ export function Navigation() {
 
           {/* Desktop Actions */}
           <div className="hidden sm:flex items-center gap-1">
+            {/* Bulk Operations (only visible when processing) */}
+            {hasActiveOperation && (
+              <div className="relative">
+                <button
+                  onClick={() => setBulkOpDropdownOpen(!bulkOpDropdownOpen)}
+                  className="relative p-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
+                  aria-label="Bulk Operations"
+                >
+                  <ClipboardList className="h-5 w-5 animate-pulse" />
+                  <span className="absolute -top-0.5 -right-0.5 inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold leading-none text-white bg-blue-600 rounded-full">
+                    {activeOperations.length > 9 ? '9+' : activeOperations.length}
+                  </span>
+                </button>
+                <BulkOperationProgress
+                  isOpen={bulkOpDropdownOpen}
+                  onClose={() => setBulkOpDropdownOpen(false)}
+                />
+              </div>
+            )}
+
             {/* Notifications */}
             <button
               onClick={() => setNotificationDropdownOpen(true)}
@@ -149,6 +173,26 @@ export function Navigation() {
 
           {/* Mobile Actions */}
           <div className="flex items-center gap-1 sm:hidden">
+            {/* Bulk Operations (only visible when processing) */}
+            {hasActiveOperation && (
+              <div className="relative">
+                <button
+                  onClick={() => setBulkOpDropdownOpen(!bulkOpDropdownOpen)}
+                  className="relative p-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
+                  aria-label="Bulk Operations"
+                >
+                  <ClipboardList className="h-5 w-5 animate-pulse" />
+                  <span className="absolute -top-0.5 -right-0.5 inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold leading-none text-white bg-blue-600 rounded-full">
+                    {activeOperations.length > 9 ? '9+' : activeOperations.length}
+                  </span>
+                </button>
+                <BulkOperationProgress
+                  isOpen={bulkOpDropdownOpen}
+                  onClose={() => setBulkOpDropdownOpen(false)}
+                />
+              </div>
+            )}
+
             {/* Notifications */}
             <button
               onClick={() => setNotificationDropdownOpen(true)}

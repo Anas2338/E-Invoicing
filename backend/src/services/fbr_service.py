@@ -195,7 +195,7 @@ class FBRService:
             "buyerBusinessName": invoice.buyer_business_name,
             "buyerProvince": invoice.buyer_province,
             "buyerAddress": invoice.buyer_address,
-            "buyerRegistrationType": invoice.buyer_registration_type,
+            "buyerRegistrationType": "Unregistered" if invoice.buyer_registration_type == "Final Consumer" else invoice.buyer_registration_type,
             "items": transformed_items
         }
 
@@ -488,7 +488,7 @@ class FBRService:
             error_message = f"Error code: {error_code}"
 
         # Get item-level errors, filtering out valid items with no actual error message
-        raw_item_errors = validation_response.get("invoiceStatuses", [])
+        raw_item_errors = validation_response.get("invoiceStatuses") or []
         item_errors = [
             ie for ie in raw_item_errors
             if ie.get("error") and ie.get("error", "").strip()

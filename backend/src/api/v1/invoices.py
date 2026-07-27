@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query, UploadFile, File, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from typing import List, Dict, Any, Optional, Annotated
 from uuid import UUID
@@ -27,6 +27,20 @@ from src.models.fbr_response import FBRResponse
 from src.utils.rate_limits import RateLimits
 from src.utils.secure_file_validator import SecureFileValidator
 from src.utils.excel_validator import ExcelValidator
+from src.services.bulk_operation_service import BulkOperationService
+from src.schemas.bulk_operation import (
+    BulkValidateRequest,
+    BulkPostRequest,
+    BulkOperationResponse,
+    BulkOperationStatusResponse,
+    BulkOperationError,
+    ActiveBulkTasksResponse,
+)
+from src.models.bulk_operation import (
+    BulkOperationTask,
+    BulkOperationType,
+    BulkOperationStatus,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -496,6 +510,21 @@ def get_invoice(
         validation_errors=db_invoice.validation_errors,
         # Automation source fields omitted
     )
+
+
+@router.get("/{invoice_id}/adjacent")
+def get_adjacent_invoice(
+    invoice_id: UUID,
+    db = Depends(get_database_session),
+    user_id: str = Depends(require_authentication)
+):
+    """
+    Get the previous and next invoice IDs for navigation.
+    """
+    service = InvoiceService()
+    user_uuid = UUID(user_id)
+    result = service.get_adjacent_invoices(db, invoice_id, user_uuid)
+    return result
 
 
 @router.get("/", response_model=InvoiceListResponse)
@@ -1398,3 +1427,274 @@ async def get_invoice_pdf(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to generate PDF: {str(e)}"
         )
+
+
+# ===================================================================
+# Bulk Background Operations
+# ===================================================================
+
+
+@router.post("/bulk-validate", response_model=BulkOperationResponse)
+def start_bulk_validate(
+    request: Request,
+    body: BulkValidateRequest,
+    background_tasks: BackgroundTasks,
+    db=Depends(get_database_session),
+    user_id: str = Depends(require_authentication),
+):
+    """
+    Start background validation of selected invoices.
+
+    Returns immediately with a task_id. Poll /invoices/bulk-task/{task_id}
+    for progress.
+    """
+    user_uuid = UUID(user_id)
+    service = BulkOperationService()
+
+    # Check for existing active operation
+    if service.has_active_operation(db, user_uuid):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A bulk operation is already in progress. Please wait for it to complete.",
+        )
+
+    invoice_ids = body.invoice_ids
+
+    if not invoice_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="invoice_ids must not be empty",
+        )
+
+    task = BulkOperationTask(
+        user_id=user_uuid,
+        operation_type=BulkOperationType.BULK_VALIDATE,
+        invoice_ids=[str(i) for i in invoice_ids],
+        status=BulkOperationStatus.PROCESSING,
+        total_count=len(invoice_ids),
+        processed_count=0,
+        success_count=0,
+        failure_count=0,
+        errors=[],
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    # Enqueue background processing
+    background_tasks.add_task(
+        service.bulk_validate_invoices,
+        task_id=task.id,
+        invoice_ids=invoice_ids,
+        user_id=user_uuid,
+    )
+
+    logger.info(
+        "Bulk validate started: task=%s, invoices=%d, user=%s",
+        task.id, len(invoice_ids), user_id,
+    )
+
+    return BulkOperationResponse(
+        task_id=task.id,
+        message=f"Validation started for {len(invoice_ids)} invoice(s).",
+    )
+
+
+@router.post("/bulk-post", response_model=BulkOperationResponse)
+def start_bulk_post(
+    request: Request,
+    body: BulkPostRequest,
+    background_tasks: BackgroundTasks,
+    db=Depends(get_database_session),
+    user_id: str = Depends(require_authentication),
+):
+    """
+    Start background posting of selected validated invoices to FBR.
+
+    Returns immediately with a task_id. Poll /invoices/bulk-task/{task_id}
+    for progress.
+    """
+    user_uuid = UUID(user_id)
+    service = BulkOperationService()
+
+    # Check for existing active operation
+    if service.has_active_operation(db, user_uuid):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A bulk operation is already in progress. Please wait for it to complete.",
+        )
+
+    invoice_ids = body.invoice_ids
+
+    if not invoice_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="invoice_ids must not be empty",
+        )
+
+    task = BulkOperationTask(
+        user_id=user_uuid,
+        operation_type=BulkOperationType.BULK_POST,
+        invoice_ids=[str(i) for i in invoice_ids],
+        status=BulkOperationStatus.PROCESSING,
+        total_count=len(invoice_ids),
+        processed_count=0,
+        success_count=0,
+        failure_count=0,
+        errors=[],
+        environment=body.environment,
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+
+    # Enqueue background processing
+    background_tasks.add_task(
+        service.bulk_post_invoices,
+        task_id=task.id,
+        invoice_ids=invoice_ids,
+        environment=body.environment,
+        user_id=user_uuid,
+    )
+
+    logger.info(
+        "Bulk post started: task=%s, invoices=%d, user=%s, env=%s",
+        task.id, len(invoice_ids), user_id, body.environment,
+    )
+
+    return BulkOperationResponse(
+        task_id=task.id,
+        message=f"Posting started for {len(invoice_ids)} invoice(s) to {body.environment}.",
+    )
+
+
+@router.post("/bulk-task/{task_id}/cancel", response_model=BulkOperationResponse)
+def cancel_bulk_task(
+    request: Request,
+    task_id: UUID,
+    db=Depends(get_database_session),
+    user_id: str = Depends(require_authentication),
+):
+    """
+    Cancel a running bulk operation.
+
+    Sets the task status to CANCELLED, which the background processing
+    loop checks before processing each invoice. Already-processed
+    invoices retain their new status. If the task already completed or
+    doesn't exist, returns success anyway — the desired state is met.
+    """
+    user_uuid = UUID(user_id)
+    service = BulkOperationService()
+    task = service.cancel_task(db, task_id, user_uuid)
+
+    if not task:
+        logger.info(
+            "Cancel requested for task %s by %s — already completed or not found",
+            task_id, user_id,
+        )
+        return BulkOperationResponse(
+            task_id=task_id,
+            message="Bulk operation is already stopped.",
+        )
+
+    logger.info("Bulk operation %s cancelled by user %s", task_id, user_id)
+
+    return BulkOperationResponse(
+        task_id=task.id,
+        message="Bulk operation cancelled.",
+    )
+
+
+@router.get("/bulk-task/{task_id}", response_model=BulkOperationStatusResponse)
+def get_bulk_task_status(
+    request: Request,
+    task_id: UUID,
+    db=Depends(get_database_session),
+    user_id: str = Depends(require_authentication),
+):
+    """
+    Get the current progress of a bulk operation.
+
+    Returns full status including counters, errors, and progress percentage.
+    """
+    user_uuid = UUID(user_id)
+    service = BulkOperationService()
+    task = service.get_task(db, task_id, user_uuid)
+
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bulk operation task not found.",
+        )
+
+    progress_percentage = 0.0
+    if task.total_count > 0:
+        progress_percentage = round(
+            (task.processed_count / task.total_count) * 100, 1
+        )
+
+    return BulkOperationStatusResponse(
+        task_id=task.id,
+        operation_type=task.operation_type.value if hasattr(task.operation_type, 'value') else str(task.operation_type),
+        status=task.status.value if hasattr(task.status, 'value') else str(task.status),
+        total_count=task.total_count,
+        processed_count=task.processed_count,
+        success_count=task.success_count,
+        failure_count=task.failure_count,
+        errors=[
+            BulkOperationError(
+                invoice_id=e["invoice_id"],
+                invoice_number=e.get("invoice_number", ""),
+                error=e.get("error", ""),
+            )
+            for e in (task.errors or [])
+        ],
+        progress_percentage=progress_percentage,
+        created_at=task.created_at,
+        completed_at=task.completed_at,
+    )
+
+
+@router.get("/bulk-tasks/active", response_model=ActiveBulkTasksResponse)
+def get_active_bulk_tasks(
+    request: Request,
+    db=Depends(get_database_session),
+    user_id: str = Depends(require_authentication),
+):
+    """
+    Get all currently processing bulk tasks for the authenticated user.
+
+    Used by the frontend to recover operation state after page navigation
+    or browser close/reopen.
+    """
+    user_uuid = UUID(user_id)
+    service = BulkOperationService()
+    tasks = service.get_active_tasks(db, user_uuid)
+
+    return ActiveBulkTasksResponse(
+        tasks=[
+            BulkOperationStatusResponse(
+                task_id=t.id,
+                operation_type=t.operation_type.value if hasattr(t.operation_type, 'value') else str(t.operation_type),
+                status=t.status.value if hasattr(t.status, 'value') else str(t.status),
+                total_count=t.total_count,
+                processed_count=t.processed_count,
+                success_count=t.success_count,
+                failure_count=t.failure_count,
+                errors=[
+                    BulkOperationError(
+                        invoice_id=e["invoice_id"],
+                        invoice_number=e.get("invoice_number", ""),
+                        error=e.get("error", ""),
+                    )
+                    for e in (t.errors or [])
+                ],
+                progress_percentage=round(
+                    (t.processed_count / t.total_count * 100) if t.total_count > 0 else 0, 1
+                ),
+                created_at=t.created_at,
+                completed_at=t.completed_at,
+            )
+            for t in tasks
+        ],
+    )

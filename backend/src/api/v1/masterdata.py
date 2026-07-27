@@ -72,7 +72,8 @@ FALLBACK_SALE_TYPES = [
 
 FALLBACK_REGISTRATION_TYPES = [
     {"code": "REG", "name": "Registered"},
-    {"code": "UNREG", "name": "Unregistered"}
+    {"code": "UNREG", "name": "Unregistered"},
+    {"code": "FCON", "name": "Final Consumer"}
 ]
 
 

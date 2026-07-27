@@ -73,7 +73,7 @@ class ValidationService:
 
         # Validate buyer registration type
         if "buyer_registration_type" in invoice_data:
-            valid_reg_types = ["Registered", "Unregistered"]
+            valid_reg_types = ["Registered", "Unregistered", "Final Consumer"]
             if invoice_data["buyer_registration_type"] not in valid_reg_types:
                 validation_errors["buyer_registration_type"] = f"Invalid registration type. Must be one of: {valid_reg_types}"
 
