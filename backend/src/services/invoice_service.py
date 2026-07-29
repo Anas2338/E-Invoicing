@@ -1,6 +1,6 @@
 from typing import Optional, List, Tuple, Dict
 from datetime import datetime, date
-from sqlmodel import Session, select
+from sqlmodel import Session, select, delete
 from uuid import UUID
 import logging
 from fastapi import HTTPException, status
@@ -430,6 +430,50 @@ class InvoiceService:
         logger.info(f"Invoice {invoice_id} permanently deleted from database for user {user_id}")
 
         return True
+
+    def bulk_delete_invoices(self, db: Session, invoice_ids: List[UUID], user_id: UUID) -> dict:
+        """
+        Bulk delete multiple invoices in a single transaction.
+        Also bulk deletes related posting logs.
+
+        Args:
+            db: Database session
+            invoice_ids: List of invoice IDs to delete
+            user_id: ID of the user deleting the invoices
+
+        Returns:
+            Dict with deleted_count, not_found_ids (IDs not belonging to user or not found)
+        """
+        from src.models.posting_log import PostingLog
+
+        # Find which invoices belong to this user
+        existing_ids = db.exec(
+            select(Invoice.id)
+            .where(Invoice.id.in_(invoice_ids))
+            .where(Invoice.user_id == user_id)
+        ).all()
+
+        found_ids = set(existing_ids)
+        not_found_ids = [str(uid) for uid in invoice_ids if uid not in found_ids]
+
+        if not found_ids:
+            return {"deleted_count": 0, "not_found_ids": not_found_ids, "failed": []}
+
+        # Bulk delete posting logs for all found invoices (single query)
+        db.execute(delete(PostingLog).where(PostingLog.invoice_id.in_(found_ids)))
+
+        # Bulk delete invoices (single query)
+        db.execute(delete(Invoice).where(Invoice.id.in_(found_ids)))
+
+        db.commit()
+
+        logger.info(f"Bulk deleted {len(found_ids)} invoices for user {user_id} ({len(not_found_ids)} not found)")
+
+        return {
+            "deleted_count": len(found_ids),
+            "not_found_ids": not_found_ids,
+            "failed": [],
+        }
 
     def get_invoice_count(self, db: Session, user_id: UUID, filters: InvoiceFilter = None, environment_override: Optional[str] = None) -> int:
         """

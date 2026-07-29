@@ -21,6 +21,7 @@ from .fbr_notifications import (
     FBRDataSnapshot
 )
 from .user_saved_product import UserSavedProduct
+from .excel_staging import ExcelStagingSession, ExcelStagingRow, ExcelStagingStatus
 
 __all__ = [
     "Base",
@@ -37,5 +38,8 @@ __all__ = [
     "FBRTaxRate",
     "FBRChangeNotification",
     "FBRDataSnapshot",
-    "UserSavedProduct"
+    "UserSavedProduct",
+    "ExcelStagingSession",
+    "ExcelStagingRow",
+    "ExcelStagingStatus",
 ]

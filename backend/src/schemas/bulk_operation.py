@@ -52,3 +52,15 @@ class BulkOperationStatusResponse(BaseModel):
 class ActiveBulkTasksResponse(BaseModel):
     """Response containing all active bulk tasks for a user."""
     tasks: List[BulkOperationStatusResponse]
+
+
+class BulkDeleteRequest(BaseModel):
+    """Request body for bulk deleting invoices."""
+    invoice_ids: List[uuid.UUID]
+
+
+class BulkDeleteResponse(BaseModel):
+    """Response from a bulk delete operation."""
+    deleted_count: int
+    not_found_ids: List[str] = []
+    failed: List[dict] = []

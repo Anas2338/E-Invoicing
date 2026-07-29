@@ -235,8 +235,8 @@ export default function DashboardPage() {
 
   if (invoiceType === 'excel') {
     return (
-      <div className="container mx-auto px-4 py-3">
-        <div className="max-w-3xl lg:max-w-6xl mx-auto flex gap-3">
+      <div className="container mx-auto px-2 sm:px-4 py-2 sm:py-3 flex flex-col h-full min-h-0">
+        <div className="w-full mx-auto flex gap-1 sm:gap-3 min-h-0 flex-1 max-w-screen-2xl">
           <div className="flex flex-col items-center gap-1.5 flex-shrink-0 pt-1">
             <Button
               variant="outline"
@@ -248,7 +248,7 @@ export default function DashboardPage() {
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </div>
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 flex flex-col min-h-0">
             <ManualExcelUploadForm />
           </div>
         </div>

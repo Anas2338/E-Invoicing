@@ -35,6 +35,8 @@ from src.schemas.bulk_operation import (
     BulkOperationStatusResponse,
     BulkOperationError,
     ActiveBulkTasksResponse,
+    BulkDeleteRequest,
+    BulkDeleteResponse,
 )
 from src.models.bulk_operation import (
     BulkOperationTask,
@@ -1568,6 +1570,26 @@ def start_bulk_post(
     )
 
 
+@router.post("/bulk-delete", response_model=BulkDeleteResponse)
+def bulk_delete_invoices(
+    request: Request,
+    body: BulkDeleteRequest,
+    db=Depends(get_database_session),
+    user_id: str = Depends(require_authentication),
+):
+    """
+    Delete multiple invoices at once.
+
+    Permanently deletes the invoices and their related posting logs
+    in a single transaction. Invoices that are not found or don't
+    belong to the user are silently skipped and reported in the response.
+    """
+    service = InvoiceService()
+    user_uuid = UUID(user_id)
+    result = service.bulk_delete_invoices(db, body.invoice_ids, user_uuid)
+    return BulkDeleteResponse(**result)
+
+
 @router.post("/bulk-task/{task_id}/cancel", response_model=BulkOperationResponse)
 def cancel_bulk_task(
     request: Request,
@@ -1698,3 +1720,75 @@ def get_active_bulk_tasks(
             for t in tasks
         ],
     )
+
+
+@router.delete("/posting-logs/cleanup")
+def cleanup_old_posting_logs(
+    days: int = 15,
+    db=Depends(get_database_session),
+    _user_id: str = Depends(require_authentication),
+):
+    """
+    Delete posting logs older than the specified number of days.
+
+    Args:
+        days: Age threshold in days (default: 15). Logs older than this are deleted.
+
+    Returns:
+        Number of deleted posting logs
+    """
+    try:
+        from src.models.posting_log import PostingLog
+        from datetime import datetime, timedelta
+
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        count = db.query(PostingLog).filter(
+            PostingLog.created_at < cutoff
+        ).delete()
+        db.commit()
+        logger.info(f"Cleaned up {count} posting logs older than {days} days")
+        return {"message": f"Deleted {count} posting logs older than {days} days", "deleted_count": count}
+    except Exception as e:
+        logger.error(f"Error cleaning up posting logs: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to clean up posting logs"
+        )
+
+
+@router.delete("/bulk-tasks/cleanup")
+def cleanup_old_bulk_tasks(
+    hours: int = 1,
+    db=Depends(get_database_session),
+    _user_id: str = Depends(require_authentication),
+):
+    """
+    Delete completed/failed/cancelled bulk operation tasks older than the specified hours.
+
+    Args:
+        hours: Age threshold in hours (default: 1). Terminal-status tasks
+               completed more than this many hours ago are deleted.
+
+    Returns:
+        Number of deleted tasks
+    """
+    try:
+        from src.models.bulk_operation import BulkOperationTask, BulkOperationStatus
+        from datetime import datetime, timedelta
+
+        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        count = db.query(BulkOperationTask).filter(
+            BulkOperationTask.status != BulkOperationStatus.PROCESSING,
+            BulkOperationTask.completed_at < cutoff
+        ).delete()
+        db.commit()
+        logger.info(f"Cleaned up {count} bulk operation tasks completed >{hours} hours ago")
+        return {"message": f"Deleted {count} bulk operation task(s) older than {hours} hour(s)", "deleted_count": count}
+    except Exception as e:
+        logger.error(f"Error cleaning up bulk operation tasks: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to clean up bulk operation tasks"
+        )

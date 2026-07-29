@@ -52,6 +52,15 @@ export default function InvoiceHistoryPage() {
   const [retryingLoad, setRetryingLoad] = useState(false);
   const [lastRefreshTime, setLastRefreshTime] = useState<Date>(new Date());
 
+  // Pagination state
+  const PAGE_SIZE = 50;
+  const [currentPage, setCurrentPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / PAGE_SIZE));
+  const paginatedInvoices = filteredInvoices.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE
+  );
+
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogData, setDialogData] = useState<{
@@ -70,6 +79,7 @@ export default function InvoiceHistoryPage() {
 
   useEffect(() => {
     applyFilters();
+    setCurrentPage(1);
   }, [invoices, invoiceNumberFilter, dateFromFilter, dateToFilter, buyerNameFilter, amountFilter, statusFilter, fbrRefFilter]);
 
   useEffect(() => {
@@ -327,39 +337,28 @@ export default function InvoiceHistoryPage() {
     }
 
     setBulkDeleting(true);
-    let successCount = 0;
-    let failCount = 0;
-    const errors: string[] = [];
 
     try {
-      // Delete each selected invoice
-      for (const invoiceId of Array.from(selectedInvoices)) {
-        try {
-          await api.invoices.delete(invoiceId);
-          successCount++;
-        } catch (err) {
-          failCount++;
-          const invoice = invoices.find(inv => inv.id === invoiceId);
-          errors.push(`${invoice?.invoiceNumber || invoiceId}: ${err instanceof ApiError ? err.message : 'Failed'}`);
-        }
-      }
+      // Single API call to delete all selected invoices at once
+      const result = await api.invoices.bulkDelete(Array.from(selectedInvoices));
 
       // Show result toast
-      if (failCount === 0) {
-        toast.success(`Successfully deleted ${successCount} invoice${successCount !== 1 ? 's' : ''}`);
-      } else {
-        toast.warning(`Deleted ${successCount} invoice${successCount !== 1 ? 's' : ''}. Failed to delete ${failCount} invoice${failCount !== 1 ? 's' : ''}.`);
-        // Log errors to console for debugging
-        if (errors.length > 0) {
-          console.error('Bulk delete errors:', errors);
+      if (result.failed && result.failed.length > 0) {
+        toast.warning(`Deleted ${result.deleted_count} invoice${result.deleted_count !== 1 ? 's' : ''}. Failed: ${result.failed.length}.`);
+        if (result.not_found_ids?.length > 0) {
+          console.error('Bulk delete - not found:', result.not_found_ids);
         }
+      } else if (result.deleted_count === 0) {
+        toast.error('No invoices were deleted. They may have already been removed.');
+      } else {
+        toast.success(`Successfully deleted ${result.deleted_count} invoice${result.deleted_count !== 1 ? 's' : ''}`);
       }
 
       // Clear selection and refresh
       setSelectedInvoices(new Set());
       await fetchInvoices();
     } catch (err) {
-      toast.error('An unexpected error occurred during bulk delete.');
+      toast.error(err instanceof ApiError ? err.message : 'Failed to delete invoices. Please try again.');
       console.error('Error during bulk delete:', err);
     } finally {
       setBulkDeleting(false);
@@ -663,37 +662,154 @@ export default function InvoiceHistoryPage() {
         </div>
 
         {/* Invoice Table */}
-        <div className="rounded-2xl flex-1 min-h-0 overflow-auto">
-          <InvoiceTable
-          invoices={filteredInvoices}
-          selectedInvoices={selectedInvoices}
-          onSelectionChange={setSelectedInvoices}
-          onView={handleViewInvoice}
-          onEdit={handleEditInvoice}
-          onValidate={handleValidateInvoice}
-          onPost={handlePostInvoice}
-          onDelete={handleDeleteInvoice}
-          validatingInvoiceId={validatingInvoiceId}
-          postingInvoiceId={postingInvoiceId}
-          deletingInvoiceId={deletingInvoiceId}
-          processingInvoiceIds={processingInvoiceIds}
-          invoiceNumberFilter={invoiceNumberFilter}
-          onInvoiceNumberFilterChange={setInvoiceNumberFilter}
-          dateFromFilter={dateFromFilter}
-          onDateFromFilterChange={setDateFromFilter}
-          dateToFilter={dateToFilter}
-          onDateToFilterChange={setDateToFilter}
-          buyerNameFilter={buyerNameFilter}
-          onBuyerNameFilterChange={setBuyerNameFilter}
-          amountFilter={amountFilter}
-          onAmountFilterChange={setAmountFilter}
-          statusFilter={statusFilter}
-          onStatusFilterChange={setStatusFilter}
-          fbrRefFilter={fbrRefFilter}
-          onFbrRefFilterChange={setFbrRefFilter}
-        />
+        <div className="rounded-2xl flex flex-col gap-2 flex-1 min-h-0">
+          <div className="flex-1 min-h-0">
+            <InvoiceTable
+            invoices={paginatedInvoices}
+            totalFilteredCount={filteredInvoices.length}
+            allFilteredSelectableIds={filteredInvoices
+              .filter(inv => ['DRAFT', 'VALIDATED', 'FAILED', 'TRANSFERRED', 'POSTED'].includes(inv.status))
+              .map(inv => inv.id)}
+            selectedInvoices={selectedInvoices}
+            onSelectionChange={setSelectedInvoices}
+            onView={handleViewInvoice}
+            onEdit={handleEditInvoice}
+            onValidate={handleValidateInvoice}
+            onPost={handlePostInvoice}
+            onDelete={handleDeleteInvoice}
+            validatingInvoiceId={validatingInvoiceId}
+            postingInvoiceId={postingInvoiceId}
+            deletingInvoiceId={deletingInvoiceId}
+            processingInvoiceIds={processingInvoiceIds}
+            invoiceNumberFilter={invoiceNumberFilter}
+            onInvoiceNumberFilterChange={setInvoiceNumberFilter}
+            dateFromFilter={dateFromFilter}
+            onDateFromFilterChange={setDateFromFilter}
+            dateToFilter={dateToFilter}
+            onDateToFilterChange={setDateToFilter}
+            buyerNameFilter={buyerNameFilter}
+            onBuyerNameFilterChange={setBuyerNameFilter}
+            amountFilter={amountFilter}
+            onAmountFilterChange={setAmountFilter}
+            statusFilter={statusFilter}
+            onStatusFilterChange={setStatusFilter}
+            fbrRefFilter={fbrRefFilter}
+            onFbrRefFilterChange={setFbrRefFilter}
+            />
+          </div>
+          <div>
+            {/* Pagination Controls */}
+            {filteredInvoices.length > PAGE_SIZE && (
+              <div className="flex items-center justify-between px-2 py-2 border-2 border-blue-600 rounded-4xl">
+                <span className="text-xs text-black dark:text-neutral-400">
+                  Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredInvoices.length)} of{' '}
+                  {filteredInvoices.length} invoices
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage <= 1}
+                    className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-blue-600 text-blue-600 hover:bg-blue-100  disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    ← Prev
+                  </button>
+                  {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                    // Show pages around current page
+                    let pageNum: number;
+                    if (totalPages <= 7) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 4) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 3) {
+                      pageNum = totalPages - 6 + i;
+                    } else {
+                      pageNum = currentPage - 3 + i;
+                    }
+                    return (
+                      <button
+                        key={pageNum}
+                        type="button"
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`w-7 h-7 text-xs font-semibold rounded-lg transition-colors ${
+                          currentPage === pageNum
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : 'text-black hover:bg-blue-200 border border-blue-400'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage >= totalPages}
+                    className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-blue-600 text-blue-600 hover:bg-blue-100  disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Next →
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
-      </div>
+
+      {/* Pagination Controls
+      {filteredInvoices.length > PAGE_SIZE && (
+        <div className="flex items-center justify-between px-2 py-2 border-2 border-blue-600 rounded-4xl">
+          <span className="text-xs text-slate-500 dark:text-neutral-400">
+            Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredInvoices.length)} of{' '}
+            {filteredInvoices.length} invoices
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage <= 1}
+              className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 dark:border-neutral-700 text-slate-600 dark:text-neutral-300 hover:bg-slate-100 dark:hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            >
+              ← Prev
+            </button>
+            {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+              // Show pages around current page
+              let pageNum: number;
+              if (totalPages <= 7) {
+                pageNum = i + 1;
+              } else if (currentPage <= 4) {
+                pageNum = i + 1;
+              } else if (currentPage >= totalPages - 3) {
+                pageNum = totalPages - 6 + i;
+              } else {
+                pageNum = currentPage - 3 + i;
+              }
+              return (
+                <button
+                  key={pageNum}
+                  type="button"
+                  onClick={() => setCurrentPage(pageNum)}
+                  className={`w-7 h-7 text-xs font-semibold rounded-lg transition-colors ${
+                    currentPage === pageNum
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'text-slate-600 dark:text-neutral-300 hover:bg-slate-100 dark:hover:bg-neutral-800'
+                  }`}
+                >
+                  {pageNum}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage >= totalPages}
+              className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 dark:border-neutral-700 text-slate-600 dark:text-neutral-300 hover:bg-slate-100 dark:hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            >
+              Next →
+            </button>
+          </div>
+        </div>
+      )} */}
 
       {/* Validation/Posting Result Dialog */}
       <ValidationResultDialog

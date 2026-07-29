@@ -166,6 +166,38 @@ async def mark_all_notifications_read(
         )
 
 
+@router.delete("/cleanup")
+async def cleanup_old_notifications(
+    days: int = 2,
+    db=Depends(get_database_session),
+    _user_id: str = Depends(require_authentication)
+):
+    """
+    Delete FBR change notifications older than the specified number of days.
+
+    Args:
+        days: Age threshold in days (default: 2). Notifications older than this are deleted.
+
+    Returns:
+        Number of deleted notifications
+    """
+    try:
+        from datetime import datetime, timedelta
+        cutoff = datetime.utcnow() - timedelta(days=days)
+        count = db.query(FBRChangeNotification).filter(
+            FBRChangeNotification.created_at < cutoff
+        ).delete()
+        db.commit()
+        return {"message": f"Deleted {count} notifications older than {days} days", "deleted_count": count}
+    except Exception as e:
+        logger.error(f"Error cleaning up notifications: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to clean up notifications"
+        )
+
+
 @router.get("/summary", response_model=Dict[str, Any])
 async def get_notification_summary(
     db=Depends(get_database_session),

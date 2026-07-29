@@ -536,6 +536,82 @@ export class FBRIntegrationService extends ApiClient {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Excel Staging Service
+// ---------------------------------------------------------------------------
+
+export class ExcelStagingService extends ApiClient {
+  async uploadExcel(file: File): Promise<{
+    session_id: string;
+    status: string;
+    original_filename: string;
+    total_rows: number;
+    valid_rows: number;
+    errored_rows: number;
+  }> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const csrfToken = getCsrfToken();
+    const headers: Record<string, string> = {};
+    if (csrfToken) {
+      headers['X-CSRF-Token'] = csrfToken;
+    }
+
+    const url = `${this.baseUrl}/invoices/excel/staging/upload`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      credentials: 'include',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.detail || 'Upload failed');
+    }
+
+    return response.json();
+  }
+
+  async getActiveSessions(): Promise<{ sessions: any[] }> {
+    return this.request('/invoices/excel/staging/active');
+  }
+
+  async getSession(sessionId: string): Promise<any> {
+    return this.request(`/invoices/excel/staging/${sessionId}`);
+  }
+
+  async updateRow(
+    sessionId: string,
+    rowId: string,
+    updates: Record<string, any>
+  ): Promise<any> {
+    return this.request(`/invoices/excel/staging/${sessionId}/rows/${rowId}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async recheck(sessionId: string): Promise<any> {
+    return this.request(`/invoices/excel/staging/${sessionId}/recheck`, {
+      method: 'POST',
+    });
+  }
+
+  async commit(sessionId: string): Promise<any> {
+    return this.request(`/invoices/excel/staging/${sessionId}/commit`, {
+      method: 'POST',
+    });
+  }
+
+  async cancel(sessionId: string): Promise<void> {
+    await this.request(`/invoices/excel/staging/${sessionId}`, {
+      method: 'DELETE',
+    });
+  }
+}
+
 // Export singleton instances
 export const authService = new AuthService();
 export const invoiceService = new InvoiceService();
@@ -543,3 +619,4 @@ export const userService = new UserService();
 export const masterDataService = new MasterDataService();
 export const fbrIntegrationService = new FBRIntegrationService();
 export const notificationService = new NotificationService();
+export const excelStagingService = new ExcelStagingService();

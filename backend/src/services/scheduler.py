@@ -14,6 +14,9 @@ from src.database.session import get_db_session
 from src.services.auto_posting_service import AutoPostingService
 from src.models.user import User
 from src.models.invoice import Invoice, InvoiceStatus
+from src.models.fbr_notifications import FBRChangeNotification
+from src.models.posting_log import PostingLog
+from src.models.bulk_operation import BulkOperationTask
 from sqlalchemy import select, and_
 
 logger = logging.getLogger(__name__)
@@ -133,6 +136,66 @@ async def auto_posting_job():
     except Exception as e:
         logger.error(f"Auto-posting job error: {e}", exc_info=True)
 
+
+def cleanup_old_notifications_job():
+    """Delete FBR change notifications older than 2 days."""
+    logger.info("Starting old notification cleanup...")
+    try:
+        with get_db_session() as db:
+            from datetime import timedelta
+            cutoff = datetime.utcnow() - timedelta(days=2)
+            result = db.query(FBRChangeNotification).filter(
+                FBRChangeNotification.created_at < cutoff
+            ).delete()
+            db.commit()
+            if result > 0:
+                logger.info(f"Deleted {result} old notification(s) older than 2 days")
+            else:
+                logger.info("No old notifications to clean up")
+    except Exception as e:
+        logger.error(f"Notification cleanup job error: {e}", exc_info=True)
+
+
+def cleanup_old_posting_logs_job():
+    """Delete posting logs older than 15 days."""
+    logger.info("Starting old posting log cleanup...")
+    try:
+        with get_db_session() as db:
+            from datetime import timedelta
+            cutoff = datetime.utcnow() - timedelta(days=15)
+            result = db.query(PostingLog).filter(
+                PostingLog.created_at < cutoff
+            ).delete()
+            db.commit()
+            if result > 0:
+                logger.info(f"Deleted {result} old posting log(s) older than 15 days")
+            else:
+                logger.info("No old posting logs to clean up")
+    except Exception as e:
+        logger.error(f"Posting log cleanup job error: {e}", exc_info=True)
+
+
+def cleanup_bulk_operation_tasks_job():
+    """Delete completed bulk operation tasks older than 1 hour."""
+    logger.info("Starting bulk operation task cleanup...")
+    try:
+        with get_db_session() as db:
+            from datetime import timedelta
+            from src.models.bulk_operation import BulkOperationStatus
+            cutoff = datetime.utcnow() - timedelta(hours=1)
+            result = db.query(BulkOperationTask).filter(
+                BulkOperationTask.status != BulkOperationStatus.PROCESSING,
+                BulkOperationTask.completed_at < cutoff
+            ).delete()
+            db.commit()
+            if result > 0:
+                logger.info(f"Deleted {result} old bulk operation task(s) completed >1 hour ago")
+            else:
+                logger.info("No old bulk operation tasks to clean up")
+    except Exception as e:
+        logger.error(f"Bulk operation task cleanup job error: {e}", exc_info=True)
+
+
 def start_scheduler():
     """Start the scheduler with all background jobs."""
     global scheduler
@@ -151,8 +214,35 @@ def start_scheduler():
         max_instances=1
     )
 
+    # Job: Clean up old FBR change notifications (daily at 3:00 AM PKT)
+    scheduler.add_job(
+        cleanup_old_notifications_job,
+        trigger=CronTrigger(hour=3, minute=0, timezone=PAKISTAN_TZ),
+        id='cleanup_old_notifications',
+        name='Clean Up Old Notifications',
+        replace_existing=True,
+    )
+
+    # Job: Clean up old posting logs (daily at 3:30 AM PKT)
+    scheduler.add_job(
+        cleanup_old_posting_logs_job,
+        trigger=CronTrigger(hour=3, minute=30, timezone=PAKISTAN_TZ),
+        id='cleanup_old_posting_logs',
+        name='Clean Up Old Posting Logs',
+        replace_existing=True,
+    )
+
+    # Job: Clean up completed bulk operation tasks (every 30 minutes)
+    scheduler.add_job(
+        cleanup_bulk_operation_tasks_job,
+        trigger=IntervalTrigger(minutes=30),
+        id='cleanup_bulk_operation_tasks',
+        name='Clean Up Old Bulk Operation Tasks',
+        replace_existing=True,
+    )
+
     scheduler.start()
-    logger.info("Scheduler started with auto-posting job (runs every 5 minutes)")
+    logger.info("Scheduler started with auto-posting, notification, posting log, and bulk task cleanup jobs")
 
 def stop_scheduler():
     global scheduler

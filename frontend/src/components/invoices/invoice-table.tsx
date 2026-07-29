@@ -51,6 +51,9 @@ interface InvoiceTableProps {
   onStatusFilterChange?: (value: string) => void;
   fbrRefFilter?: string;
   onFbrRefFilterChange?: (value: string) => void;
+  // Pagination / cross-page select support
+  totalFilteredCount?: number;
+  allFilteredSelectableIds?: string[];
 }
 
 const statusOptions = [
@@ -88,6 +91,8 @@ export function InvoiceTable({
   onStatusFilterChange = () => {},
   fbrRefFilter = '',
   onFbrRefFilterChange = () => {},
+  totalFilteredCount,
+  allFilteredSelectableIds,
 }: InvoiceTableProps) {
   const [datePopoverOpen, setDatePopoverOpen] = useState(false);
   const datePopoverRef = useRef<HTMLDivElement>(null);
@@ -157,10 +162,14 @@ export function InvoiceTable({
     if (!onSelectionChange) return;
 
     if (checked) {
+      // When pagination is active, allFilteredSelectableIds contains ALL selectable
+      // invoice IDs across all pages — select those instead of just the current page.
       const selectableIds = new Set(
-        invoices
-          .filter(inv => isSelectable(inv.status))
-          .map(inv => inv.id)
+        allFilteredSelectableIds && allFilteredSelectableIds.length > invoices.length
+          ? allFilteredSelectableIds
+          : invoices
+              .filter(inv => isSelectable(inv.status))
+              .map(inv => inv.id)
       );
       onSelectionChange(selectableIds);
     } else {
@@ -335,6 +344,24 @@ export function InvoiceTable({
         {invoices.length === 0 && (
           <div className="bg-white dark:bg-neutral-950 rounded-2xl border border-slate-100 dark:border-neutral-900 shadow-sm">
             <EmptyStateContent />
+          </div>
+        )}
+        {/* Cross-page selection banner — mobile */}
+        {allFilteredSelectableIds && allFilteredSelectableIds.length > invoices.length && allSelectableSelected && selectedInvoices.size > 0 && (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 rounded-lg">
+            <span className="text-xs text-amber-800 dark:text-amber-300 font-medium">
+              All {invoices.length} on this page selected.
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                if (!onSelectionChange) return;
+                onSelectionChange(new Set(allFilteredSelectableIds));
+              }}
+              className="text-xs font-bold text-amber-700 dark:text-amber-400 underline hover:no-underline"
+            >
+              Select all {allFilteredSelectableIds.length} matching invoices.
+            </button>
           </div>
         )}
         {invoices.length > 0 && (
@@ -694,6 +721,25 @@ export function InvoiceTable({
 
         </div>{/* end header wrapper */}
 
+        {/* Cross-page selection banner */}
+        {/* {allFilteredSelectableIds && allFilteredSelectableIds.length > invoices.length && allSelectableSelected && selectedInvoices.size > 0 && (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 rounded-lg mx-1 mb-1">
+            <span className="text-xs text-amber-800 dark:text-amber-300 font-medium">
+              All {invoices.length} invoice{invoices.length !== 1 ? 's' : ''} on this page selected.
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                if (!onSelectionChange) return;
+                onSelectionChange(new Set(allFilteredSelectableIds));
+              }}
+              className="text-xs font-bold text-amber-700 dark:text-amber-400 underline hover:no-underline"
+            >
+              Select all {allFilteredSelectableIds.length} matching invoices.
+            </button>
+          </div>
+        )} */}
+
         {/*table 3 body — scrollable*/}
         {invoices.length === 0 ? (
           <div className="flex-1 flex items-start justify-center">
@@ -733,7 +779,7 @@ export function InvoiceTable({
                     <div className="text-[9px] lg:text-[10px] xl:text-xs font-medium text-slate-500 truncate mt-0.5">{invoice.invoiceType}</div>
                   </td>
                   <td className="px-1 py-4 align-middle w-[16%] border-r-2 border-blue-200 border-b-1">
-                    <div className="text-[11px] lg:text-[13px] xl:text-sm font-medium text-slate-700">
+                    <div className="text-[11px] lg:text-[13px] xl:text-sm font-medium text-slate-700 break-all leading-snug">
                       {invoice.fbrReferenceNumber || '—'}
                     </div>
                   </td>

@@ -195,6 +195,13 @@ export const api = {
         method: 'POST',
       });
     },
+
+    bulkDelete: async (invoiceIds: string[]) => {
+      return fetchWithAuth('/invoices/bulk-delete', {
+        method: 'POST',
+        body: JSON.stringify({ invoice_ids: invoiceIds }),
+      });
+    },
   },
 
   // Dashboard endpoints
@@ -404,6 +411,75 @@ export const api = {
       return fetchWithAuth('/profile/invoice-settings', {
         method: 'PUT',
         body: JSON.stringify(settings),
+      });
+    },
+  },
+
+  // Excel staging endpoints
+  excelStaging: {
+    uploadExcel: async (file: File): Promise<{
+      session_id: string;
+      status: string;
+      original_filename: string;
+      total_rows: number;
+      valid_rows: number;
+      errored_rows: number;
+    }> => {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const headers: Record<string, string> = {};
+      const method = 'POST';
+      const csrfToken = getCookie('csrf_token') || (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('csrf_token') : null);
+      if (csrfToken) {
+        headers['X-CSRF-Token'] = csrfToken;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/invoices/excel/staging/upload`, {
+        method,
+        headers,
+        credentials: 'include',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new ApiError(response.status, errorData.detail || errorData.error || 'Upload failed');
+      }
+
+      return response.json();
+    },
+
+    getActiveSessions: async (): Promise<{ sessions: any[] }> => {
+      return fetchWithAuth('/invoices/excel/staging/active');
+    },
+
+    getSession: async (sessionId: string): Promise<any> => {
+      return fetchWithAuth(`/invoices/excel/staging/${sessionId}`);
+    },
+
+    updateRow: async (sessionId: string, rowId: string, updates: Record<string, any>): Promise<any> => {
+      return fetchWithAuth(`/invoices/excel/staging/${sessionId}/rows/${rowId}`, {
+        method: 'PUT',
+        body: JSON.stringify(updates),
+      });
+    },
+
+    recheck: async (sessionId: string): Promise<any> => {
+      return fetchWithAuth(`/invoices/excel/staging/${sessionId}/recheck`, {
+        method: 'POST',
+      });
+    },
+
+    commit: async (sessionId: string): Promise<any> => {
+      return fetchWithAuth(`/invoices/excel/staging/${sessionId}/commit`, {
+        method: 'POST',
+      });
+    },
+
+    cancel: async (sessionId: string): Promise<void> => {
+      await fetchWithAuth(`/invoices/excel/staging/${sessionId}`, {
+        method: 'DELETE',
       });
     },
   },

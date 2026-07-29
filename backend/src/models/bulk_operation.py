@@ -2,8 +2,9 @@
 Bulk operation model for tracking background validation/posting progress.
 
 Represents a single bulk operation (validate or post) that processes
-invoices one-by-one server-side. Rows are temporary — auto-cleaned
-by the scheduler after 5 minutes post-completion.
+invoices one-by-one server-side. Rows in a terminal status (completed,
+partially_completed, failed, cancelled) are cleaned up by the scheduler
+after 1 hour — they're only needed while the user watches progress.
 """
 from typing import Optional, List
 from datetime import datetime

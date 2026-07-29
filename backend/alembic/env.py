@@ -15,6 +15,9 @@ from src.models.idempotency import IdempotencyCache  # noqa
 from src.models.posting_log import PostingLog  # noqa
 from src.models.daily_posting_counter import DailyPostingCounter  # noqa
 
+# Import excel staging models
+from src.models.excel_staging import ExcelStagingSession, ExcelStagingRow  # noqa
+
 # Import FBR master data models
 from src.models.fbr_master_data import (
     FBRBase,
@@ -29,14 +32,17 @@ from src.models.fbr_master_data import (
 
 from src.config.settings import settings
 
-# Combine metadata from Base and FBRBase for main database
+# Combine metadata from Base, FBRBase, and SQLModel for main database
 from sqlalchemy import MetaData
+from sqlmodel import SQLModel
 combined_metadata = MetaData()
 
 # Merge tables from Base and FBRBase only (main database tables)
 for table in Base.metadata.tables.values():
     table.to_metadata(combined_metadata)
 for table in FBRBase.metadata.tables.values():
+    table.to_metadata(combined_metadata)
+for table in SQLModel.metadata.tables.values():
     table.to_metadata(combined_metadata)
 
 # this is the Alembic Config object, which provides

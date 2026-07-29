@@ -137,10 +137,10 @@ export function RecentInvoices({
                 {invoices.map((invoice) => (
                   <tr key={invoice.id} className="hover:bg-slate-50/60 transition-colors duration-150">
                     <td className="border-r-2 border-blue-200 pl-2 py-1.5 w-[11%]">
-                      <div className="text-[11px] lg:text-[13px] xl:text-sm font-medium text-slate-700">{invoice.number}</div>
+                      <div className="text-[11px] lg:text-[13px] xl:text-sm font-medium text-slate-700 break-all leading-snug">{invoice.number}</div>
                     </td>
                     <td className="border-r-2 border-blue-200 px-1 py-1.5 w-[16%]">
-                      <div className="text-[11px] lg:text-[13px] xl:text-sm font-medium text-slate-700">{invoice.fbrInvoiceNumber || '—'}</div>
+                      <div className="text-[11px] lg:text-[13px] xl:text-sm font-medium text-slate-700 break-all leading-snug">{invoice.fbrInvoiceNumber || '—'}</div>
                     </td>
                     <td className="border-r-2 border-blue-200 px-1 py-1.5 w-[8%]">
                       <div className="text-[10px] lg:text-[11px] xl:text-[13px] font-medium text-slate-700 whitespace-nowrap text-center">

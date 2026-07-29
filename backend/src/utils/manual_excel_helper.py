@@ -148,6 +148,524 @@ def generate_manual_excel_template(
     return output
 
 
+# ---------------------------------------------------------------------------
+# Staging parser functions (non-failing, per-field error tracking)
+# ---------------------------------------------------------------------------
+
+
+def _validate_staging_row(
+    row: dict,
+    saved_items_dict: dict,
+    today: date,
+) -> dict[str, list[str]]:
+    """Validate a single staging row, returning per-field errors.
+
+    Pure function — does not modify any state. Returns a dict mapping
+    field names to lists of error messages. Empty dict = row is valid.
+    """
+    errors: dict[str, list[str]] = {}
+
+    invoice_number = str(row.get("invoice_number", "")).strip()
+    if not invoice_number:
+        errors["invoice_number"] = ["invoice_number is required"]
+        # Can't validate most fields without an invoice number
+        return errors
+
+    # --- invoice_date ---
+    invoice_date_str = str(row.get("invoice_date", "")).strip()
+    if not invoice_date_str:
+        errors["invoice_date"] = ["invoice_date is required"]
+    else:
+        try:
+            from datetime import datetime as dt
+            parsed = dt.strptime(invoice_date_str, "%Y-%m-%d").date()
+            if parsed > today:
+                errors["invoice_date"] = [
+                    f"invoice_date '{invoice_date_str}' is in the future"
+                ]
+        except ValueError:
+            errors["invoice_date"] = [
+                f"invalid invoice_date format '{invoice_date_str}'"
+            ]
+
+    # --- saved_item_code ---
+    saved_item_code = str(row.get("saved_item_code", "")).strip()
+    if not saved_item_code:
+        errors["saved_item_code"] = ["saved_item_code is required"]
+    else:
+        saved_item = saved_items_dict.get(saved_item_code)
+        if saved_item is None:
+            errors["saved_item_code"] = [
+                f"'{saved_item_code}' not found in your saved items"
+            ]
+
+    # --- buyer_registration_type ---
+    buyer_reg_type = str(row.get("buyer_registration_type", "")).strip()
+    if not buyer_reg_type:
+        errors["buyer_registration_type"] = ["buyer registration type is required"]
+    elif buyer_reg_type not in ("Registered", "Unregistered", "Final Consumer"):
+        errors["buyer_registration_type"] = [
+            f"'{buyer_reg_type}' is not a valid registration type"
+        ]
+
+    # --- buyer_ntn_cnic (required for registered buyers) ---
+    buyer_ntn = str(row.get("buyer_ntn_cnic", "")).strip()
+    if buyer_reg_type == "Registered" and not buyer_ntn:
+        errors["buyer_ntn_cnic"] = [
+            "buyer NTN/CNIC is required for registered buyers"
+        ]
+
+    # --- buyer_business_name ---
+    buyer_name = str(row.get("buyer_business_name", "")).strip()
+    if not buyer_name:
+        errors["buyer_business_name"] = ["buyer business name is required"]
+
+    # --- buyer_province ---
+    buyer_province = str(row.get("buyer_province", "")).strip()
+    if not buyer_province:
+        errors["buyer_province"] = ["buyer province is required"]
+
+    # --- buyer_address ---
+    buyer_address = str(row.get("buyer_address", "")).strip()
+    if not buyer_address:
+        errors["buyer_address"] = ["buyer address is required"]
+
+    # --- income_tax ---
+    income_tax = str(row.get("income_tax", "")).strip()
+    if income_tax and income_tax not in ("236G", "236H"):
+        errors["income_tax"] = [f"income_tax '{income_tax}' is invalid"]
+
+    # --- quantity ---
+    try:
+        quantity = float(row.get("quantity", 0))
+        if quantity <= 0:
+            errors["quantity"] = ["quantity must be greater than 0"]
+    except (ValueError, TypeError):
+        errors["quantity"] = ["quantity must be a valid number"]
+
+    # --- value_sales_excluding_st ---
+    try:
+        value = float(row.get("value_sales_excluding_st", 0))
+        if value <= 0:
+            errors["value_sales_excluding_st"] = [
+                "value_sales_excluding_st must be greater than 0"
+            ]
+    except (ValueError, TypeError):
+        errors["value_sales_excluding_st"] = [
+            "value_sales_excluding_st must be a valid number"
+        ]
+
+    # --- discount (if provided) must not exceed value ---
+    try:
+        discount = float(row.get("discount", 0))
+        if discount > 0 and discount > value:
+            errors["discount"] = [
+                f"discount ({discount}) cannot exceed "
+                f"value_sales_excluding_st ({value})"
+            ]
+    except (ValueError, TypeError):
+        pass
+
+    # --- fixed_notified_value check for 3rd Schedule Goods ---
+    if saved_item_code and saved_items_dict.get(saved_item_code):
+        item = saved_items_dict[saved_item_code]
+        if getattr(item, "transaction_type", "") == "3rd Schedule Goods":
+            try:
+                fixed_val = float(
+                    row.get("fixed_notified_value_or_retail_price", 0)
+                )
+                if fixed_val < value:
+                    errors["fixed_notified_value_or_retail_price"] = [
+                        f"fixed_notified_value_or_retail_price ({fixed_val}) "
+                        f"must be >= value_sales_excluding_st ({value})"
+                    ]
+            except (ValueError, TypeError):
+                pass
+
+    return errors
+
+
+def _compute_staging_fields(
+    row: dict,
+    saved_items_dict: dict,
+    seller_info: dict,
+    income_tax: str,
+) -> dict:
+    """Compute derived fields for a staging row.
+
+    These include financial calculations and saved-item lookups.
+    Returns a dict of computed fields that can be merged into the row.
+    """
+    computed: dict = {}
+
+    saved_item_code = str(row.get("saved_item_code", "")).strip()
+    saved_item = saved_items_dict.get(saved_item_code)
+
+    # --- Resolve saved item fields ---
+    if saved_item:
+        computed["product_description"] = saved_item.product_description
+        computed["hs_code"] = saved_item.hs_code
+        computed["rate"] = str(saved_item.default_rate or "18")
+        computed["uom"] = saved_item.default_uom or "NOS"
+        computed["sale_type"] = saved_item.transaction_type or ""
+        computed["transaction_type_id"] = saved_item.transaction_type or ""
+        computed["sro_schedule_no"] = saved_item.sro_schedule_no or ""
+        computed["sro_item_serial_no"] = saved_item.sro_item_serial_no or ""
+
+    # --- Financial calculations ---
+    try:
+        quantity = float(row.get("quantity", 0))
+    except (ValueError, TypeError):
+        quantity = 0
+
+    try:
+        value_sales_excluding_st = float(row.get("value_sales_excluding_st", 0))
+    except (ValueError, TypeError):
+        value_sales_excluding_st = 0
+
+    try:
+        fixed_notified_value = float(
+            row.get("fixed_notified_value_or_retail_price", 0)
+        )
+    except (ValueError, TypeError):
+        fixed_notified_value = 0
+
+    try:
+        further_tax = float(row.get("further_tax", 0))
+    except (ValueError, TypeError):
+        further_tax = 0
+
+    try:
+        discount = float(row.get("discount", 0))
+    except (ValueError, TypeError):
+        discount = 0
+
+    tax_rate = float(saved_item.default_rate) if saved_item and saved_item.default_rate else 18.0
+    base_value = max(value_sales_excluding_st, fixed_notified_value)
+    computed["sales_tax_applicable"] = round((base_value * tax_rate) / 100, 2)
+    computed["total_values"] = round(
+        base_value + computed["sales_tax_applicable"] + further_tax - discount, 2
+    )
+
+    # Withholding tax
+    wht = row.get("withholding_tax_amount")
+    if wht is not None:
+        try:
+            computed["withholding_tax_amount"] = float(wht)
+        except (ValueError, TypeError):
+            wht_rate = 0.005 if income_tax == "236H" else 0.001
+            computed["withholding_tax_amount"] = round(value_sales_excluding_st * wht_rate, 2)
+    else:
+        wht_rate = 0.005 if income_tax == "236H" else 0.001
+        computed["withholding_tax_amount"] = round(value_sales_excluding_st * wht_rate, 2)
+
+    computed["sales_tax_withheld_at_source"] = 0
+    computed["extra_tax"] = 0
+    computed["fed_payable"] = 0
+    computed["item_rate"] = (
+        round(value_sales_excluding_st / quantity, 2)
+        if quantity > 0 else None
+    )
+
+    # Seller info
+    computed.update(seller_info)
+
+    return computed
+
+
+def parse_excel_for_staging(
+    file_source: BytesIO,
+    user_id: UUID,
+    db: Session,
+) -> list[dict]:
+    """Parse an Excel file for staging, returning ALL rows without failing.
+
+    Each row dict includes:
+      - All 16 template fields (as parsed from Excel)
+      - Computed fields (from saved item lookup + financial calculations)
+      - Seller fields (from user profile)
+      - Validation state: is_valid, field_errors
+      - Metadata: excel_row_number, group_key (invoice_number)
+
+    Never raises ValueError. Returns empty list if no valid invoice data.
+    Skips the sample row (INV-001).
+    """
+    from src.models.user import User
+    from src.models.user_saved_product import UserSavedProduct
+
+    # --- Parse the Excel file ---
+    try:
+        df = pd.read_excel(
+            file_source,
+            engine="openpyxl",
+            dtype={"saved_item_code": str, "income_tax": str},
+        )
+    except MemoryError:
+        return []
+
+    # --- Normalize column names ---
+    # Handle column names with __N suffixes (from pandas duplicate column handling)
+    # Also handle case-insensitive matches and strip whitespace
+    template_set = set(MANUAL_TEMPLATE_COLUMNS)
+    # Build a mapping: normalize Excel column names to our template names
+    import re
+    col_rename = {}
+    for col in df.columns:
+        col_str = str(col).strip()
+        # Strip __N suffixes first
+        clean = re.sub(r"__\d+$", "", col_str)
+        # Try direct match first, then case-insensitive match
+        if clean in template_set:
+            col_rename[col] = clean
+        else:
+            # Try lowercase matching
+            for tc in template_set:
+                if clean.lower() == tc.lower():
+                    col_rename[col] = tc
+                    break
+    # Apply rename and keep only matched columns
+    if col_rename:
+        df = df.rename(columns=col_rename)
+    cols_to_keep = [c for c in df.columns if c in template_set]
+    unmatched = [c for c in df.columns if c not in template_set]
+    if unmatched:
+        logger.info("Dropping unmatched columns from Excel: %s", unmatched)
+    df = df[cols_to_keep]
+
+    # Remove empty invoice_number rows and sample row
+    df = df.dropna(subset=["invoice_number"])
+    if df.empty:
+        return []
+    df = df[df["invoice_number"].astype(str).str.strip() != "INV-001"]
+    if df.empty:
+        return []
+
+    # --- Check for duplicate invoice numbers already in the database ---
+    from src.models.invoice import Invoice as InvoiceModel
+    excel_invoice_numbers: set[str] = set()
+    for _, raw_row in df.iterrows():
+        inv_num = str(raw_row["invoice_number"]).strip()
+        if inv_num:
+            excel_invoice_numbers.add(inv_num)
+
+    existing_invoice_numbers: set[str] = set()
+    if excel_invoice_numbers:
+        existing = db.exec(
+            select(InvoiceModel.external_id).where(
+                InvoiceModel.external_id.in_(excel_invoice_numbers),
+                InvoiceModel.is_deleted == False,
+            )
+        ).all()
+        existing_invoice_numbers = set(existing)
+
+    # --- Fetch seller info ---
+    seller_info: dict = {}
+    user = db.get(User, user_id)
+    if user:
+        seller_info = {
+            "seller_ntn_cnic": user.fbr_seller_ntn or "",
+            "seller_business_name": user.fbr_business_name or "",
+            "seller_province": user.fbr_seller_province or "",
+            "seller_address": user.fbr_seller_address or "",
+        }
+
+    # --- Fetch saved items ---
+    statement = select(UserSavedProduct).where(
+        UserSavedProduct.user_id == user_id,
+        UserSavedProduct.is_active == 1,
+    )
+    saved_items = db.exec(statement).all()
+    saved_items_dict = {item.item_code: item for item in saved_items}
+
+    # --- Process each row ---
+    today = date.today()
+    rows: list[dict] = []
+    seen_invoice_numbers: set[str] = set()       # duplicates within same file
+    invoice_dates: dict[str, str] = {}            # first seen date per invoice number
+
+    for row_idx, raw_row in df.iterrows():
+        excel_row_number = row_idx + 2  # 1-based + header
+
+        invoice_number = str(raw_row["invoice_number"]).strip()
+
+        # Parse all 16 template fields with defaults
+        row_data: dict = {
+            "excel_row_number": excel_row_number,
+            "invoice_number": invoice_number,
+            "invoice_type": str(raw_row.get("invoice_type", "")).strip()
+            if pd.notna(raw_row.get("invoice_type"))
+            else "Sale Invoice",
+            "invoice_date": pd.to_datetime(raw_row["invoice_date"]).strftime('%Y-%m-%d')
+            if pd.notna(raw_row.get("invoice_date"))
+            else "",
+            "buyer_ntn_cnic": _clean_ntn_cnic(raw_row.get("buyer_ntn_cnic")),
+            "buyer_business_name": str(raw_row.get("buyer_business_name", "")).strip()
+            if pd.notna(raw_row.get("buyer_business_name"))
+            else "",
+            "buyer_province": str(raw_row.get("buyer_province", "")).strip()
+            if pd.notna(raw_row.get("buyer_province"))
+            else "",
+            "buyer_address": str(raw_row.get("buyer_address", "")).strip()
+            if pd.notna(raw_row.get("buyer_address"))
+            else "",
+            "buyer_registration_type": str(raw_row.get("buyer_registration_type", "")).strip()
+            if pd.notna(raw_row.get("buyer_registration_type"))
+            else "Registered",
+            "saved_item_code": str(raw_row.get("saved_item_code", "")).strip()
+            if pd.notna(raw_row.get("saved_item_code"))
+            else "",
+            "quantity": round(float(raw_row["quantity"]), 2)
+            if pd.notna(raw_row.get("quantity"))
+            else 0.0,
+            "value_sales_excluding_st": round(float(raw_row["value_sales_excluding_st"]), 2)
+            if pd.notna(raw_row.get("value_sales_excluding_st"))
+            else 0.0,
+            "fixed_notified_value_or_retail_price": round(
+                float(raw_row["fixed_notified_value_or_retail_price"]), 2
+            )
+            if pd.notna(raw_row.get("fixed_notified_value_or_retail_price"))
+            else 0.0,
+            "further_tax": round(float(raw_row["further_tax"]), 0)
+            if pd.notna(raw_row.get("further_tax"))
+            else 0.0,
+            "discount": round(float(raw_row.get("discount", 0)), 2)
+            if pd.notna(raw_row.get("discount"))
+            else 0.0,
+            "income_tax": str(raw_row.get("income_tax", "")).strip()
+            if pd.notna(raw_row.get("income_tax"))
+            else "236G",
+            "withholding_tax_amount": float(raw_row["withholding_tax_amount"])
+            if pd.notna(raw_row.get("withholding_tax_amount"))
+            else None,
+        }
+
+        # Determine income_tax for this row
+        income_tax = row_data["income_tax"]
+        income_tax_raw = str(raw_row.get("income_tax", "")).strip() if pd.notna(raw_row.get("income_tax")) else ""
+        if income_tax_raw in ("236G", "236H"):
+            income_tax = income_tax_raw
+        elif income_tax_raw:
+            income_tax = income_tax_raw  # will be flagged as error by validation
+
+        # Validate
+        field_errors = _validate_staging_row(row_data, saved_items_dict, today)
+
+        # Check for duplicate invoice number already in the database
+        if not field_errors.get("invoice_number") and invoice_number in existing_invoice_numbers:
+            field_errors["invoice_number"] = [
+                f"invoice number '{invoice_number}' already exists in your invoice history"
+            ]
+
+        # Check for duplicate invoice number within the same file
+        if (
+            not field_errors.get("invoice_number")
+            and invoice_number in seen_invoice_numbers
+        ):
+            field_errors["invoice_number"] = [
+                f"duplicate invoice number '{invoice_number}' within the same Excel file"
+            ]
+        seen_invoice_numbers.add(invoice_number)
+
+        # Check that all rows with the same invoice_number have the same date
+        current_date = row_data.get("invoice_date", "")
+        if (
+            not field_errors.get("invoice_date")
+            and invoice_number in invoice_dates
+            and current_date
+            and current_date != invoice_dates[invoice_number]
+        ):
+            field_errors["invoice_date"] = [
+                f"invoice_date '{current_date}' does not match "
+                f"previous date '{invoice_dates[invoice_number]}' "
+                f"for invoice '{invoice_number}'"
+            ]
+        if current_date and invoice_number not in invoice_dates:
+            invoice_dates[invoice_number] = current_date
+
+        is_valid = len(field_errors) == 0
+
+        # Compute derived fields (even for invalid rows — user should see them)
+        computed = _compute_staging_fields(
+            row_data, saved_items_dict, seller_info, income_tax
+        )
+        row_data.update(computed)
+
+        row_data["group_key"] = invoice_number
+        row_data["is_valid"] = is_valid
+        row_data["is_dirty"] = False
+        row_data["field_errors"] = field_errors
+
+        rows.append(row_data)
+
+    return rows
+
+
+def build_invoices_from_rows(
+    valid_rows: list[dict],
+    seller_info: dict | None = None,
+) -> list[dict]:
+    """Group valid staging rows by invoice_number and build invoice dicts.
+
+    Each unique invoice_number becomes one invoice with multiple line items.
+    This is the shared grouping logic used by both the old upload flow
+    and the new staging commit flow.
+    """
+    invoice_groups: dict[str, dict] = {}
+    seller = seller_info or {}
+
+    for row in valid_rows:
+        invoice_number = row.get("invoice_number", "").strip()
+        if not invoice_number:
+            continue
+
+        if invoice_number not in invoice_groups:
+            invoice_groups[invoice_number] = {
+                "external_id": invoice_number,
+                "invoice_type": row.get("invoice_type", "Sale Invoice"),
+                "invoice_date": row.get("invoice_date", ""),
+                "transaction_type_id": row.get("transaction_type_id", ""),
+                "seller_ntn_cnic": seller.get("seller_ntn_cnic", row.get("seller_ntn_cnic", "")),
+                "seller_business_name": seller.get("seller_business_name", row.get("seller_business_name", "")),
+                "seller_province": seller.get("seller_province", row.get("seller_province", "")),
+                "seller_address": seller.get("seller_address", row.get("seller_address", "")),
+                "buyer_ntn_cnic": row.get("buyer_ntn_cnic", ""),
+                "buyer_business_name": row.get("buyer_business_name", ""),
+                "buyer_province": row.get("buyer_province", ""),
+                "buyer_address": row.get("buyer_address", ""),
+                "buyer_registration_type": row.get("buyer_registration_type", "Registered"),
+                "invoice_ref_no": "",
+                "scenario_id": "",
+                "items": [],
+                "environment": Environment.PRODUCTION,
+                "income_tax": row.get("income_tax", "236G"),
+            }
+
+        item = {
+            "hs_code": row.get("hs_code", ""),
+            "product_description": row.get("product_description", ""),
+            "rate": row.get("rate", "18"),
+            "uom": row.get("uom", "NOS"),
+            "quantity": row.get("quantity", 0),
+            "total_values": row.get("total_values", 0),
+            "value_sales_excluding_st": row.get("value_sales_excluding_st", 0),
+            "fixed_notified_value_or_retail_price": row.get("fixed_notified_value_or_retail_price", 0),
+            "sales_tax_applicable": row.get("sales_tax_applicable", 0),
+            "sales_tax_withheld_at_source": row.get("sales_tax_withheld_at_source", 0),
+            "extra_tax": row.get("extra_tax", 0),
+            "further_tax": row.get("further_tax", 0),
+            "sro_schedule_no": row.get("sro_schedule_no", ""),
+            "fed_payable": row.get("fed_payable", 0),
+            "discount": row.get("discount", 0),
+            "sale_type": row.get("sale_type", "01"),
+            "sro_item_serial_no": row.get("sro_item_serial_no", ""),
+            "income_tax_type": row.get("income_tax", "236G"),
+            "withholding_tax_amount": row.get("withholding_tax_amount", 0),
+        }
+        invoice_groups[invoice_number]["items"].append(item)
+
+    return list(invoice_groups.values())
+
+
 def parse_excel_for_manual_invoice(
     file_source: BytesIO | str,
     user_id: UUID = None,
