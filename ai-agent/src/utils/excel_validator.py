@@ -41,10 +41,6 @@ class ExcelValidator:
         # Scheduling
         "scheduled_date",
         "scheduled_time",
-
-        # Status fields
-        "status",
-        "reason"
     ]
 
     # Required columns for manual invoice Excel template
@@ -72,10 +68,6 @@ class ExcelValidator:
 
         # Income tax
         "income_tax",
-
-        # Status fields
-        "status",
-        "reason"
     ]
 
     # Maximum file size in bytes (10 MB)

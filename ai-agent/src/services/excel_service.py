@@ -74,9 +74,6 @@ class ExcelService:
         "scheduled_date",
         "scheduled_time",
 
-        # Status fields (auto-filled by system)
-        "status",
-        "reason"
     ]
 
     # Manual invoice Excel template columns
@@ -105,10 +102,6 @@ class ExcelService:
         # Income tax
         "income_tax",
         "withholding_tax_amount",
-
-        # Status fields (auto-filled by system)
-        "status",
-        "reason"
     ]
 
     def __init__(self, db: Session):
@@ -152,8 +145,6 @@ class ExcelService:
             "withholding_tax_amount": "50",
             "scheduled_date": "2026-05-13",
             "scheduled_time": "10:00",
-            "status": "",
-            "reason": ""
         }])
         df = pd.concat([df, sample_row], ignore_index=True)
 
@@ -168,6 +159,7 @@ class ExcelService:
 
             # Set column widths for better readability
             from openpyxl.utils import get_column_letter
+            from openpyxl.worksheet.datavalidation import DataValidation
 
             column_widths = [
                 15,  # invoice_number
@@ -188,13 +180,45 @@ class ExcelService:
                 20,  # withholding_tax_amount
                 15,  # scheduled_date
                 15,  # scheduled_time
-                12,  # status
-                30   # reason
             ]
 
             for idx, width in enumerate(column_widths, start=1):
                 col_letter = get_column_letter(idx)
                 worksheet.column_dimensions[col_letter].width = width
+
+            # Freeze the header row
+            worksheet.freeze_panes = 'A2'
+
+            # Bold formatting for header row
+            from openpyxl.styles import Font
+            bold_font = Font(bold=True)
+            for col_idx in range(1, len(column_widths) + 1):
+                cell = worksheet.cell(row=1, column=col_idx)
+                cell.font = bold_font
+
+            # Data validation dropdowns
+            last_data_row = 1048576  # covers entire column
+
+            option_sets: dict[str, list[str]] = {
+                'B': ["Sale Invoice", "Debit Note", "Credit Note"],        # invoice_type
+                'F': ["PUNJAB", "SINDH", "KPK", "BALOCHISTAN", "ISLAMABAD", "GILGIT BALTISTAN", "AZAD JAMMU KASHMIR"],  # buyer_province
+                'H': ["Registered", "Unregistered", "Final Consumer"],     # buyer_registration_type
+                'O': ["236G", "236H", "None"],                              # income_tax
+            }
+
+            for col_letter, values in option_sets.items():
+                options_str = ','.join(values)
+                dv = DataValidation(
+                    type='list',
+                    formula1=f'"{options_str}"',
+                    allow_blank=True,
+                )
+                dv.error = 'Please select a valid value from the dropdown list.'
+                dv.errorTitle = 'Invalid value'
+                dv.prompt = 'Select from the dropdown list'
+                dv.promptTitle = 'Valid options'
+                worksheet.add_data_validation(dv)
+                dv.add(f'{col_letter}2:{col_letter}{last_data_row}')
 
         output.seek(0)
         return output
@@ -227,8 +251,6 @@ class ExcelService:
             "discount": "0",
             "income_tax": "236G",
             "withholding_tax_amount": "50",
-            "status": "",
-            "reason": ""
         }])
         df = pd.concat([df, sample_row], ignore_index=True)
 
@@ -240,6 +262,7 @@ class ExcelService:
             worksheet = writer.sheets['Invoices']
 
             from openpyxl.utils import get_column_letter
+            from openpyxl.worksheet.datavalidation import DataValidation
 
             column_widths = [
                 15,  # invoice_number
@@ -258,13 +281,45 @@ class ExcelService:
                 12,  # discount
                 12,  # income_tax
                 20,  # withholding_tax_amount
-                12,  # status
-                30   # reason
             ]
 
             for idx, width in enumerate(column_widths, start=1):
                 col_letter = get_column_letter(idx)
                 worksheet.column_dimensions[col_letter].width = width
+
+            # Freeze the header row
+            worksheet.freeze_panes = 'A2'
+
+            # Bold formatting for header row
+            from openpyxl.styles import Font
+            bold_font = Font(bold=True)
+            for col_idx in range(1, len(column_widths) + 1):
+                cell = worksheet.cell(row=1, column=col_idx)
+                cell.font = bold_font
+
+            # Data validation dropdowns
+            last_data_row = 1048576
+
+            option_sets: dict[str, list[str]] = {
+                'B': ["Sale Invoice", "Debit Note", "Credit Note"],
+                'F': ["PUNJAB", "SINDH", "KPK", "BALOCHISTAN", "ISLAMABAD", "GILGIT BALTISTAN", "AZAD JAMMU KASHMIR"],
+                'H': ["Registered", "Unregistered", "Final Consumer"],
+                'O': ["236G", "236H", "None"],
+            }
+
+            for col_letter, values in option_sets.items():
+                options_str = ','.join(values)
+                dv = DataValidation(
+                    type='list',
+                    formula1=f'"{options_str}"',
+                    allow_blank=True,
+                )
+                dv.error = 'Please select a valid value from the dropdown list.'
+                dv.errorTitle = 'Invalid value'
+                dv.prompt = 'Select from the dropdown list'
+                dv.promptTitle = 'Valid options'
+                worksheet.add_data_validation(dv)
+                dv.add(f'{col_letter}2:{col_letter}{last_data_row}')
 
         output.seek(0)
         return output
@@ -394,23 +449,53 @@ class ExcelService:
                     validation_errors.append(f"Row {row_idx + 2} (Invoice {row['invoice_number']}): saved_item_code '{saved_item_code}' not found in your saved items")
                     continue
 
-                # Parse numeric fields from Excel
-                quantity = float(row['quantity']) if pd.notna(row['quantity']) else 0
-                value_sales_excluding_st = float(row['value_sales_excluding_st']) if pd.notna(row['value_sales_excluding_st']) else 0
-                fixed_notified_value_or_retail_price = float(row['fixed_notified_value_or_retail_price']) if pd.notna(row['fixed_notified_value_or_retail_price']) else 0
-                further_tax = float(row['further_tax']) if pd.notna(row['further_tax']) else 0
-                discount = float(row['discount']) if pd.notna(row.get('discount')) else 0
+                # Validate invoice_type
+                VALID_INVOICE_TYPES = ["Sale Invoice", "Debit Note", "Credit Note"]
+                invoice_type_raw = str(row['invoice_type']).strip() if pd.notna(row['invoice_type']) else ""
+                if invoice_type_raw and invoice_type_raw not in VALID_INVOICE_TYPES:
+                    validation_errors.append(
+                        f"Row {row_idx + 2} (Invoice {row['invoice_number']}): "
+                        f"invoice_type '{invoice_type_raw}' is invalid. Must be one of: {', '.join(VALID_INVOICE_TYPES)}."
+                    )
+                    continue
 
-                # Parse income_tax (must be "236G" or "236H")
+                # Validate buyer_province
+                VALID_PROVINCES = ["PUNJAB", "SINDH", "KPK", "BALOCHISTAN", "ISLAMABAD", "GILGIT BALTISTAN", "AZAD JAMMU KASHMIR"]
+                buyer_province_raw = str(row['buyer_province']).strip() if pd.notna(row['buyer_province']) else ""
+                if buyer_province_raw and buyer_province_raw not in VALID_PROVINCES:
+                    validation_errors.append(
+                        f"Row {row_idx + 2} (Invoice {row['invoice_number']}): "
+                        f"buyer_province '{buyer_province_raw}' is invalid. Must be one of: {', '.join(VALID_PROVINCES)}."
+                    )
+                    continue
+
+                # Validate buyer_registration_type
+                VALID_REG_TYPES = ["Registered", "Unregistered", "Final Consumer"]
+                buyer_reg_type_raw = str(row['buyer_registration_type']).strip() if pd.notna(row['buyer_registration_type']) else ""
+                if buyer_reg_type_raw and buyer_reg_type_raw not in VALID_REG_TYPES:
+                    validation_errors.append(
+                        f"Row {row_idx + 2} (Invoice {row['invoice_number']}): "
+                        f"buyer_registration_type '{buyer_reg_type_raw}' is invalid. Must be one of: {', '.join(VALID_REG_TYPES)}."
+                    )
+                    continue
+
+                # Parse numeric fields from Excel (rounded to 2 decimal places)
+                quantity = round(float(row['quantity']) if pd.notna(row['quantity']) else 0, 2)
+                value_sales_excluding_st = round(float(row['value_sales_excluding_st']) if pd.notna(row['value_sales_excluding_st']) else 0, 2)
+                fixed_notified_value_or_retail_price = round(float(row['fixed_notified_value_or_retail_price']) if pd.notna(row['fixed_notified_value_or_retail_price']) else 0, 2)
+                further_tax = round(float(row['further_tax']) if pd.notna(row['further_tax']) else 0, 2)
+                discount = round(float(row['discount']) if pd.notna(row.get('discount')) else 0, 2)
+
+                # Parse income_tax (must be "236G", "236H", or "None")
                 income_tax = "236G"
                 if pd.notna(row.get('income_tax')):
                     income_tax_raw = str(row['income_tax']).strip()
-                    if income_tax_raw in ("236G", "236H"):
+                    if income_tax_raw in ("236G", "236H", "None"):
                         income_tax = income_tax_raw
                     elif income_tax_raw:
                         validation_errors.append(
                             f"Row {row_idx + 2} (Invoice {row['invoice_number']}): "
-                            f"income_tax '{income_tax_raw}' is invalid. Must be '236G' or '236H'."
+                            f"income_tax '{income_tax_raw}' is invalid. Must be '236G', '236H', or 'None'."
                         )
                         continue
 
@@ -418,19 +503,24 @@ class ExcelService:
                 withholding_tax_amount = None
                 if pd.notna(row.get('withholding_tax_amount')):
                     try:
-                        withholding_tax_amount = float(row['withholding_tax_amount'])
+                        withholding_tax_amount = round(float(row['withholding_tax_amount']), 2)
                     except (ValueError, TypeError):
                         withholding_tax_amount = None
                 if withholding_tax_amount is None:
-                    wht_rate = 0.005 if income_tax == "236H" else 0.001
+                    if income_tax == "236H":
+                        wht_rate = 0.005
+                    elif income_tax == "236G":
+                        wht_rate = 0.001
+                    else:
+                        wht_rate = 0  # "None" - no withholding tax
                     withholding_tax_amount = round(value_sales_excluding_st * wht_rate, 2)
 
                 # Calculate sales tax based on saved item's tax rate
                 tax_rate = float(saved_item.default_rate) if saved_item.default_rate else 18.0
                 # Use the greater value between Value Excl. Tax and Fixed/Retail Price (FBR rule)
                 base_value = max(value_sales_excluding_st, fixed_notified_value_or_retail_price)
-                sales_tax_applicable = (base_value * tax_rate) / 100
-                total_values = base_value + sales_tax_applicable + further_tax - discount
+                sales_tax_applicable = round((base_value * tax_rate) / 100, 2)
+                total_values = round(base_value + sales_tax_applicable + further_tax - discount, 2)
 
                 # Get UOM code and description
                 uom_code = saved_item.default_uom or "NOS"
@@ -694,27 +784,32 @@ class ExcelService:
             withholding_tax_amount = None
             if pd.notna(row.get('withholding_tax_amount')):
                 try:
-                    withholding_tax_amount = float(row['withholding_tax_amount'])
+                    withholding_tax_amount = round(float(row['withholding_tax_amount']), 2)
                 except (ValueError, TypeError):
                     withholding_tax_amount = None
 
-            # Parse numeric fields
-            quantity = float(row['quantity']) if pd.notna(row['quantity']) else 0
-            value_sales_excluding_st = float(row['value_sales_excluding_st']) if pd.notna(row['value_sales_excluding_st']) else 0
-            fixed_notified_value_or_retail_price = float(row['fixed_notified_value_or_retail_price']) if pd.notna(row['fixed_notified_value_or_retail_price']) else 0
-            further_tax = float(row['further_tax']) if pd.notna(row['further_tax']) else 0
-            discount = float(row['discount']) if pd.notna(row.get('discount')) else 0
+            # Parse numeric fields (rounded to 2 decimal places)
+            quantity = round(float(row['quantity']) if pd.notna(row['quantity']) else 0, 2)
+            value_sales_excluding_st = round(float(row['value_sales_excluding_st']) if pd.notna(row['value_sales_excluding_st']) else 0, 2)
+            fixed_notified_value_or_retail_price = round(float(row['fixed_notified_value_or_retail_price']) if pd.notna(row['fixed_notified_value_or_retail_price']) else 0, 2)
+            further_tax = round(float(row['further_tax']) if pd.notna(row['further_tax']) else 0, 2)
+            discount = round(float(row['discount']) if pd.notna(row.get('discount')) else 0, 2)
 
             # Auto-calc WHT if not provided
             if withholding_tax_amount is None:
-                wht_rate = 0.005 if income_tax == "236H" else 0.001
+                if income_tax == "236H":
+                    wht_rate = 0.005
+                elif income_tax == "236G":
+                    wht_rate = 0.001
+                else:
+                    wht_rate = 0  # "None" - no withholding tax
                 withholding_tax_amount = round(value_sales_excluding_st * wht_rate, 2)
 
             tax_rate = float(saved_item.default_rate) if saved_item.default_rate else 18.0
             # Use the greater value between Value Excl. Tax and Fixed/Retail Price (FBR rule)
             base_value = max(value_sales_excluding_st, fixed_notified_value_or_retail_price)
-            sales_tax_applicable = (base_value * tax_rate) / 100
-            total_values = base_value + sales_tax_applicable + further_tax - discount
+            sales_tax_applicable = round((base_value * tax_rate) / 100, 2)
+            total_values = round(base_value + sales_tax_applicable + further_tax - discount, 2)
 
             uom_code = saved_item.default_uom or "NOS"
 
@@ -896,10 +991,6 @@ class ExcelService:
                 # Scheduling
                 "scheduled_date": invoice.scheduled_date.isoformat() if invoice.scheduled_date else '',
                 "scheduled_time": invoice.scheduled_time.strftime('%H:%M') if invoice.scheduled_time else '',
-
-                # Status fields (from processing results)
-                "status": invoice.status.value if invoice.status else '',
-                "reason": self._format_reason(invoice)
             }
             rows.append(row)
 
@@ -919,7 +1010,7 @@ class ExcelService:
 
             column_widths = [
                 15, 15, 12, 15, 25, 15, 30, 20,
-                20, 10, 20, 25, 12, 12, 12, 20, 15, 15, 12, 30
+                20, 10, 20, 25, 12, 12, 12, 20, 15, 15
             ]
 
             for idx, width in enumerate(column_widths, start=1):

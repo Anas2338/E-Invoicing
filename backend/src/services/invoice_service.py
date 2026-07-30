@@ -513,7 +513,7 @@ class InvoiceService:
 
         return count
 
-    def get_adjacent_invoices(self, db: Session, invoice_id: UUID, user_id: UUID) -> dict:
+    def get_adjacent_invoices(self, db: Session, invoice_id: UUID, user_id: UUID, environment: Optional[str] = None) -> dict:
         """
         Get the previous and next invoice IDs for navigation.
 
@@ -521,10 +521,19 @@ class InvoiceService:
             db: Database session
             invoice_id: ID of the current invoice
             user_id: ID of the requesting user
+            environment: Optional environment filter ("SANDBOX" or "PRODUCTION" or None for all)
 
         Returns:
             Dictionary with prev_id and next_id (both nullable UUIDs)
         """
+        # Base filters shared across queries
+        base_filters = [
+            Invoice.user_id == user_id,
+            Invoice.is_deleted == False,
+        ]
+        if environment:
+            base_filters.append(Invoice.environment == environment)
+
         # Get the current invoice for its created_at timestamp
         current = db.exec(
             select(Invoice.created_at)
@@ -541,8 +550,7 @@ class InvoiceService:
         # Find previous invoice (created before current, most recent first)
         prev_result = db.exec(
             select(Invoice.id)
-            .where(Invoice.user_id == user_id)
-            .where(Invoice.is_deleted == False)
+            .where(*base_filters)
             .where(Invoice.created_at < created_at)
             .order_by(Invoice.created_at.desc())
             .limit(1)
@@ -551,8 +559,7 @@ class InvoiceService:
         # Find next invoice (created after current, oldest first)
         next_result = db.exec(
             select(Invoice.id)
-            .where(Invoice.user_id == user_id)
-            .where(Invoice.is_deleted == False)
+            .where(*base_filters)
             .where(Invoice.created_at > created_at)
             .order_by(Invoice.created_at.asc())
             .limit(1)

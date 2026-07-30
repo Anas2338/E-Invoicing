@@ -522,10 +522,16 @@ def get_adjacent_invoice(
 ):
     """
     Get the previous and next invoice IDs for navigation.
+    Filters by environment based on the user's configured FBR tokens:
+    - Production token only → only production invoices
+    - Sandbox token only → only sandbox invoices
+    - Both or neither → all invoices
     """
     service = InvoiceService()
     user_uuid = UUID(user_id)
-    result = service.get_adjacent_invoices(db, invoice_id, user_uuid)
+    user = db.get(User, user_uuid)
+    environment_override = get_user_environment_filter(user) if user else None
+    result = service.get_adjacent_invoices(db, invoice_id, user_uuid, environment=environment_override)
     return result
 
 
