@@ -555,9 +555,9 @@ export default function InvoiceHistoryPage() {
   }
 
   return (
-    <div className="h-full flex flex-col space-y-2 sm:space-y-3">
+    <div className="flex flex-col space-y-2 sm:space-y-3 lg:h-full">
       {/* Table + Actions Sidebar */}
-      <div className="flex gap-0 flex-1 min-h-0">
+      <div className="flex gap-0 lg:flex-1 lg:min-h-0">
         {/* Action Bar — vertical, left of table */}
         <div className="flex flex-col items-center gap-1 sm:gap-1.5 pt-2 sm:pt-32 pr-1 sm:pr-1.5 flex-shrink-0">
           {(() => {
@@ -663,7 +663,7 @@ export default function InvoiceHistoryPage() {
 
         {/* Invoice Table */}
         <div className="rounded-2xl flex flex-col gap-2 flex-1 min-h-0">
-          <div className="flex-1 min-h-0">
+          <div className="lg:flex-1 lg:min-h-0">
             <InvoiceTable
             invoices={paginatedInvoices}
             totalFilteredCount={filteredInvoices.length}
@@ -697,11 +697,11 @@ export default function InvoiceHistoryPage() {
             onFbrRefFilterChange={setFbrRefFilter}
             />
           </div>
-          <div>
+          <div className="sticky bottom-0 z-10 rounded-4xl bg-[#f5f5f4] dark:bg-[#0a0a0a]">
             {/* Pagination Controls */}
             {filteredInvoices.length > PAGE_SIZE && (
-              <div className="flex items-center justify-between px-2 py-2 border-2 border-blue-600 rounded-4xl">
-                <span className="text-xs text-black dark:text-neutral-400">
+              <div className="flex flex-wrap items-center justify-between gap-2 px-2 py-2 border-2 border-blue-600 rounded-4xl">
+                <span className="hidden sm:inline text-xs text-black dark:text-neutral-400">
                   Showing {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredInvoices.length)} of{' '}
                   {filteredInvoices.length} invoices
                 </span>
@@ -732,6 +732,8 @@ export default function InvoiceHistoryPage() {
                         type="button"
                         onClick={() => setCurrentPage(pageNum)}
                         className={`w-7 h-7 text-xs font-semibold rounded-lg transition-colors ${
+                          i >= 3 ? 'hidden sm:inline-flex items-center justify-center' : ''
+                        } ${
                           currentPage === pageNum
                             ? 'bg-blue-600 text-white shadow-sm'
                             : 'text-black hover:bg-blue-200 border border-blue-400'

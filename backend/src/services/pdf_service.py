@@ -5,7 +5,7 @@ Generates PDFs matching the official FBR invoice template format EXACTLY:
 - Landscape wide-format (1080 x 841.68 pt)
 - Helvetica fonts throughout (matching sample template)
 - Three-column header: Seller | Buyer | Invoice Summary
-- Full 18-column line items table with gray grid lines
+- Full 19-column line items table with gray grid lines
 - Auto-sized rows with text wrapping (top-aligned cell content)
 - Multi-page with page numbers, no header on continuation pages
 - Totals row with merged "Total:" label cell
@@ -43,33 +43,47 @@ GRID_GRAY = colors.Color(0.827, 0.827, 0.827)  # RGB(211,211,211)
 BLACK = colors.Color(0, 0, 0)
 
 # ═══════════════════════════════════════════════════════════════════════
-# COLUMN DEFINITIONS (exact x-positions from sample.pdf)
+# COLUMN DEFINITIONS (based on sample.pdf, with Item Rate added)
 # ═══════════════════════════════════════════════════════════════════════
 COL_X = [
     53.0,    # Sr. No.
     86.2,    # HS Code
-    140.2,   # HS Code Description
-    235.4,   # Product Description
-    375.4,   # Sales Type
-    434.0,   # Quantity
-    474.9,   # UoM
-    523.5,   # Rate
-    559.5,   # Sales Value
-    611.2,   # Retail Price
-    668.1,   # Sales Tax
-    715.4,   # Extra Tax
-    759.0,   # Further Tax
-    814.0,   # FED
-    846.9,   # ST WHT
-    890.1,   # Discount
-    935.9,   # SRO / Schedule No.
-    1008.8,  # SRO Item Sr. No.
+    134.2,   # HS Code Description
+    212.2,   # Product Description
+    334.2,   # Sales Type
+    389.2,   # Quantity
+    428.2,   # Item Rate
+    478.2,   # UoM
+    504.2,   # Rate
+    530.2,   # Sales Value
+    580.2,   # Retail Price
+    626.2,   # Sales Tax
+    673.2,   # Extra Tax
+    716.2,   # Further Tax
+    771.2,   # FED
+    801.7,   # ST WHT
+    842.7,   # Discount
+    887.7,   # SRO / Schedule No.
+    953.7,   # SRO Item Sr. No.
+    987.7,   # Total Amount
     1051.7,  # Right edge of last column
 ]
 
-N_COLS = len(COL_X) - 1  # 18 columns
+N_COLS = len(COL_X) - 1  # 20 columns
 
 COL_WIDTHS = [COL_X[i + 1] - COL_X[i] for i in range(N_COLS)]
+
+# Columns hidden entirely from the PDF when every item has a zero/empty
+# value in them: column index -> invoice item field name.
+HIDEABLE_COLUMNS = {
+    12: 'extra_tax',
+    13: 'further_tax',
+    14: 'fed_payable',
+    15: 'sales_tax_withheld_at_source',
+    16: 'discount',
+    17: 'sro_schedule_no',
+    18: 'sro_item_serial_no',
+}
 
 TABLE_LEFT = COL_X[0]    # 53.0
 TABLE_RIGHT = COL_X[-1]  # 1051.7
@@ -83,8 +97,9 @@ COL_ALIGN = [
     'L',  # Product Description
     'L',  # Sales Type
     'C',  # Quantity
+    'C',  # Item Rate
     'C',  # UoM
-    'R',  # Rate
+    'C',  # Rate
     'R',  # Sales Value
     'R',  # Retail Price
     'R',  # Sales Tax
@@ -95,6 +110,7 @@ COL_ALIGN = [
     'R',  # Discount
     'L',  # SRO / Schedule No.
     'C',  # SRO Item Sr. No.
+    'R',  # Total Amount
 ]
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -102,15 +118,15 @@ COL_ALIGN = [
 # ═══════════════════════════════════════════════════════════════════════
 TABLE_HEADERS_ROW1 = [
     'Sr. No.', 'HS Code', 'HS Code Description',
-    'Product Description', 'Sales Type', 'Quantity', 'UoM', 'Rate',
-    'Sales Value', 'Retail Price', 'Sales Tax', 'Extra Tax ',
-    'Further Tax', 'FED', 'ST WHT ', 'Discount',
-    'SRO / Schedule ', 'SRO Item ',
+    'Product Description', 'Sales Type', 'Quantity', 'Item Rate',
+    'UoM', 'Rate', 'Sales Value', 'Retail Price', 'Sales Tax',
+    'Extra Tax ', 'Further Tax', 'FED', 'ST WHT ', 'Discount',
+    'SRO / Schedule ', 'SRO Item ', 'Total Amount',
 ]
 TABLE_HEADERS_ROW2 = [
     '', '', '', '', '', '', '', '',
     '', '', '', '', '', '', '', '',
-    'No.', 'Sr. No.',
+    '', 'No.', 'Sr. No.', '',
 ]
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -271,19 +287,50 @@ class PDFService:
                 if current:
                     lines.append(current)
                 if c.stringWidth(word, font_name, font_size) > max_width:
-                    # Character-wrap long word
-                    truncated = ''
+                    # Character-wrap long word across multiple lines (no "...")
+                    line = ''
                     for ch in word:
-                        if c.stringWidth(truncated + ch, font_name, font_size) > max_width - 5:
-                            truncated += '...'
-                            break
-                        truncated += ch
-                    lines.append(truncated)
+                        if c.stringWidth(line + ch, font_name, font_size) > max_width:
+                            lines.append(line)
+                            line = ch
+                        else:
+                            line += ch
+                    if line:
+                        lines.append(line)
                 else:
                     current = word
         if current:
             lines.append(current)
         return lines if lines else ['']
+
+    @staticmethod
+    def _is_numeric(value: str) -> bool:
+        """True if the cell string is a number.
+
+        Numeric cells shrink their font when too wide; text cells wrap to
+        multiple lines instead.
+        """
+        try:
+            float(str(value).replace(',', ''))
+            return True
+        except (ValueError, TypeError):
+            return False
+
+    def _fit_font_size(self, text: str, max_width: float, font_name: str,
+                       max_size: int, min_size: int = 6) -> int:
+        """Largest font size at which `text` fits on one line within max_width.
+
+        Used to show full values (e.g. long numbers) that would otherwise be
+        truncated with "...".
+        """
+        c = self._get_measure_canvas()
+        size = max_size
+        while size >= min_size:
+            c.setFont(font_name, size)
+            if c.stringWidth(text, font_name, size) <= max_width:
+                return size
+            size -= 1
+        return min_size
 
     @staticmethod
     def _fmt_num(value) -> str:
@@ -374,11 +421,20 @@ class PDFService:
         """Render all pages. Returns total page count."""
         usin = invoice.fbr_reference_number  # FBR invoice number for QR code
 
+        # First-page table top shifts down when the header grows (e.g. wrapped
+        # addresses), so it must be computed before pagination.
+        first_page_top = max(
+            CONTENT_TOP, self._compute_header_bottom(invoice, font) + 6.0)
+
+        # Column layout — zero-valued columns (11-17) are hidden
+        layout = self._build_table_layout(items)
+
         # Split items into pages
-        first_page_available = PAGE_HEIGHT - CONTENT_TOP - BOTTOM_MARGIN
+        first_page_available = PAGE_HEIGHT - first_page_top - BOTTOM_MARGIN
         cont_page_available = PAGE_HEIGHT - PAGE_TOP - BOTTOM_MARGIN
 
-        pages = self._paginate_items(items, font, first_page_available, cont_page_available)
+        pages = self._paginate_items(
+            items, font, first_page_available, cont_page_available, layout=layout)
         total_pages = len(pages)
 
         # Pre-compute totals from ALL items (not just page items)
@@ -386,7 +442,7 @@ class PDFService:
 
         for page_num, page_items in enumerate(pages, 1):
             is_first = (page_num == 1)
-            y_start = CONTENT_TOP if is_first else PAGE_TOP
+            y_start = first_page_top if is_first else PAGE_TOP
 
             if is_first:
                 self._draw_first_page_header(c, invoice, font)
@@ -396,14 +452,14 @@ class PDFService:
             is_last = (page_num == total_pages)
 
             # Compute row heights for this page's items
-            row_heights = self._compute_row_heights(page_items, font)
+            row_heights = self._compute_row_heights(page_items, font, layout=layout)
 
             # Draw table
             self._draw_table_grid(
                 c, page_items, row_heights, font,
                 y_start=y_start, is_first=is_first, is_last=is_last,
                 start_sr_no=sum(len(p) for p in pages[:page_num - 1]) + 1,
-                totals_data=totals_data
+                totals_data=totals_data, layout=layout
             )
 
             # Page number (bottom-right)
@@ -416,11 +472,12 @@ class PDFService:
 
     def _paginate_items(
         self, items: list, font: str,
-        first_page_avail: float, cont_page_avail: float
+        first_page_avail: float, cont_page_avail: float,
+        layout: Optional[dict] = None
     ) -> List[list]:
         """Split items into pages based on available vertical space."""
-        all_heights = self._compute_row_heights(items, font)
-        totals_h = self._calc_totals_height(items, font)
+        all_heights = self._compute_row_heights(items, font, layout=layout)
+        totals_h = self._calc_totals_height(items, font, layout=layout)
 
         pages = []
         remaining = list(items)
@@ -452,8 +509,132 @@ class PDFService:
         return pages
 
     # ═══════════════════════════════════════════════════════════════════
+    # DYNAMIC COLUMN LAYOUT
+    # ═══════════════════════════════════════════════════════════════════
+
+    def _build_table_layout(self, items: list) -> dict:
+        """Compute the column layout for an invoice's line items.
+
+        Columns 11-17 (Extra Tax, Further Tax, FED, ST WHT, Discount,
+        SRO / Schedule, SRO Item) are dropped when every item has a zero
+        or empty value in that column. Remaining columns are rescaled
+        proportionally to span the full table width.
+
+        Returns: {'indices', 'xs', 'widths', 'aligns', 'headers1', 'headers2'}
+        """
+        hidden = set()
+        for col, field in HIDEABLE_COLUMNS.items():
+            if all(self._is_zero_or_empty(item.get(field)) for item in items):
+                hidden.add(col)
+
+        vis = [i for i in range(N_COLS) if i not in hidden]
+        orig_widths = [COL_WIDTHS[i] for i in vis]
+        scale = TABLE_WIDTH / sum(orig_widths)
+
+        xs = [TABLE_LEFT]
+        for w in orig_widths[:-1]:
+            xs.append(xs[-1] + w * scale)
+        xs.append(TABLE_RIGHT)
+
+        return {
+            'indices': vis,
+            'xs': xs,
+            'widths': [w * scale for w in orig_widths],
+            'aligns': [COL_ALIGN[i] for i in vis],
+            'headers1': [TABLE_HEADERS_ROW1[i] for i in vis],
+            'headers2': [TABLE_HEADERS_ROW2[i] for i in vis],
+        }
+
+    @staticmethod
+    def _is_zero_or_empty(value) -> bool:
+        """True for None, empty string, or a numeric value equal to zero."""
+        if value is None:
+            return True
+        s = str(value).strip()
+        if s == '':
+            return True
+        try:
+            return float(s) == 0
+        except ValueError:
+            return False
+
+    # ═══════════════════════════════════════════════════════════════════
     # FIRST PAGE HEADER
     # ═══════════════════════════════════════════════════════════════════
+
+    def _build_header_rows(self, invoice: Invoice) -> list:
+        """Build the header field rows as (label_x, value_x, max_w, label, value)."""
+        return [
+            # Row 1
+            [
+                (SELLER_LABEL_X, SELLER_VALUE_X, SELLER_VALUE_MAX_W,
+                 "Business Name:", invoice.seller_business_name or ''),
+                (BUYER_LABEL_X, BUYER_VALUE_X, BUYER_VALUE_MAX_W,
+                 "Business Name:", invoice.buyer_business_name or ''),
+                (SUMMARY_LABEL_X, SUMMARY_VALUE_X, SUMMARY_VALUE_MAX_W,
+                 "FBR Invoice No.:", invoice.fbr_reference_number or ''),
+            ],
+            # Row 2
+            [
+                (SELLER_LABEL_X, SELLER_VALUE_X, SELLER_VALUE_MAX_W,
+                 "Registration No.:", invoice.seller_ntn_cnic or ''),
+                (BUYER_LABEL_X, BUYER_VALUE_X, BUYER_VALUE_MAX_W,
+                 "Registration No.:", invoice.buyer_ntn_cnic or ''),
+                (SUMMARY_LABEL_X, SUMMARY_VALUE_X, SUMMARY_VALUE_MAX_W,
+                 "Local Invoice No.:", invoice.external_id or ''),
+            ],
+            # Row 3
+            [
+                (SELLER_LABEL_X, SELLER_VALUE_X, SELLER_VALUE_MAX_W,
+                 "Province:", invoice.seller_province or ''),
+                (BUYER_LABEL_X, BUYER_VALUE_X, BUYER_VALUE_MAX_W,
+                 "Province:", invoice.buyer_province or ''),
+                (SUMMARY_LABEL_X, SUMMARY_VALUE_X, SUMMARY_VALUE_MAX_W,
+                 "Invoice Date:", invoice.invoice_date or ''),
+            ],
+            # Row 3b — Address (seller & buyer only)
+            [
+                (SELLER_LABEL_X, SELLER_VALUE_X, SELLER_VALUE_MAX_W,
+                 "Address:", invoice.seller_address or ''),
+                (BUYER_LABEL_X, BUYER_VALUE_X, BUYER_VALUE_MAX_W,
+                 "Address:", invoice.buyer_address or ''),
+                (SUMMARY_LABEL_X, SUMMARY_VALUE_X, SUMMARY_VALUE_MAX_W,
+                 "", ""),
+            ],
+        ]
+
+    def _compute_header_bottom(self, invoice: Invoice, font: str) -> float:
+        """Y-from-top where the first-page header ends (after Invoice Type row).
+
+        Mirrors the layout math in _draw_first_page_header so the table can be
+        shifted down when header values (e.g. address) wrap to multiple lines.
+        """
+        bold = self._font(bold=True)
+        company_lines = self._wrap_text(
+            invoice.seller_business_name or '',
+            BUYER_LABEL_X - SELLER_LABEL_X - 4, bold, COMPANY_NAME_SIZE)
+        company_extra = max(0, (len(company_lines) - 1) * HEADER_LINE_HEIGHT)
+        base_y = FIELD_ROW1_Y + company_extra
+
+        rows = self._build_header_rows(invoice)
+        row_spacing = HEADER_LINE_HEIGHT + 2
+        current_y = base_y
+        positions = [base_y]
+        for row in rows:
+            max_lines = max(
+                len(self._wrap_text(value, max_w, font, FIELD_VALUE_SIZE))
+                for _, _, max_w, _, value in row)
+            current_y += max(max_lines * HEADER_LINE_HEIGHT, row_spacing)
+            positions.append(current_y)
+
+        # Invoice Type sits directly below Invoice Date (row index 2) as part
+        # of the summary block; the seller/buyer address row (index 3) is the
+        # last row of its columns. The header bottom is whichever extends
+        # further down.
+        r4_lines = self._wrap_text(
+            invoice.invoice_type or '', SUMMARY_VALUE_MAX_W, font, FIELD_VALUE_SIZE)
+        inv_type_bottom = positions[3] + max(len(r4_lines) * HEADER_LINE_HEIGHT, row_spacing)
+        return max(inv_type_bottom, positions[4])
 
     def _draw_first_page_header(
         self, c: canvas_module.Canvas, invoice: Invoice, font: str
@@ -489,35 +670,7 @@ class PDFService:
 
         # ── Pre-calculate wrapped lines for all header fields ──
         # Each entry: (label_x, value_x, max_value_w, label, value)
-        header_rows = [
-            # Row 1
-            [
-                (SELLER_LABEL_X, SELLER_VALUE_X, SELLER_VALUE_MAX_W,
-                 "Business Name:", company),
-                (BUYER_LABEL_X, BUYER_VALUE_X, BUYER_VALUE_MAX_W,
-                 "Business Name:", invoice.buyer_business_name or ''),
-                (SUMMARY_LABEL_X, SUMMARY_VALUE_X, SUMMARY_VALUE_MAX_W,
-                 "FBR Invoice No.:", invoice.fbr_reference_number or ''),
-            ],
-            # Row 2
-            [
-                (SELLER_LABEL_X, SELLER_VALUE_X, SELLER_VALUE_MAX_W,
-                 "Registration No.:", invoice.seller_ntn_cnic or ''),
-                (BUYER_LABEL_X, BUYER_VALUE_X, BUYER_VALUE_MAX_W,
-                 "Registration No.:", invoice.buyer_ntn_cnic or ''),
-                (SUMMARY_LABEL_X, SUMMARY_VALUE_X, SUMMARY_VALUE_MAX_W,
-                 "Local Invoice No.:", invoice.external_id or ''),
-            ],
-            # Row 3
-            [
-                (SELLER_LABEL_X, SELLER_VALUE_X, SELLER_VALUE_MAX_W,
-                 "Province:", invoice.seller_province or ''),
-                (BUYER_LABEL_X, BUYER_VALUE_X, BUYER_VALUE_MAX_W,
-                 "Province:", invoice.buyer_province or ''),
-                (SUMMARY_LABEL_X, SUMMARY_VALUE_X, SUMMARY_VALUE_MAX_W,
-                 "Invoice Date:", invoice.invoice_date or ''),
-            ],
-        ]
+        header_rows = self._build_header_rows(invoice)
 
         # Row 4 (Summary only)
         header_row4 = [
@@ -550,8 +703,9 @@ class PDFService:
             # Height of this row = max_lines * HEADER_LINE_HEIGHT
             current_y += max(max_ln * HEADER_LINE_HEIGHT, row_spacing)
             row_y_positions.append(current_y)
-        # Last entry is the Y after row 3 → used for row 4
-        row4_y_val = current_y + 2  # small extra gap before row 4
+        # Invoice Type is part of the summary block: it sits directly below
+        # Invoice Date (row index 2), not below the seller/buyer address row.
+        row4_y_val = row_y_positions[3]
 
         # ── Draw all rows ──
         for row_idx, (max_ln, cols) in enumerate(wrapped_rows):
@@ -604,12 +758,17 @@ class PDFService:
         is_first: bool,
         is_last: bool,
         start_sr_no: int = 1,
-        totals_data: Optional[list] = None
+        totals_data: Optional[list] = None,
+        layout: Optional[dict] = None
     ) -> None:
         """Draw the complete table with grid lines, headers, data rows, and totals."""
+        if layout is None:
+            layout = self._full_layout()
         bold = self._font(bold=True)
         y_top = PAGE_HEIGHT - y_start  # Convert to canvas Y
         current_y = y_top
+        xs = layout['xs']
+        widths = layout['widths']
 
         # ── Table header row ──
         header_h = 24.0
@@ -619,33 +778,41 @@ class PDFService:
         self._draw_grid_rect(c, TABLE_LEFT, current_y, TABLE_RIGHT, header_y_bottom,
                              line_width=1.0, fill=False)
         # Vertical lines in header
-        for x in COL_X[1:-1]:
+        for x in xs[1:-1]:
             self._draw_vline(c, x, current_y, header_y_bottom, line_width=1.0)
 
-        # Header text row 1 — main columns (0-15) at y=219.5
-        # SRO columns (16,17) have their own two-row header at y=215.0 / y=224.0
-        header_text_y1 = PAGE_HEIGHT - 219.5
+        # Header text rows — fixed at y=219.5 / 215.0 / 224.0 on the standard
+        # layout, shifted by the same amount as the grid when the table moves.
+        shift = y_start - CONTENT_TOP
+        header_text_y1 = PAGE_HEIGHT - (219.5 + shift)
         c.setFont(bold, TABLE_HEADER_SIZE)
         c.setFillColor(BLACK)
-        for i in range(16):  # Only columns 0-15 (Sr. No. through Discount)
-            header = TABLE_HEADERS_ROW1[i]
+        for j, col_idx in enumerate(layout['indices']):
+            if col_idx in (17, 18):
+                continue  # SRO columns have their own two-row header
+            header = layout['headers1'][j]
             if not header:
                 continue
-            col_w = COL_WIDTHS[i]
-            self._draw_cell_str(c, header, COL_X[i], header_text_y1, col_w,
+            self._draw_cell_str(c, header, xs[j], header_text_y1, widths[j],
                                 bold, TABLE_HEADER_SIZE, 'C')
 
-        # SRO two-row header
-        sro_top_y = PAGE_HEIGHT - 215.0     # "SRO / Schedule " / "SRO Item "
-        sro_bottom_y = PAGE_HEIGHT - 224.0  # "No." / "Sr. No."
-        sro_labels_top = [('SRO / Schedule ', 16), ('SRO Item ', 17)]
-        sro_labels_bottom = [('No.', 16), ('Sr. No.', 17)]
+        # SRO two-row header (only drawn when the SRO columns are visible)
+        sro_top_y = PAGE_HEIGHT - (215.0 + shift)   # "SRO / Schedule " / "SRO Item "
+        sro_bottom_y = PAGE_HEIGHT - (224.0 + shift)  # "No." / "Sr. No."
+        sro_labels_top = [('SRO / Schedule ', 17), ('SRO Item ', 18)]
+        sro_labels_bottom = [('No.', 17), ('Sr. No.', 18)]
 
         for text, col_idx in sro_labels_top:
-            self._draw_cell_str(c, text, COL_X[col_idx], sro_top_y, COL_WIDTHS[col_idx],
+            if col_idx not in layout['indices']:
+                continue
+            j = layout['indices'].index(col_idx)
+            self._draw_cell_str(c, text, xs[j], sro_top_y, widths[j],
                                 bold, TABLE_HEADER_SIZE, 'C')
         for text, col_idx in sro_labels_bottom:
-            self._draw_cell_str(c, text, COL_X[col_idx], sro_bottom_y, COL_WIDTHS[col_idx],
+            if col_idx not in layout['indices']:
+                continue
+            j = layout['indices'].index(col_idx)
+            self._draw_cell_str(c, text, xs[j], sro_bottom_y, widths[j],
                                 bold, TABLE_HEADER_SIZE, 'C')
 
         current_y = header_y_bottom
@@ -660,7 +827,7 @@ class PDFService:
             self._draw_hline(c, TABLE_LEFT, TABLE_RIGHT, row_bottom, line_width=0.5)
 
             # Vertical lines through row
-            for x in COL_X:
+            for x in xs:
                 self._draw_vline(c, x, current_y, row_bottom, line_width=1.0)
 
             # Cell content
@@ -668,13 +835,27 @@ class PDFService:
             c.setFont(font, TABLE_DATA_SIZE)
             c.setFillColor(BLACK)
 
-            for col_idx, (cell_text, col_w) in enumerate(zip(row_data, COL_WIDTHS)):
-                align = COL_ALIGN[col_idx]
-                col_x = COL_X[col_idx]
+            for j, col_idx in enumerate(layout['indices']):
+                cell_text = row_data[col_idx]
+                col_w = widths[j]
+                align = layout['aligns'][j]
+                col_x = xs[j]
                 text_w = max(col_w - CELL_PADDING_LEFT * 2, 10)
 
+                cell_str = str(cell_text)
+                # Numbers: shrink the font when too wide for the column so the
+                # full value is shown. Text: never shrink — it wraps to
+                # multiple lines instead.
+                if self._is_numeric(cell_str):
+                    fit_size = self._fit_font_size(cell_str, text_w, font, TABLE_DATA_SIZE)
+                    if fit_size < TABLE_DATA_SIZE:
+                        line_y = current_y - CELL_PADDING_TOP - (fit_size + 1) * 0.8
+                        self._draw_text_aligned(c, cell_str, col_x, line_y, col_w,
+                                                font, fit_size, align)
+                        continue
+
                 # Wrap text to column width
-                lines = self._wrap_text(str(cell_text), text_w, font, TABLE_DATA_SIZE)
+                lines = self._wrap_text(cell_str, text_w, font, TABLE_DATA_SIZE)
                 # Draw each line top-aligned within the cell
                 line_y = current_y - CELL_PADDING_TOP - CELL_LINE_HEIGHT * 0.8
                 for line in lines:
@@ -690,9 +871,11 @@ class PDFService:
         if is_last and totals_data:
             # Compute row height from the actual totals data being displayed
             max_lines = 1
-            for col_idx in range(8, N_COLS):
+            for j, col_idx in enumerate(layout['indices']):
+                if col_idx < 9:
+                    continue  # Skip merged columns
                 cell_text = str(totals_data[col_idx])
-                text_w = max(COL_WIDTHS[col_idx] - CELL_PADDING_LEFT * 2, 10)
+                text_w = max(widths[j] - CELL_PADDING_LEFT * 2, 10)
                 lines = self._wrap_text(cell_text, text_w, bold, TOTALS_VALUE_SIZE)
                 max_lines = max(max_lines, len(lines))
             totals_rh = max_lines * CELL_LINE_HEIGHT + CELL_PADDING_TOP * 2 + 6
@@ -703,13 +886,16 @@ class PDFService:
             # Bottom border
             self._draw_hline(c, TABLE_LEFT, TABLE_RIGHT, totals_bottom, line_width=0.5)
 
-            # Vertical lines for all columns in totals row
-            for x in COL_X:
+            # Vertical lines: only the merged cell's outer edges and the
+            # numeric total columns — no internal lines inside the merged
+            # "Total:" area (it would look like empty columns).
+            for x in [xs[0]] + xs[9:]:
                 self._draw_vline(c, x, current_y, totals_bottom, line_width=1.0)
 
-            # Merged cell: columns 0-7 (Sr. No. through Rate) show "Total:" right-aligned
-            merge_left = COL_X[0]
-            merge_right = COL_X[8]
+            # Merged cell: columns 0-8 (Sr. No. through Rate) show "Total:" right-aligned.
+            # Columns 0-8 are never hidden, so xs[0] and xs[9] are their edges.
+            merge_left = xs[0]
+            merge_right = xs[9]
             self._draw_hline(c, merge_left, merge_right, current_y, line_width=1.5)
             self._draw_hline(c, merge_left, merge_right, totals_bottom, line_width=0.5)
 
@@ -718,22 +904,33 @@ class PDFService:
             totals_label_y = current_y - text_offset
             totals_val_y = current_y - text_offset
 
-            # "Total:" label
+            # "Total:" label — centered in the merged cell
             c.setFont(bold, TOTALS_LABEL_SIZE)
             c.setFillColor(BLACK)
             self._draw_text_aligned(c, "Total:", merge_left, totals_label_y,
-                                    merge_right - merge_left, bold, TOTALS_LABEL_SIZE, 'R')
+                                    merge_right - merge_left, bold, TOTALS_LABEL_SIZE, 'C')
 
-            # Numeric totals in columns 8-17
+            # Numeric totals in visible columns 9+
             c.setFont(bold, TOTALS_VALUE_SIZE)
-            for col_idx in range(8, N_COLS):
+            for j, col_idx in enumerate(layout['indices']):
+                if col_idx < 9:
+                    continue
                 cell_text = totals_data[col_idx]
-                col_x = COL_X[col_idx]
-                col_w = COL_WIDTHS[col_idx]
-                align = COL_ALIGN[col_idx]
+                col_x = xs[j]
+                col_w = widths[j]
+                align = layout['aligns'][j]
                 text_w = max(col_w - CELL_PADDING_LEFT * 2, 10)
 
-                lines = self._wrap_text(str(cell_text), text_w, bold, TOTALS_VALUE_SIZE)
+                cell_str = str(cell_text)
+                # Shrink the font instead of truncating with "..." when the
+                # total is wider than its column.
+                fit_size = self._fit_font_size(cell_str, text_w, bold, TOTALS_VALUE_SIZE)
+                if fit_size < TOTALS_VALUE_SIZE:
+                    self._draw_text_aligned(c, cell_str, col_x, totals_val_y, col_w,
+                                            bold, fit_size, align)
+                    continue
+
+                lines = self._wrap_text(cell_str, text_w, bold, TOTALS_VALUE_SIZE)
                 line_y = totals_val_y
                 for line in lines:
                     if line_y < totals_bottom + 2:
@@ -784,36 +981,77 @@ class PDFService:
 
     # ── Row height calculation ─────────────────────────────────────────
 
-    def _compute_row_heights(self, items: list, font: str) -> List[float]:
+    def _compute_row_heights(
+        self, items: list, font: str, layout: Optional[dict] = None
+    ) -> List[float]:
         """Compute the required height for each data row."""
+        if layout is None:
+            layout = self._full_layout()
         heights = []
         for item in items:
             row_data = self._build_item_row(item, 1)
             max_lines = 1
-            for col_idx, cell_text in enumerate(row_data):
-                text_w = max(COL_WIDTHS[col_idx] - CELL_PADDING_LEFT * 2, 10)
-                lines = self._wrap_text(str(cell_text), text_w, font, TABLE_DATA_SIZE)
+            for j, col_idx in enumerate(layout['indices']):
+                text_w = max(layout['widths'][j] - CELL_PADDING_LEFT * 2, 10)
+                lines = self._wrap_text(str(row_data[col_idx]), text_w, font, TABLE_DATA_SIZE)
                 max_lines = max(max_lines, len(lines))
             rh = max_lines * CELL_LINE_HEIGHT + CELL_PADDING_TOP * 2
             heights.append(max(rh, 14.0))  # Minimum row height
         return heights
 
-    def _calc_totals_height(self, items: list, font: str) -> float:
+    def _calc_totals_height(
+        self, items: list, font: str, layout: Optional[dict] = None
+    ) -> float:
         """Calculate totals row height."""
+        if layout is None:
+            layout = self._full_layout()
         totals_data = self._build_totals_row(items)
         max_lines = 1
-        for col_idx, cell_text in enumerate(totals_data):
-            if col_idx < 8:
+        for j, col_idx in enumerate(layout['indices']):
+            if col_idx < 9:
                 continue  # Skip merged columns
-            text_w = max(COL_WIDTHS[col_idx] - CELL_PADDING_LEFT * 2, 10)
-            lines = self._wrap_text(str(cell_text), text_w, font, TOTALS_VALUE_SIZE)
+            text_w = max(layout['widths'][j] - CELL_PADDING_LEFT * 2, 10)
+            lines = self._wrap_text(str(totals_data[col_idx]), text_w, font, TOTALS_VALUE_SIZE)
             max_lines = max(max_lines, len(lines))
         return max_lines * CELL_LINE_HEIGHT + CELL_PADDING_TOP * 2 + 4
 
+    def _full_layout(self) -> dict:
+        """Full 18-column layout (used when no dynamic layout is provided)."""
+        return {
+            'indices': list(range(N_COLS)),
+            'xs': COL_X,
+            'widths': COL_WIDTHS,
+            'aligns': COL_ALIGN,
+            'headers1': TABLE_HEADERS_ROW1,
+            'headers2': TABLE_HEADERS_ROW2,
+        }
+
     # ── Data builders ──────────────────────────────────────────────────
+
+    @staticmethod
+    def _line_total(item: dict) -> float:
+        """Net payable for a line item (Retail Price not included).
+
+        Sales Value + Sales Tax + Extra Tax + Further Tax + FED
+        − ST WHT − Discount.
+        """
+        def num(field):
+            try:
+                return float(item.get(field) or 0)
+            except (ValueError, TypeError):
+                return 0
+        return (num('value_sales_excluding_st') + num('sales_tax_applicable')
+                + num('extra_tax') + num('further_tax') + num('fed_payable')
+                - num('sales_tax_withheld_at_source') - num('discount'))
 
     def _build_item_row(self, item: dict, sr_no: int) -> list:
         """Build a table row from an invoice item dict."""
+        # Unit price; fall back to value/quantity for older invoices that
+        # predate the item_rate field.
+        item_rate = item.get('item_rate')
+        if item_rate is None:
+            qty = float(item.get('quantity') or 0)
+            item_rate = (float(item.get('value_sales_excluding_st') or 0) / qty) if qty else 0
         return [
             str(sr_no),
             str(item.get('hs_code', '')),
@@ -821,6 +1059,7 @@ class PDFService:
             str(item.get('product_description', '')),
             str(item.get('sale_type', '')),
             self._fmt_num(item.get('quantity', 0)),
+            self._fmt_num(item_rate),
             str(item.get('uom', '')),
             str(item.get('rate', '')),
             self._fmt_num(item.get('value_sales_excluding_st', 0)),
@@ -833,6 +1072,7 @@ class PDFService:
             self._fmt_num(item.get('discount', 0)),
             str(item.get('sro_schedule_no', '')),
             str(item.get('sro_item_serial_no', '')),
+            self._fmt_num(self._line_total(item)),
         ]
 
     def _build_totals_row(self, items: list) -> list:
@@ -850,6 +1090,7 @@ class PDFService:
             '',  # Product Description
             '',  # Sales Type
             '',  # Quantity
+            '',  # Item Rate (unit price — not summed, part of merged label cell)
             '',  # UoM
             '',  # Rate
             self._fmt_num(sums['value_sales_excluding_st']),
@@ -862,6 +1103,7 @@ class PDFService:
             self._fmt_num(sums['discount']),
             '',  # SRO Schedule No.
             '',  # SRO Item Sr. No.
+            self._fmt_num(sum(self._line_total(it) for it in items)),
         ]
 
     # ── Page number ────────────────────────────────────────────────────
