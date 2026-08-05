@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 # Create database engine with connection pooling
+# connect_timeout handles Neon cold-start wake-up from suspend (1-3 seconds)
 engine = create_engine(
     config.DATABASE_URL,
     poolclass=QueuePool,
@@ -24,6 +25,9 @@ engine = create_engine(
     max_overflow=config.DB_MAX_OVERFLOW,
     pool_recycle=config.DB_POOL_RECYCLE,
     pool_pre_ping=config.DB_POOL_PRE_PING,
+    connect_args={
+        "connect_timeout": config.DB_CONNECT_TIMEOUT,
+    },
     echo=False  # Set to True for SQL query logging in development
 )
 

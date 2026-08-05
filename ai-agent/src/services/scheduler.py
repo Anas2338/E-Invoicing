@@ -274,17 +274,17 @@ def start_scheduler():
 
     scheduler = BackgroundScheduler(timezone=PAKISTAN_TZ)
 
-    # Transfer validated invoices every 5 minutes
+    # Transfer validated invoices every 1 hour
     scheduler.add_job(
         transfer_validated_invoices,
-        trigger=IntervalTrigger(seconds=300),
+        trigger=IntervalTrigger(seconds=3600),
         id="transfer_invoices",
         name="Transfer validated invoices to main DB",
         replace_existing=True,
         max_instances=1,
         coalesce=True,
     )
-    logger.info("  Scheduled: Invoice transfer every 5 minutes")
+    logger.info("  Scheduled: Invoice transfer every 1 hour")
 
     scheduler.add_job(
         expire_pending_invoices,

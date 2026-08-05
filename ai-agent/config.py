@@ -56,7 +56,7 @@ class Config:
         )
 
         # Agent Scheduling Configuration
-        self.AGENT_CHECK_INTERVAL: int = int(os.getenv("AGENT_CHECK_INTERVAL", "300"))  # 5 minutes in seconds
+        self.AGENT_CHECK_INTERVAL: int = int(os.getenv("AGENT_CHECK_INTERVAL", "3600"))  # 1 hour in seconds
         self.HEALTH_CHECK_CRON: str = "0 * * * *"  # Every hour at minute 0
 
         # Log file path - use local path for development, Docker path for production
@@ -97,6 +97,7 @@ class Config:
         self.DB_MAX_OVERFLOW: int = 10
         self.DB_POOL_RECYCLE: int = 300  # Recycle connections after 5 minutes
         self.DB_POOL_PRE_PING: bool = True  # Test connections before using
+        self.DB_CONNECT_TIMEOUT: int = 60  # Connection timeout for Neon cold-start wake-up
 
         # Claude API Configuration
         self.CLAUDE_MODEL: str = "claude-sonnet-4-6"
