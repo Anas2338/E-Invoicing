@@ -103,3 +103,6 @@ backend/uploads/
 frontend/public/uploads/
 # Allow Next.js route directories
 !frontend/src/app/**/uploads/
+
+backup
+demo

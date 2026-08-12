@@ -447,6 +447,7 @@ export default function SettingsPage() {
                       value={systemSyncToken}
                       onChange={(e) => setSystemSyncToken(e.target.value)}
                       placeholder="Enter the system FBR API access token"
+                      className="mt-1 w-full"
                     />
                     <button
                       type="button"

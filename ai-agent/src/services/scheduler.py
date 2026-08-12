@@ -180,70 +180,74 @@ def expire_pending_invoices():
         logger.error(f"Expired invoice cleanup failed: {e}", exc_info=True)
 
 
-def cleanup_completed_upload_sessions():
-    """Delete completed upload sessions older than retention period and all their invoices.
+def cleanup_transferred_invoices():
+    """Permanently delete transferred invoices older than the retention period.
 
-    Runs daily. Only touches the automation database — main DB is never affected.
-    Deletes in FK order: logs -> invoices -> sessions.
+    Runs daily at 12:00 AM PKT. Only touches the automation database — the main
+    database is never affected. Deletes in FK order: logs -> invoices -> sessions.
     """
     from src.models.excel_upload_session import ExcelUploadSession, ExcelUploadProcessingStatus
-    from src.models.automation_invoice import AutomationInvoice
+    from src.models.automation_invoice import AutomationInvoice, AutomationInvoiceStatus
     from src.models.automation_log import AutomationLog
     from sqlmodel import select, delete
     from datetime import timedelta
 
-    logger.info("Running completed upload session cleanup...")
+    logger.info("Running transferred invoice cleanup...")
     try:
         with get_automation_db_session() as db:
-            cutoff = datetime.now(PAKISTAN_TZ) - timedelta(days=settings.cleanup_retention_days)
+            # transferred_at is stored as naive UTC (datetime.utcnow), so compare
+            # with a naive UTC cutoff for consistency
+            cutoff = datetime.utcnow() - timedelta(days=settings.cleanup_retention_days)
 
-            old_sessions_query = select(ExcelUploadSession.id).where(
-                ExcelUploadSession.processing_status == ExcelUploadProcessingStatus.COMPLETED,
-                ExcelUploadSession.upload_timestamp < cutoff,
+            # Invoices that were transferred to the main DB 2+ days ago
+            # (SQLModel exec returns the UUID values directly for a single-column select)
+            invoices_query = select(AutomationInvoice.id).where(
+                AutomationInvoice.status == AutomationInvoiceStatus.TRANSFERRED,
+                AutomationInvoice.transferred_at < cutoff,
             )
-            old_session_ids = [row[0] for row in db.exec(old_sessions_query).all()]
+            invoice_ids = list(db.exec(invoices_query).all())
 
-            if not old_session_ids:
-                logger.info("No completed upload sessions to clean up")
+            if not invoice_ids:
+                logger.info("No transferred invoices older than the retention period")
                 return
 
             logger.info(
-                f"Found {len(old_session_ids)} completed upload session(s) "
-                f"older than {settings.cleanup_retention_days} days"
+                f"Found {len(invoice_ids)} transferred invoice(s) older than "
+                f"{settings.cleanup_retention_days} days — deleting permanently"
             )
-
-            invoices_query = select(AutomationInvoice.id).where(
-                AutomationInvoice.excel_upload_session_id.in_(old_session_ids)
-            )
-            invoice_ids = [row[0] for row in db.exec(invoices_query).all()]
 
             # 1. Delete logs belonging to these invoices
-            if invoice_ids:
-                log_stmt = delete(AutomationLog).where(
-                    AutomationLog.automation_invoice_id.in_(invoice_ids)
-                )
-                db.exec(log_stmt)
+            log_stmt = delete(AutomationLog).where(
+                AutomationLog.automation_invoice_id.in_(invoice_ids)
+            )
+            db.exec(log_stmt)
 
-            # 2. Delete invoices belonging to these sessions
+            # 2. Delete the transferred invoices themselves
             invoice_stmt = delete(AutomationInvoice).where(
-                AutomationInvoice.excel_upload_session_id.in_(old_session_ids)
+                AutomationInvoice.id.in_(invoice_ids)
             )
             db.exec(invoice_stmt)
 
-            # 3. Delete the sessions themselves
-            session_stmt = delete(ExcelUploadSession).where(
-                ExcelUploadSession.id.in_(old_session_ids)
-            )
-            db.exec(session_stmt)
+            # 3. Delete completed upload sessions left with no invoices
+            #    (e.g. all their invoices were transferred and cleaned up)
+            orphaned_sessions = db.exec(
+                select(ExcelUploadSession).where(
+                    ExcelUploadSession.processing_status == ExcelUploadProcessingStatus.COMPLETED,
+                    ~select(AutomationInvoice.id).where(
+                        AutomationInvoice.excel_upload_session_id == ExcelUploadSession.id
+                    ).exists(),
+                )
+            ).all()
+            for session in orphaned_sessions:
+                db.delete(session)
 
             db.commit()
             logger.info(
-                f"Cleaned up {len(old_session_ids)} completed upload session(s) "
-                f"and their invoices from automation database"
+                f"Deleted {len(invoice_ids)} transferred invoice(s) from automation database"
             )
 
     except Exception as e:
-        logger.error(f"Upload session cleanup failed: {e}", exc_info=True)
+        logger.error(f"Transferred invoice cleanup failed: {e}", exc_info=True)
 
 
 def cleanup_old_logs():
@@ -306,17 +310,26 @@ def start_scheduler():
         replace_existing=True,
     )
 
+    # Permanently delete transferred invoices older than the retention period.
+    # Runs every day at 12:00 AM PKT as required.
     scheduler.add_job(
-        cleanup_completed_upload_sessions,
+        cleanup_transferred_invoices,
         trigger="cron",
-        hour=settings.cleanup_schedule_hour,
-        minute=settings.cleanup_schedule_minute + 10,
-        id="cleanup_completed_sessions",
-        name="Cleanup completed upload sessions older than retention period",
+        hour=0,
+        minute=0,
+        id="cleanup_transferred_invoices",
+        name="Delete transferred invoices older than retention period (12 AM PKT)",
         replace_existing=True,
     )
 
     scheduler.start()
+
+    # Run cleanup once at startup too, so old transferred invoices are purged
+    # even if the daily 12 AM PKT run was missed while the service was down.
+    try:
+        cleanup_transferred_invoices()
+    except Exception:
+        logger.exception("Startup transferred invoice cleanup failed")
     logger.info("AI-agent scheduler started")
 
 
