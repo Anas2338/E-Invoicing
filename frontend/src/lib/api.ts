@@ -58,6 +58,46 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
   return response.json();
 }
 
+// Report types (mirrors backend src/schemas/report.py)
+export interface ReportSummary {
+  total_invoices: number;
+  sales_value_excluding_st: number;
+  sales_tax: number;
+  sales_tax_withheld_at_source: number;
+  further_tax: number;
+  extra_tax: number;
+  fed_payable: number;
+  withholding_tax_amount: number;
+  discount: number;
+  value_including_tax: number;
+}
+
+export interface ReportInvoiceRow {
+  id: string;
+  invoice_number: string;
+  fbr_reference_number: string | null;
+  invoice_date: string;
+  invoice_type: string;
+  buyer_business_name: string;
+  status: string;
+  source: string;
+  sales_value_excluding_st: number;
+  sales_tax: number;
+  further_tax: number;
+  value_including_tax: number;
+}
+
+export interface InvoiceReportResponse {
+  date_from: string;
+  date_to: string;
+  summary: ReportSummary;
+  invoices: ReportInvoiceRow[];
+}
+
+export interface ReportYearsResponse {
+  years: number[];
+}
+
 export const api = {
   // Invoice endpoints
   invoices: {
@@ -208,6 +248,17 @@ export const api = {
   dashboard: {
     getStats: async () => {
       return fetchWithAuth('/dashboard/stats');
+    },
+  },
+
+  // Report endpoints
+  reports: {
+    getInvoiceReport: async (params: { date_from: string; date_to: string }): Promise<InvoiceReportResponse> => {
+      const queryParams = new URLSearchParams({ date_from: params.date_from, date_to: params.date_to });
+      return fetchWithAuth(`/reports/invoices?${queryParams.toString()}`);
+    },
+    getInvoiceYears: async (): Promise<ReportYearsResponse> => {
+      return fetchWithAuth('/reports/years');
     },
   },
 

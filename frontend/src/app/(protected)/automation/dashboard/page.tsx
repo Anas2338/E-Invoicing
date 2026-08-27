@@ -208,7 +208,11 @@ export default function DashboardPage() {
   const handleBulkRetry = async (invoiceIds: string[]) => {
     try {
       const response = await automationApi.bulkRetryInvoices(invoiceIds);
-      toast.success(`Successfully queued ${response.retried_count} invoice(s) for retry`);
+      if (response.failed_count > 0) {
+        toast.success(`Validated ${response.validated_count} invoice(s) against FBR, ${response.failed_count} failed validation`);
+      } else {
+        toast.success(`Validated ${response.retried_count} invoice(s) against FBR`);
+      }
       loadInvoices();
     } catch (error: any) {
       toast.error(error.message || 'Failed to retry invoices');

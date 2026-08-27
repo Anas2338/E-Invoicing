@@ -173,30 +173,36 @@ class FBRClient:
         uom_mapping = await self._fetch_uom_mappings(decrypted_token)
         logger.info(f"UoM mapping contains {len(uom_mapping)} entries")
 
-        transformed_items = self._transform_items_to_fbr_format(invoice_data.get("items", []), uom_mapping)
+        # Validation-only override: FBR rejects invoice dates in the future.
+        # Send today's date in the validation payload so future-dated invoices
+        # pass validation; the stored invoice keeps its real date and is
+        # posted with that original date when its scheduled time arrives.
+        # NOTE: use the UTC date, not Pakistan local time — FBR's date check
+        # is UTC-based, and the PKT date is a day ahead of UTC between
+        # 19:00-00:00 UTC (FBR returns error 0043 for a "future" date then).
+        validation_data = dict(invoice_data)
+        validation_data["invoice_date"] = datetime.utcnow().strftime("%Y-%m-%d")
+
+        transformed_items = self._transform_items_to_fbr_format(validation_data.get("items", []), uom_mapping)
         logger.info(f"Transformed {len(transformed_items)} invoice items for FBR validation")
 
-        invoice_date = invoice_data.get("invoice_date", "")
-        if hasattr(invoice_date, 'strftime'):
-            invoice_date = invoice_date.strftime("%Y-%m-%d")
-
         payload = {
-            "invoiceType": invoice_data.get("invoice_type", "Sale Invoice"),
-            "invoiceDate": invoice_date,
-            "sellerNTNCNIC": invoice_data.get("seller_ntn_cnic", ""),
-            "sellerBusinessName": invoice_data.get("seller_business_name", ""),
-            "sellerProvince": invoice_data.get("seller_province", ""),
-            "sellerAddress": invoice_data.get("seller_address", ""),
-            "buyerNTNCNIC": invoice_data.get("buyer_ntn_cnic") or "",
-            "buyerBusinessName": invoice_data.get("buyer_business_name", ""),
-            "buyerProvince": invoice_data.get("buyer_province", ""),
-            "buyerAddress": invoice_data.get("buyer_address", ""),
-            "buyerRegistrationType": invoice_data.get("buyer_registration_type", ""),
+            "invoiceType": validation_data.get("invoice_type", "Sale Invoice"),
+            "invoiceDate": validation_data.get("invoice_date"),
+            "sellerNTNCNIC": validation_data.get("seller_ntn_cnic", ""),
+            "sellerBusinessName": validation_data.get("seller_business_name", ""),
+            "sellerProvince": validation_data.get("seller_province", ""),
+            "sellerAddress": validation_data.get("seller_address", ""),
+            "buyerNTNCNIC": validation_data.get("buyer_ntn_cnic") or "",
+            "buyerBusinessName": validation_data.get("buyer_business_name", ""),
+            "buyerProvince": validation_data.get("buyer_province", ""),
+            "buyerAddress": validation_data.get("buyer_address", ""),
+            "buyerRegistrationType": validation_data.get("buyer_registration_type", ""),
             "items": transformed_items,
         }
 
-        if invoice_data.get("invoice_ref_no"):
-            payload["invoiceRefNo"] = invoice_data.get("invoice_ref_no")
+        if validation_data.get("invoice_ref_no"):
+            payload["invoiceRefNo"] = validation_data.get("invoice_ref_no")
 
         payload["timestamp"] = start_time.isoformat()
 

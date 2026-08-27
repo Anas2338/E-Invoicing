@@ -169,7 +169,7 @@ async def upload_excel(
         if not user_fbr_token:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"FBR credentials not configured. Please configure your FBR {user.fbr_environment} credentials in settings."
+                detail="FBR credentials not configured. Please configure your FBR production credentials in settings."
             )
 
         # Schedule background validation task (Production)

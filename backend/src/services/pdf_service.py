@@ -189,6 +189,23 @@ FONT_PATH = ASSETS_DIR / "NotoSansArabic-Regular.ttf"
 LOGO_PATH = ASSETS_DIR / "fbr_logo.png"
 
 
+def fmt_num(value) -> str:
+    """Format a numeric value for display.
+
+    Shared by PDFService and ReportPDFService so both documents use the
+    exact same number formatting.
+    """
+    if value is None or value == '':
+        return '0.00'
+    try:
+        v = float(value)
+        if v == int(v) and abs(v) < 1000:
+            return str(int(v))
+        return f"{v:,.2f}"
+    except (ValueError, TypeError):
+        return str(value)
+
+
 class PDFService:
     """Service for generating FBR-compliant invoice PDFs matching sample template."""
 
@@ -335,15 +352,7 @@ class PDFService:
     @staticmethod
     def _fmt_num(value) -> str:
         """Format a numeric value for display."""
-        if value is None or value == '':
-            return '0.00'
-        try:
-            v = float(value)
-            if v == int(v) and abs(v) < 1000:
-                return str(int(v))
-            return f"{v:,.2f}"
-        except (ValueError, TypeError):
-            return str(value)
+        return fmt_num(value)
 
     # ═══════════════════════════════════════════════════════════════════
     # PUBLIC API

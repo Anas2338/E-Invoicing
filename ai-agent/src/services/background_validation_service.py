@@ -2,7 +2,6 @@
 Background validation service for processing invoices asynchronously.
 """
 import logging
-from datetime import datetime
 from uuid import UUID
 from sqlmodel import Session, select
 from typing import Optional
@@ -70,16 +69,8 @@ class BackgroundValidationService:
                 validation_service = ValidationService()
                 fbr_client = FBRClient()
 
-                # Get current time in Pakistan timezone for expiration check
-                from pytz import timezone
-                pkt = timezone("Asia/Karachi")
-                now_pkt = datetime.now(pkt)
-                current_date = now_pkt.date()
-                current_time = now_pkt.time()
-
                 validated_count = 0
                 failed_count = 0
-                expired_count = 0
                 processed_count = 0
 
                 try:
@@ -93,99 +84,86 @@ class BackgroundValidationService:
                         # Process batch
                         for invoice in batch:
                             try:
-                                # Check if invoice is already expired
-                                is_expired = False
-                                if invoice.scheduled_date < current_date:
-                                    is_expired = True
-                                elif invoice.scheduled_date == current_date and invoice.scheduled_time < current_time:
-                                    is_expired = True
+                                # Step 1: Local validation
+                                is_valid_locally, validation_errors = validation_service.validate_invoice_locally(
+                                    invoice.invoice_data
+                                )
 
-                                if is_expired:
-                                    # Mark as expired, skip validation
-                                    invoice.status = AutomationInvoiceStatus.EXPIRED
-                                    invoice.validation_errors = "Scheduled time is in the past"
-                                    expired_count += 1
+                                if not is_valid_locally:
+                                    # Mark as PENDING with validation errors
+                                    invoice.status = AutomationInvoiceStatus.PENDING
+                                    invoice.validation_errors = f"Validation failed: {str(validation_errors)}"
+                                    failed_count += 1
                                 else:
-                                    # Step 1: Local validation
-                                    is_valid_locally, validation_errors = validation_service.validate_invoice_locally(
-                                        invoice.invoice_data
-                                    )
+                                    # Step 2: FBR validation (Production)
+                                    try:
+                                        # DRY RUN MODE - Simulate FBR validation
+                                        if settings.dry_run:
+                                            import random
+                                            import time
 
-                                    if not is_valid_locally:
-                                        # Mark as PENDING with validation errors
-                                        invoice.status = AutomationInvoiceStatus.PENDING
-                                        invoice.validation_errors = f"Validation failed: {str(validation_errors)}"
-                                        failed_count += 1
-                                    else:
-                                        # Step 2: FBR validation (Production)
-                                        try:
-                                            # DRY RUN MODE - Simulate FBR validation
-                                            if settings.dry_run:
-                                                import random
-                                                import time
+                                            logger.info(f"[DRY RUN] Simulating FBR validation for invoice {invoice.invoice_number}")
 
-                                                logger.info(f"[DRY RUN] Simulating FBR validation for invoice {invoice.invoice_number}")
-
-                                                is_valid_fbr = random.random() < 0.98
-
-                                                if is_valid_fbr:
-                                                    fbr_response = {
-                                                        "dated": time.strftime("%Y-%m-%d %H:%M:%S"),
-                                                        "validationResponse": {
-                                                            "statusCode": "00",
-                                                            "status": "Valid",
-                                                            "error": "",
-                                                            "invoiceStatuses": [{
-                                                                "itemSNo": "1",
-                                                                "statusCode": "00",
-                                                                "status": "Valid",
-                                                                "invoiceNo": "",
-                                                                "errorCode": "",
-                                                                "error": ""
-                                                            }]
-                                                        }
-                                                    }
-                                                    logger.info(f"[DRY RUN] Simulated validation SUCCESS for invoice {invoice.invoice_number}")
-                                                else:
-                                                    error_scenarios = [
-                                                        {"code": "0052", "msg": "HS Code does not match with provided sale type"},
-                                                        {"code": "0078", "msg": "Valid Item Sr. No. is mandatory where SRO/Schedule No. is provided"}
-                                                    ]
-                                                    error = random.choice(error_scenarios)
-                                                    fbr_response = {
-                                                        "dated": time.strftime("%Y-%m-%d %H:%M:%S"),
-                                                        "validationResponse": {
-                                                            "statusCode": "01",
-                                                            "status": "Invalid",
-                                                            "error": f"[{error['code']}] {error['msg']}",
-                                                            "invoiceStatuses": []
-                                                        }
-                                                    }
-                                                    logger.warning(f"[DRY RUN] Simulated validation FAILURE for invoice {invoice.invoice_number}")
-                                            else:
-                                                # REAL MODE - Actual FBR API call (Production)
-                                                is_valid_fbr, fbr_response, reference_number = await fbr_client.validate_invoice_with_user_credentials(
-                                                    invoice_data=invoice.invoice_data,
-                                                    fbr_token=fbr_token
-                                                )
+                                            is_valid_fbr = random.random() < 0.98
 
                                             if is_valid_fbr:
-                                                # Mark as validated and ready for posting
-                                                invoice.status = AutomationInvoiceStatus.VALIDATED
-                                                invoice.fbr_response = fbr_response
-                                                validated_count += 1
+                                                fbr_response = {
+                                                    "dated": time.strftime("%Y-%m-%d %H:%M:%S"),
+                                                    "validationResponse": {
+                                                        "statusCode": "00",
+                                                        "status": "Valid",
+                                                        "error": "",
+                                                        "invoiceStatuses": [{
+                                                            "itemSNo": "1",
+                                                            "statusCode": "00",
+                                                            "status": "Valid",
+                                                            "invoiceNo": "",
+                                                            "errorCode": "",
+                                                            "error": ""
+                                                        }]
+                                                    }
+                                                }
+                                                logger.info(f"[DRY RUN] Simulated validation SUCCESS for invoice {invoice.invoice_number}")
                                             else:
-                                                # Mark as PENDING with FBR validation errors
-                                                invoice.status = AutomationInvoiceStatus.PENDING
-                                                invoice.validation_errors = f"FBR validation failed: {str(fbr_response)}"
-                                                invoice.fbr_response = fbr_response
-                                                failed_count += 1
+                                                error_scenarios = [
+                                                    {"code": "0052", "msg": "HS Code does not match with provided sale type"},
+                                                    {"code": "0078", "msg": "Valid Item Sr. No. is mandatory where SRO/Schedule No. is provided"}
+                                                ]
+                                                error = random.choice(error_scenarios)
+                                                fbr_response = {
+                                                    "dated": time.strftime("%Y-%m-%d %H:%M:%S"),
+                                                    "validationResponse": {
+                                                        "statusCode": "01",
+                                                        "status": "Invalid",
+                                                        "error": f"[{error['code']}] {error['msg']}",
+                                                        "invoiceStatuses": []
+                                                    }
+                                                }
+                                                logger.warning(f"[DRY RUN] Simulated validation FAILURE for invoice {invoice.invoice_number}")
+                                        else:
+                                            # REAL MODE - Actual FBR API call (Production)
+                                            is_valid_fbr, fbr_response, reference_number = await fbr_client.validate_invoice_with_user_credentials(
+                                                invoice_data=invoice.invoice_data,
+                                                fbr_token=fbr_token
+                                            )
 
-                                        except Exception as e:
-                                            # FBR API call failed - mark as PENDING
+                                        if is_valid_fbr:
+                                            # Mark as validated and ready for posting
+                                            invoice.status = AutomationInvoiceStatus.VALIDATED
+                                            invoice.fbr_response = fbr_response
+                                            validated_count += 1
+                                        else:
+                                            # Mark as PENDING with FBR validation errors
                                             invoice.status = AutomationInvoiceStatus.PENDING
-                                            invoice.validation_errors = f"FBR validation error: {str(e)}"
+                                            invoice.validation_errors = f"FBR validation failed: {str(fbr_response)}"
+                                            invoice.fbr_response = fbr_response
                                             failed_count += 1
+
+                                    except Exception as e:
+                                        # FBR API call failed - mark as PENDING
+                                        invoice.status = AutomationInvoiceStatus.PENDING
+                                        invoice.validation_errors = f"FBR validation error: {str(e)}"
+                                        failed_count += 1
 
                                 db.add(invoice)
                                 processed_count += 1
@@ -218,7 +196,7 @@ class BackgroundValidationService:
 
                 logger.info(
                     f"Background validation completed for session {session_id}: "
-                    f"{validated_count} validated, {failed_count} failed, {expired_count} expired"
+                    f"{validated_count} validated, {failed_count} failed"
                 )
 
             except Exception as e:

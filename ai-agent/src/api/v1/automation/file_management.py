@@ -5,10 +5,12 @@ REST API endpoints for managing upload sessions and invoice blocking/deletion.
 """
 
 from typing import List
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlmodel import Session
 
-from src.database.session import get_automation_db
+from src.database.session import get_automation_db, get_db
 from src.services.file_management_service import FileManagementService
 from src.schemas.file_management import (
     UploadSessionListResponse,
@@ -414,25 +416,60 @@ async def bulk_retry_invoices(
     request: Request,
     user_id: str = Depends(require_automation_access),
     db: Session = Depends(get_automation_db),
+    main_db: Session = Depends(get_db),
 ):
     """
-    Retry multiple invoices at once.
+    Retry multiple invoices with actual FBR re-validation.
 
     Only allowed for invoices with status: pending, failed, or transfer_failed.
+    Each invoice is validated against FBR and its status updated based on
+    the FBR response (validated on success, pending with errors on failure).
 
     Args:
         body: List of invoice IDs to retry
 
     Returns:
-        Count of successfully retried invoices
+        Count of validated/failed invoices
     """
+    from src.models.user import User
     from src.services.file_management_service import FileManagementService
+    from src.services.fbr_client import FBRClient
+
+    # Fetch user's FBR token from main database (same as single-invoice retry)
+    user = main_db.get(User, UUID(user_id))
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    # FBR production token — the automation pipeline validates against
+    # FBR production endpoints only (same as the single-invoice retry and upload flow)
+    fbr_token = user.fbr_production_token
+    if not fbr_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "FBR credentials not configured. "
+                "Please configure your FBR production credentials in settings."
+            ),
+        )
+
     service = FileManagementService(db)
-    retried_count = service.bulk_retry_invoices(body.invoice_ids, user_id)
+    fbr_client = FBRClient()
+    try:
+        result = await service.bulk_retry_invoices(
+            body.invoice_ids, user_id, fbr_token, fbr_client
+        )
+    finally:
+        await fbr_client.client.aclose()
 
     return {
         "success": True,
-        "message": f"Successfully queued {retried_count} invoices for retry",
-        "retried_count": retried_count,
+        "message": result["message"],
+        "retried_count": result["retried_count"],
         "total_requested": len(body.invoice_ids),
+        "validated_count": result["validated_count"],
+        "failed_count": result["failed_count"],
+        "skipped_count": result["skipped_count"],
     }

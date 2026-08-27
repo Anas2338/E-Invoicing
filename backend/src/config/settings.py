@@ -84,6 +84,9 @@ class Settings(BaseSettings):
     fbr_api_key: str = Field(default="", validation_alias="FBR_API_KEY")
     fbr_client_id: str = Field(default="", validation_alias="FBR_CLIENT_ID")
 
+    # AI Agent service URL (Hugging Face Space) - pinged periodically to keep it awake
+    ai_agent_base_url: str = Field(default="https://anus211-e-invoicing-agent.hf.space", validation_alias="AI_AGENT_BASE_URL")
+
     # Application settings
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
     max_invoice_size: int = Field(default=1048576, validation_alias="MAX_INVOICE_SIZE")  # 1MB in bytes

@@ -4,6 +4,7 @@ File Management Service
 Business logic for managing upload sessions and invoice blocking/deletion.
 """
 
+import logging
 import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -14,6 +15,8 @@ from fastapi import HTTPException, status
 from ..models.automation_invoice import AutomationInvoice
 from ..models.excel_upload_session import ExcelUploadSession
 from ..models.automation_log import AutomationLog, AutomationLogAction, AutomationLogStatus
+
+logger = logging.getLogger(__name__)
 
 
 class FileManagementService:
@@ -551,18 +554,31 @@ class FileManagementService:
             "skipped_ids": skipped_ids,
         }
 
-    def bulk_retry_invoices(self, invoice_ids: List[str], user_id: str) -> int:
+    async def bulk_retry_invoices(
+        self,
+        invoice_ids: List[str],
+        user_id: str,
+        fbr_token: str,
+        fbr_client,
+    ) -> dict:
         """
-        Retry multiple invoices at once.
+        Retry multiple invoices with actual FBR re-validation.
+
+        Each retryable invoice is validated against FBR; status is set to
+        validated on success or pending with errors on failure.
 
         Args:
             invoice_ids: List of invoice IDs
             user_id: User ID for authorization
+            fbr_token: Encrypted FBR token for the user
+            fbr_client: FBRClient instance for validation calls
 
         Returns:
-            Number of invoices queued for retry
+            Dict with retried/validated/failed/skipped counts
         """
-        retried_count = 0
+        validated_count = 0
+        failed_count = 0
+        skipped_count = 0
 
         for invoice_id in invoice_ids:
             try:
@@ -578,38 +594,76 @@ class FileManagementService:
                 invoice = invoice_result.scalars().first()
 
                 if not invoice:
+                    skipped_count += 1
                     continue
 
                 # Check if invoice is in a retryable state
                 if invoice.status not in ["failed", "transfer_failed", "pending"]:
+                    skipped_count += 1
                     continue
 
-                # Reset invoice to validated status for retry
-                invoice.status = "validated"
+                # Reset retry tracking
                 invoice.retry_count = (invoice.retry_count or 0) + 1
                 invoice.last_retry_at = datetime.utcnow()
                 invoice.validation_errors = None
                 invoice.transfer_error = None
 
+                # Run actual FBR validation (same as single-invoice retry)
+                is_valid = False
+                try:
+                    is_valid, fbr_response, reference_number = await fbr_client.validate_invoice_with_user_credentials(
+                        invoice_data=invoice.invoice_data,
+                        fbr_token=fbr_token
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "FBR validation error on bulk retry for invoice %s: %s",
+                        invoice_id, e,
+                    )
+                    fbr_response = {"error": str(e)}
+
+                if is_valid:
+                    invoice.status = "validated"
+                    invoice.fbr_response = fbr_response
+                    log_status = AutomationLogStatus.SUCCESS
+                    validated_count += 1
+                else:
+                    invoice.status = "pending"
+                    invoice.validation_errors = f"FBR validation failed: {str(fbr_response)}"
+                    invoice.fbr_response = fbr_response
+                    log_status = AutomationLogStatus.FAILURE
+                    failed_count += 1
+
                 # Log the action
                 log_entry = AutomationLog(
                     automation_invoice_id=invoice.id,
                     action=AutomationLogAction.RETRY,
-                    status=AutomationLogStatus.SUCCESS,
+                    status=log_status,
                     details={
                         "invoice_id": invoice_id,
                         "retry_count": invoice.retry_count,
+                        "is_valid": is_valid,
                         "timestamp": datetime.utcnow().isoformat()
                     }
                 )
                 self.db.add(log_entry)
                 self.db.add(invoice)
 
-                retried_count += 1
-
             except Exception:
                 # Skip invoices that can't be retried but continue with others
-                continue
+                failed_count += 1
+                skipped_count += 1
 
         self.db.commit()
-        return retried_count
+
+        message = (
+            f"Validated {validated_count} invoice(s) against FBR, "
+            f"{failed_count} failed validation"
+        )
+        return {
+            "retried_count": validated_count + failed_count,
+            "validated_count": validated_count,
+            "failed_count": failed_count,
+            "skipped_count": skipped_count,
+            "message": message,
+        }

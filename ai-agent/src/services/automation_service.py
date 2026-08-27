@@ -113,57 +113,6 @@ class AutomationService:
 
         return created_invoices
 
-    def mark_past_invoices_as_expired(self, user_id: UUID, session_id: UUID) -> int:
-        """
-        Mark invoices with past scheduled times as expired.
-
-        Args:
-            user_id: User UUID
-            session_id: Excel upload session UUID
-
-        Returns:
-            Number of invoices marked as expired
-        """
-        now = datetime.utcnow()
-        current_date = now.date()
-        current_time = now.time()
-
-        # Find invoices with past scheduled times
-        statement = select(AutomationInvoice).where(
-            and_(
-                AutomationInvoice.user_id == user_id,
-                AutomationInvoice.excel_upload_session_id == session_id,
-                AutomationInvoice.status == AutomationInvoiceStatus.PENDING,
-                AutomationInvoice.scheduled_date < current_date
-            )
-        )
-        past_result = self.db.execute(statement)
-        past_invoices = past_result.scalars().all()
-
-        # Also check invoices scheduled for today but in the past
-        statement_today = select(AutomationInvoice).where(
-            and_(
-                AutomationInvoice.user_id == user_id,
-                AutomationInvoice.excel_upload_session_id == session_id,
-                AutomationInvoice.status == AutomationInvoiceStatus.PENDING,
-                AutomationInvoice.scheduled_date == current_date,
-                AutomationInvoice.scheduled_time < current_time
-            )
-        )
-        past_today_result = self.db.execute(statement_today)
-        past_invoices_today = past_today_result.scalars().all()
-
-        all_past_invoices = past_invoices + past_invoices_today
-
-        # Mark as expired
-        for invoice in all_past_invoices:
-            invoice.status = AutomationInvoiceStatus.EXPIRED
-            invoice.validation_errors = "Scheduled time is in the past"
-            self.db.add(invoice)
-
-        self.db.commit()
-        return len(all_past_invoices)
-
     def get_pending_invoices_for_hour(self, current_hour: int, current_date: date) -> List[AutomationInvoice]:
         """
         Get pending invoices scheduled for the current hour.

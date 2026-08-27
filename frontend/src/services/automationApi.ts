@@ -518,9 +518,13 @@ class AutomationApiClient {
   }
 
   /**
-   * Retry multiple invoices at once.
+   * Retry multiple invoices at once (re-validates each against FBR).
    */
-  async bulkRetryInvoices(invoiceIds: string[]): Promise<{ retried_count: number }> {
+  async bulkRetryInvoices(invoiceIds: string[]): Promise<{
+    retried_count: number;
+    validated_count: number;
+    failed_count: number;
+  }> {
     const response = await fetch(
       `${this.baseUrl}/automation/invoices/bulk-retry`,
       {

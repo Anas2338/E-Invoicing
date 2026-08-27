@@ -21,7 +21,7 @@ def transfer_validated_invoices():
     """
     from src.models.automation_invoice import AutomationInvoice, AutomationInvoiceStatus
     from src.services.transfer_service import TransferService
-    from sqlmodel import select, and_
+    from sqlmodel import select, and_, or_
 
     logger.info("Running validated invoice transfer...")
     try:
@@ -35,13 +35,18 @@ def transfer_validated_invoices():
                     f"Transfer check at {now_pkt.strftime('%Y-%m-%d %H:%M:%S')} PKT"
                 )
 
-                # Query validated invoices whose scheduled time has arrived
+                # Query validated invoices ready for transfer: past-date invoices
+                # always qualify (backdated uploads are processed immediately);
+                # today's invoices only once their scheduled time has arrived
                 query = select(AutomationInvoice).where(
-                    and_(
-                        AutomationInvoice.status == AutomationInvoiceStatus.VALIDATED,
-                        AutomationInvoice.scheduled_date <= today_pkt,
-                        AutomationInvoice.scheduled_time <= current_time_pkt,
-                    )
+                    AutomationInvoice.status == AutomationInvoiceStatus.VALIDATED,
+                    or_(
+                        AutomationInvoice.scheduled_date < today_pkt,
+                        and_(
+                            AutomationInvoice.scheduled_date == today_pkt,
+                            AutomationInvoice.scheduled_time <= current_time_pkt,
+                        ),
+                    ),
                 ).order_by(
                     AutomationInvoice.scheduled_date.asc(),
                     AutomationInvoice.scheduled_time.asc(),
@@ -154,32 +159,6 @@ def transfer_validated_invoices():
         logger.error(f"Transfer job failed: {e}", exc_info=True)
 
 
-def expire_pending_invoices():
-    """Mark invoices as EXPIRED when their scheduled_date has passed."""
-    from src.models.automation_invoice import AutomationInvoice, AutomationInvoiceStatus
-    from sqlmodel import select
-
-    logger.info("Running expired invoice cleanup...")
-    try:
-        with get_automation_db_session() as db:
-            today = datetime.now(PAKISTAN_TZ).date()
-            stmt = select(AutomationInvoice).where(
-                AutomationInvoice.status == AutomationInvoiceStatus.PENDING,
-                AutomationInvoice.scheduled_date < today,
-            )
-            expired = db.exec(stmt).all()
-            count = 0
-            for inv in expired:
-                inv.status = AutomationInvoiceStatus.EXPIRED
-                db.add(inv)
-                count += 1
-            db.commit()
-            if count:
-                logger.info(f"Marked {count} invoices as EXPIRED")
-    except Exception as e:
-        logger.error(f"Expired invoice cleanup failed: {e}", exc_info=True)
-
-
 def cleanup_transferred_invoices():
     """Permanently delete transferred invoices older than the retention period.
 
@@ -289,16 +268,6 @@ def start_scheduler():
         coalesce=True,
     )
     logger.info("  Scheduled: Invoice transfer every 1 hour")
-
-    scheduler.add_job(
-        expire_pending_invoices,
-        trigger="cron",
-        hour=settings.cleanup_schedule_hour,
-        minute=settings.cleanup_schedule_minute,
-        id="expire_invoices",
-        name="Expire pending invoices",
-        replace_existing=True,
-    )
 
     scheduler.add_job(
         cleanup_old_logs,

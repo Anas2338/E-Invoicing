@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/providers/auth-provider';
 import { Button } from '@/components/ui/button';
 import { NotificationDropdown } from '@/components/notifications/notification-dropdown';
-import { Home, FileText, LogOut, Menu, X, Zap, Bell, HelpCircle, ClipboardList } from 'lucide-react';
+import { Home, FileText, LogOut, Menu, X, Zap, Bell, HelpCircle, ClipboardList, BarChart3 } from 'lucide-react';
 import { notificationService } from '@/lib/api/api-client';
 import { useBulkOperation } from '@/contexts/BulkOperationContext';
 import { BulkOperationProgress } from '@/components/invoices/BulkOperationProgress';
@@ -144,6 +144,15 @@ export function Navigation() {
               )}
             </button>
 
+            {/* Report */}
+            <button
+              onClick={() => router.push('/report')}
+              className="p-2 text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+              aria-label="Report"
+            >
+              <BarChart3 className="h-5 w-5" />
+            </button>
+
             {/* Help */}
             <button
               onClick={() => router.push('/help')}
@@ -205,6 +214,15 @@ export function Navigation() {
                   {notificationCount > 9 ? '9+' : notificationCount}
                 </span>
               )}
+            </button>
+
+            {/* Report */}
+            <button
+              onClick={() => router.push('/report')}
+              className="p-2 text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+              aria-label="Report"
+            >
+              <BarChart3 className="h-5 w-5" />
             </button>
 
             {/* Help */}

@@ -2,6 +2,7 @@
 Scheduler Service for automated background jobs.
 """
 import logging
+import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -196,6 +197,27 @@ def cleanup_bulk_operation_tasks_job():
         logger.error(f"Bulk operation task cleanup job error: {e}", exc_info=True)
 
 
+async def ai_agent_keep_alive_job():
+    """Ping the AI agent (Hugging Face Space) so it doesn't fall asleep.
+
+    Free Hugging Face Spaces sleep after a period of inactivity; a periodic
+    GET to the health endpoint keeps the space warm. This is best-effort:
+    a failed ping is logged and retried on the next interval.
+    """
+    base_url = settings.ai_agent_base_url.rstrip("/")
+    health_url = f"{base_url}/health"
+    logger.info(f"Sending keep-alive ping to AI agent at {health_url}...")
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.get(health_url)
+            if response.status_code == 200:
+                logger.info(f"AI agent keep-alive ping successful (HTTP {response.status_code})")
+            else:
+                logger.warning(f"AI agent keep-alive ping returned HTTP {response.status_code}")
+    except Exception as e:
+        logger.error(f"AI agent keep-alive ping failed: {e}", exc_info=True)
+
+
 def start_scheduler():
     """Start the scheduler with all background jobs."""
     global scheduler
@@ -241,8 +263,18 @@ def start_scheduler():
         replace_existing=True,
     )
 
+    # Job: Keep the AI agent (Hugging Face Space) awake (every 12 hours)
+    scheduler.add_job(
+        ai_agent_keep_alive_job,
+        trigger=IntervalTrigger(hours=12),
+        id='ai_agent_keep_alive',
+        name='Keep AI Agent Alive',
+        replace_existing=True,
+        max_instances=1,
+    )
+
     scheduler.start()
-    logger.info("Scheduler started with auto-posting, notification, posting log, and bulk task cleanup jobs")
+    logger.info("Scheduler started with auto-posting, notification, posting log, bulk task cleanup, and AI agent keep-alive jobs")
 
 def stop_scheduler():
     global scheduler

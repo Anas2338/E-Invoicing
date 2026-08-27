@@ -61,12 +61,13 @@ async def retry_failed_invoice(
             detail="User not found"
         )
 
-    # Get user's FBR token
-    fbr_token = user.fbr_sandbox_token if user.fbr_environment == "SANDBOX" else user.fbr_production_token
+    # Get user's FBR production token — the automation pipeline validates
+    # against FBR production endpoints only (same as the upload flow)
+    fbr_token = user.fbr_production_token
     if not fbr_token:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"FBR credentials not configured. Please configure your FBR {user.fbr_environment} credentials in settings."
+            detail="FBR credentials not configured. Please configure your FBR production credentials in settings."
         )
 
     # Reset retry tracking

@@ -46,6 +46,7 @@ class RateLimits:
     INVOICE_GET = "500/hour"  # 500 get requests per hour
     PROFILE_GET = "200/hour"  # 200 profile requests per hour
     DASHBOARD_STATS = "300/hour"  # 300 dashboard stats requests per hour
+    REPORT_INVOICES = "300/hour"  # 300 invoice report + PDF download requests per hour
 
     # FBR operations (moderate - external API)
     FBR_VALIDATE = "100/hour"  # 100 FBR validations per hour
