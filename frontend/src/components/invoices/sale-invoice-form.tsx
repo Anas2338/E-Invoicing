@@ -152,6 +152,10 @@ export function SaleInvoiceForm({
   const [rawQuantity, setRawQuantity] = useState('');
   const [rawItemRate, setRawItemRate] = useState('');
 
+  // Raw input tracking for decimal amount fields (Value Excl. Tax, Discount, Further Tax,
+  // Sales Tax Withheld, Extra Tax, FED Payable) so the decimal point isn't lost mid-typing
+  const [rawAmounts, setRawAmounts] = useState<Record<string, string>>({});
+
   // Track which amount fields are focused for float formatting
   const [focusedFields, setFocusedFields] = useState<Set<string>>(new Set());
 
@@ -162,6 +166,7 @@ export function SaleInvoiceForm({
     fieldErrors.has(field) ? 'border-red-500 focus-visible:ring-red-500' : '';
 
   const formatAmount = (field: string, value: number | string): string => {
+    if (rawAmounts[field] !== undefined) return rawAmounts[field];
     if (focusedFields.has(field)) return String(value);
     const num = Number(value) || 0;
     if (num === 0) return '';
@@ -692,6 +697,7 @@ export function SaleInvoiceForm({
     };
     setModalItem(newItem);
     setModalSelectedSavedItem('');
+    setRawAmounts({}); // reset raw decimal input tracking
     setEditingItemIndex(null); // null = adding new
     setIsItemModalOpen(true);
   };
@@ -699,6 +705,7 @@ export function SaleInvoiceForm({
   const openEditModal = (index: number) => {
     setModalItem({ ...items[index] });
     setModalSelectedSavedItem(selectedSavedItems[index] || '');
+    setRawAmounts({}); // reset raw decimal input tracking
     setEditingItemIndex(index);
     setIsItemModalOpen(true);
   };
@@ -735,7 +742,7 @@ export function SaleInvoiceForm({
       toast.error('Fixed/Retail Price is required for 3rd Schedule Goods');
       return;
     }
-    if (modalItem.salesTaxWithheldAtSource.trim() === '') {
+    if (String(modalItem.salesTaxWithheldAtSource ?? '').trim() === '') {
       toast.error('Sales Tax Withheld is required');
       return;
     }
@@ -935,7 +942,11 @@ export function SaleInvoiceForm({
 
           if (field !== 'discount') {
             updated.salesTaxApplicable = parseFloat(salesTax.toFixed(2));
-            updated.furtherTax = parseFloat(furtherTax.toFixed(2));
+            // Keep the raw string being typed (e.g. "12000.") instead of forcing it to a
+            // parsed number, otherwise the decimal point disappears while typing
+            if (field !== 'furtherTax') {
+              updated.furtherTax = parseFloat(furtherTax.toFixed(2));
+            }
           }
           updated.totalValues = parseFloat(totalValue.toFixed(2));
         }
@@ -943,6 +954,48 @@ export function SaleInvoiceForm({
 
       return updated;
     });
+  };
+
+  // ── Raw decimal input helpers ──
+  // Keep the string being typed in rawAmounts so a trailing/partial decimal point
+  // (e.g. "12000.") isn't lost; parse to a number only on blur.
+  const handleAmountChange = (field: keyof InvoiceItem, val: string, maxLen: number, maxVal?: number) => {
+    if (val === '' || val === '-') {
+      setRawAmounts(prev => ({ ...prev, [field]: val }));
+      updateModalItem(field, 0);
+      return;
+    }
+    if (val === '.') {
+      setRawAmounts(prev => ({ ...prev, [field]: '.' }));
+      updateModalItem(field, 0);
+      return;
+    }
+    if (val.length > maxLen) return;
+    if (!/^\d*\.?\d*$/.test(val)) return;
+    const cleaned = val.replace(/^0+(\d)/, '$1');
+    const num = parseFloat(cleaned);
+    if (isNaN(num)) return;
+    if (maxVal !== undefined && num > maxVal) return;
+    setRawAmounts(prev => ({ ...prev, [field]: cleaned }));
+    updateModalItem(field, cleaned);
+  };
+
+  // Parse the pending raw value into a number and store it; returns the committed
+  // number (or null if the raw value wasn't a valid number).
+  const commitRawAmount = (field: keyof InvoiceItem): number | null => {
+    const raw = rawAmounts[field];
+    if (raw === undefined) return null;
+    setRawAmounts(prev => {
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+    const num = parseFloat(raw);
+    if (isNaN(num)) return null;
+    // FBR accepts up to 2 decimal places for monetary values (see error 0302)
+    const rounded = parseFloat(num.toFixed(2));
+    updateModalItem(field, rounded);
+    return rounded;
   };
 
   // --- Helpers for "Add Saved Item" sub-popup ---
@@ -1406,28 +1459,31 @@ export function SaleInvoiceForm({
   };
 
   const buildInvoiceData = () => {
+    // FBR accepts up to 2 decimal places for monetary values (4 for quantity) — see error 0302
+    const fmtMoney = (v: any) => parseFloat(Number(v).toFixed(2)) || 0;
+    const fmtQty = (v: any) => parseFloat(Number(v).toFixed(4));
     const formattedItems = items.map(item => ({
       hs_code: item.hsCode,
       product_description: item.productDescription,
       rate: item.rate,
       uom: item.uoM,
-      quantity: item.quantity,
-      item_rate: item.itemRate || 0,
-      total_values: item.totalValues,
-      value_sales_excluding_st: item.valueSalesExcludingST,
-      fixed_notified_value_or_retail_price: item.fixedNotifiedValueOrRetailPrice,
-      sales_tax_applicable: item.salesTaxApplicable,
-      sales_tax_withheld_at_source: parseFloat(item.salesTaxWithheldAtSource) || 0,
-      extra_tax: item.extraTax,
-      further_tax: item.furtherTax,
+      quantity: fmtQty(item.quantity),
+      item_rate: fmtMoney(item.itemRate),
+      total_values: fmtMoney(item.totalValues),
+      value_sales_excluding_st: fmtMoney(item.valueSalesExcludingST),
+      fixed_notified_value_or_retail_price: fmtMoney(item.fixedNotifiedValueOrRetailPrice),
+      sales_tax_applicable: fmtMoney(item.salesTaxApplicable),
+      sales_tax_withheld_at_source: fmtMoney(item.salesTaxWithheldAtSource),
+      extra_tax: fmtMoney(item.extraTax),
+      further_tax: fmtMoney(item.furtherTax),
       sro_schedule_no: item.sroScheduleNo || undefined,
-      fed_payable: item.fedPayable,
-      discount: item.discount,
+      fed_payable: fmtMoney(item.fedPayable),
+      discount: fmtMoney(item.discount),
       sale_type: item.saleType,
       sro_item_serial_no: item.sroItemSerialNo || undefined,
       // Internal fields (not sent to FBR)
       income_tax_type: item.incomeTaxType || '236G',
-      withholding_tax_amount: item.withholdingTaxAmount || 0
+      withholding_tax_amount: fmtMoney(item.withholdingTaxAmount)
     }));
 
     // Derive invoice-level income_tax from first item (backward compat)
@@ -2610,27 +2666,16 @@ export function SaleInvoiceForm({
                         inputMode="decimal"
                         maxLength={14}
                         value={(() => {
+                          const raw = rawAmounts['valueSalesExcludingST'];
+                          if (raw !== undefined) return raw;
                           const num = modalItem.valueSalesExcludingST;
                           if (num === 0) return '0';
                           if (valueExclTaxFocused) return num.toString();
                           return Number(num).toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                         })()}
                         onFocus={(e) => { setValueExclTaxFocused(true); e.target.select(); }}
-                        onBlur={() => setValueExclTaxFocused(false)}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val === '' || val === '-') {
-                            updateModalItem('valueSalesExcludingST', 0);
-                            return;
-                          }
-                          if (/^\d*\.?\d*$/.test(val)) {
-                            const cleaned = val.replace(/^0+(\d)/, '$1');
-                            const num = parseFloat(cleaned);
-                            if (isNaN(num)) return;
-                            if (num > 99999999999) return;
-                            updateModalItem('valueSalesExcludingST', num);
-                          }
-                        }}
+                        onBlur={() => { setValueExclTaxFocused(false); commitRawAmount('valueSalesExcludingST'); }}
+                        onChange={(e) => handleAmountChange('valueSalesExcludingST', e.target.value, 14, 99999999999)}
                         required
                       />
                     </div>
@@ -2687,8 +2732,8 @@ export function SaleInvoiceForm({
                         onFocus={() => setFocusedFields(prev => new Set(prev).add('discount'))}
                         onBlur={() => {
                           setFocusedFields(prev => { const next = new Set(prev); next.delete('discount'); return next; });
+                          const d = commitRawAmount('discount') ?? (Number(modalItem.discount) || 0);
                           const v = Number(modalItem.valueSalesExcludingST) || 0;
-                          const d = Number(modalItem.discount) || 0;
                           if (d > v) {
                             setFieldErrors(prev => new Set(prev).add('discount'));
                             toast.error('Discount cannot exceed Value Excl. Sales Tax');
@@ -2697,18 +2742,8 @@ export function SaleInvoiceForm({
                           }
                         }}
                         onChange={(e) => {
-                          const val = e.target.value;
-                          if (val === '' || val === '-') {
-                            setFieldErrors(prev => { const next = new Set(prev); next.delete('discount'); return next; });
-                            updateModalItem('discount', 0);
-                            return;
-                          }
-                          if (val.length > 14) return;
-                          const num = parseFloat(val);
-                          if (isNaN(num)) return;
-                          if (num > 99999999999) return;
                           setFieldErrors(prev => { const next = new Set(prev); next.delete('discount'); return next; });
-                          updateModalItem('discount', num);
+                          handleAmountChange('discount', e.target.value, 14, 99999999999);
                         }}
                       />
                     </div>
@@ -2736,12 +2771,11 @@ export function SaleInvoiceForm({
                           maxLength={13}
                           value={formatAmount('furtherTax', modalItem.furtherTax ?? 0)}
                           onFocus={() => setFocusedFields(prev => new Set(prev).add('furtherTax'))}
-                          onBlur={() => setFocusedFields(prev => { const next = new Set(prev); next.delete('furtherTax'); return next; })}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            if (val.length > 13) return;
-                            updateModalItem('furtherTax', val);
+                          onBlur={() => {
+                            setFocusedFields(prev => { const next = new Set(prev); next.delete('furtherTax'); return next; });
+                            commitRawAmount('furtherTax');
                           }}
+                          onChange={(e) => handleAmountChange('furtherTax', e.target.value, 13)}
                           required={buyerRegistrationType === 'Unregistered'}
                         />
                       </div>
@@ -2752,12 +2786,12 @@ export function SaleInvoiceForm({
                           type="text"
                           inputMode="decimal"
                           maxLength={11}
-                          value={formatAmount('salesTaxWithheld', modalItem.salesTaxWithheldAtSource)}
-                          onFocus={() => setFocusedFields(prev => new Set(prev).add('salesTaxWithheld'))}
+                          value={formatAmount('salesTaxWithheldAtSource', modalItem.salesTaxWithheldAtSource)}
+                          onFocus={() => setFocusedFields(prev => new Set(prev).add('salesTaxWithheldAtSource'))}
                           onBlur={() => {
-                            setFocusedFields(prev => { const next = new Set(prev); next.delete('salesTaxWithheld'); return next; });
+                            setFocusedFields(prev => { const next = new Set(prev); next.delete('salesTaxWithheldAtSource'); return next; });
+                            const w = commitRawAmount('salesTaxWithheldAtSource') ?? (Number(modalItem.salesTaxWithheldAtSource) || 0);
                             const s = Number(modalItem.salesTaxApplicable) || 0;
-                            const w = Number(modalItem.salesTaxWithheldAtSource) || 0;
                             if (w > s) {
                               setFieldErrors(prev => new Set(prev).add('salesTaxWithheld'));
                               toast.error('Sales Tax Withheld cannot exceed Sales Tax Applicable');
@@ -2767,7 +2801,7 @@ export function SaleInvoiceForm({
                           }}
                           onChange={(e) => {
                             setFieldErrors(prev => { const next = new Set(prev); next.delete('salesTaxWithheld'); return next; });
-                            updateModalItem('salesTaxWithheldAtSource', e.target.value);
+                            handleAmountChange('salesTaxWithheldAtSource', e.target.value, 11);
                           }}
                           placeholder="0"
                           required
@@ -2786,10 +2820,11 @@ export function SaleInvoiceForm({
                           maxLength={11}
                           value={formatAmount('extraTax', modalItem.extraTax ?? 0)}
                           onFocus={() => setFocusedFields(prev => new Set(prev).add('extraTax'))}
-                          onBlur={() => setFocusedFields(prev => { const next = new Set(prev); next.delete('extraTax'); return next; })}
-                          onChange={(e) => {
-                            updateModalItem('extraTax', e.target.value);
+                          onBlur={() => {
+                            setFocusedFields(prev => { const next = new Set(prev); next.delete('extraTax'); return next; });
+                            commitRawAmount('extraTax');
                           }}
+                          onChange={(e) => handleAmountChange('extraTax', e.target.value, 11)}
                         />
                       </div>
                       <div className="flex-1 min-w-[100px]">
@@ -2801,18 +2836,11 @@ export function SaleInvoiceForm({
                           maxLength={14}
                           value={formatAmount('fedPayable', modalItem.fedPayable ?? 0)}
                           onFocus={() => setFocusedFields(prev => new Set(prev).add('fedPayable'))}
-                          onBlur={() => setFocusedFields(prev => { const next = new Set(prev); next.delete('fedPayable'); return next; })}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            if (val === '' || val === '-') {
-                              updateModalItem('fedPayable', 0);
-                              return;
-                            }
-                            if (val.length > 14) return;
-                            const num = parseFloat(val);
-                            if (isNaN(num)) return;
-                            updateModalItem('fedPayable', num);
+                          onBlur={() => {
+                            setFocusedFields(prev => { const next = new Set(prev); next.delete('fedPayable'); return next; });
+                            commitRawAmount('fedPayable');
                           }}
+                          onChange={(e) => handleAmountChange('fedPayable', e.target.value, 14)}
                         />
                       </div>
                       <div className="flex-1 min-w-[100px] hidden sm:block"></div>

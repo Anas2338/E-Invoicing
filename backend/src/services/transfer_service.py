@@ -70,7 +70,7 @@ class TransferService:
         Auto-defaults to fallback_income_tax and calculates WHT if missing.
         Handles old automation invoices without per-item income tax fields.
         """
-        WHT_RATES = {"236G": 0.001, "236H": 0.005}
+        WHT_RATES = {"236G": 0.001, "236H": 0.005, "None": 0.0}
         for item in items:
             if not item.get("income_tax_type"):
                 item["income_tax_type"] = fallback_income_tax

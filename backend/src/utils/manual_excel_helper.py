@@ -36,6 +36,109 @@ def _clean_ntn_cnic(value) -> str:
 
 logger = logging.getLogger(__name__)
 
+# pandas' default NA values list with "None" removed. pandas treats the
+# literal string "None" as a missing value by default, which silently
+# swallowed the income_tax="None" option from Excel files (cells came back
+# as NaN and fell back to "236G"). Reading with this list keeps "None" intact
+# while preserving the same blank/junk-cell behavior everywhere else.
+_EXCEL_NA_VALUES = [
+    "", "#N/A", "#N/A N/A", "#NA", "-1.#IND", "-1.#QNAN", "-NaN", "-nan",
+    "1.#IND", "1.#QNAN", "<NA>", "N/A", "NA", "NULL", "NaN",
+    "n/a", "nan", "null",
+]
+
+
+def _excel_float(value, default: float = 0.0) -> float:
+    """Parse an Excel cell to float, falling back to `default` for blank cells."""
+    if not pd.notna(value):
+        return default
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
+
+
+def _excel_float_or_none(value) -> float | None:
+    """Parse an Excel cell to float; None for blank or non-numeric cells."""
+    if not pd.notna(value):
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+
+def _withholding_tax_rate(income_tax: str) -> float:
+    """Withholding tax rate for an income tax type.
+
+    236H -> 0.5%, 236G -> 0.1%, None (no income tax) -> 0.
+    """
+    if income_tax == "236H":
+        return 0.005
+    if income_tax == "None":
+        return 0.0
+    return 0.001
+
+
+def _get_user_invoice_settings(user) -> tuple[str, int, int, bool]:
+    """Return (prefix, start_number, padding, include_year) for a user."""
+    return (
+        user.invoice_prefix or "INV-",
+        user.invoice_start_number or 1,
+        user.invoice_padding or 4,
+        user.invoice_include_year or False,
+    )
+
+
+def _generate_auto_invoice_numbers(
+    db: Session,
+    user,
+    count: int,
+    taken: set[str],
+) -> list[str]:
+    """Generate `count` sequential auto invoice numbers for a user.
+
+    Mirrors the /profile/next-invoice-number logic: the sequence starts at
+    the latest invoice's trailing number + 1 (or the configured start number)
+    and skips any numbers already present in `taken` (existing invoices and
+    numbers explicitly provided elsewhere in the same file).
+    """
+    from src.utils.helpers import (
+        extract_invoice_number_suffix,
+        format_invoice_number,
+    )
+    from src.models.invoice import Invoice as InvoiceModel
+    from sqlmodel import select
+
+    prefix, start_number, padding, include_year = _get_user_invoice_settings(user)
+
+    latest = db.exec(
+        select(InvoiceModel)
+        .where(
+            InvoiceModel.user_id == user.id,
+            InvoiceModel.is_deleted == False,
+        )
+        .order_by(InvoiceModel.created_at.desc())
+    ).first()
+
+    if latest and latest.external_id:
+        suffix = extract_invoice_number_suffix(latest.external_id)
+        next_number = suffix + 1 if suffix is not None else start_number
+    else:
+        next_number = start_number
+
+    numbers: list[str] = []
+    for _ in range(count):
+        candidate = format_invoice_number(prefix, next_number, padding, include_year)
+        while candidate in taken:
+            next_number += 1
+            candidate = format_invoice_number(prefix, next_number, padding, include_year)
+        taken.add(candidate)
+        numbers.append(candidate)
+        next_number += 1
+    return numbers
+
+
 MANUAL_TEMPLATE_COLUMNS = [
     "invoice_number",
     "invoice_type",
@@ -46,6 +149,7 @@ MANUAL_TEMPLATE_COLUMNS = [
     "buyer_address",
     "buyer_registration_type",
     "saved_item_code",
+    "product_description",
     "quantity",
     "value_sales_excluding_st",
     "fixed_notified_value_or_retail_price",
@@ -88,6 +192,7 @@ def generate_manual_excel_template(
         "buyer_address": "123 Main Street, Lahore",
         "buyer_registration_type": "Registered",
         "saved_item_code": "ITEM001",
+        "product_description": "Laptop Computer",
         "quantity": "2",
         "value_sales_excluding_st": "50000",
         "fixed_notified_value_or_retail_price": "50000",
@@ -123,11 +228,18 @@ def generate_manual_excel_template(
         # — Data validation dropdowns (inline comma-separated lists) —
         last_data_row = 1048576  # covers entire column (Excel max rows)
 
+        # Column letters derived from MANUAL_TEMPLATE_COLUMNS so they stay
+        # correct if columns are added/removed.
+        def col_letter(column_name: str) -> str:
+            return get_column_letter(MANUAL_TEMPLATE_COLUMNS.index(column_name) + 1)
+
         option_sets: dict[str, list[str]] = {
-            'B': invoice_types,                          # invoice_type
-            'F': provinces,                              # buyer_province
-            'H': ["Registered", "Unregistered"],         # buyer_registration_type
-            'O': ["236G", "236H"],                       # income_tax
+            col_letter('invoice_type'): invoice_types,                          # invoice_type
+            col_letter('buyer_province'): provinces,                            # buyer_province
+            col_letter('buyer_registration_type'): [
+                "Registered", "Unregistered", "Final Consumer",
+            ],                                                                  # buyer_registration_type
+            col_letter('income_tax'): ["None", "236G", "236H"],                 # income_tax
         }
 
         for col_letter, values in option_sets.items():
@@ -232,7 +344,7 @@ def _validate_staging_row(
 
     # --- income_tax ---
     income_tax = str(row.get("income_tax", "")).strip()
-    if income_tax and income_tax not in ("236G", "236H"):
+    if income_tax and income_tax not in ("236G", "236H", "None"):
         errors["income_tax"] = [f"income_tax '{income_tax}' is invalid"]
 
     # --- quantity ---
@@ -285,6 +397,41 @@ def _validate_staging_row(
     return errors
 
 
+def _validate_staging_row_full(
+    row: dict,
+    saved_items_dict: dict,
+    today: date,
+    other_invoice_numbers: set[str] | None = None,
+    existing_invoice_numbers: set[str] | None = None,
+) -> dict[str, list[str]]:
+    """Validate a staging row against ALL rules, including cross-row checks.
+
+    Runs the per-field validation from _validate_staging_row, then adds
+    duplicate invoice number checks:
+      - other_invoice_numbers: numbers used by other rows in the same
+        session/file
+      - existing_invoice_numbers: numbers already saved in the user's
+        invoice history
+
+    Pure function — does not modify any state. Returns a dict mapping
+    field names to lists of error messages. Empty dict = row is valid.
+    """
+    errors = _validate_staging_row(row, saved_items_dict, today)
+
+    invoice_number = str(row.get("invoice_number", "")).strip()
+    if invoice_number and not errors.get("invoice_number"):
+        if other_invoice_numbers and invoice_number in other_invoice_numbers:
+            errors["invoice_number"] = [
+                f"duplicate invoice number '{invoice_number}' within the same Excel file"
+            ]
+        elif existing_invoice_numbers and invoice_number in existing_invoice_numbers:
+            errors["invoice_number"] = [
+                f"invoice number '{invoice_number}' already exists in your invoice history"
+            ]
+
+    return errors
+
+
 def _compute_staging_fields(
     row: dict,
     saved_items_dict: dict,
@@ -303,7 +450,12 @@ def _compute_staging_fields(
 
     # --- Resolve saved item fields ---
     if saved_item:
-        computed["product_description"] = saved_item.product_description
+        # Template product_description wins if provided; fall back to the
+        # saved item's description when the cell is blank.
+        template_desc = str(row.get("product_description") or "").strip()
+        computed["product_description"] = (
+            template_desc or saved_item.product_description
+        )
         computed["hs_code"] = saved_item.hs_code
         computed["rate"] = str(saved_item.default_rate or "18")
         computed["uom"] = saved_item.default_uom or "NOS"
@@ -347,16 +499,15 @@ def _compute_staging_fields(
         base_value + computed["sales_tax_applicable"] + further_tax - discount, 2
     )
 
-    # Withholding tax
+    # Withholding tax (0.1% for 236G, 0.5% for 236H, 0 for None)
+    wht_rate = _withholding_tax_rate(income_tax)
     wht = row.get("withholding_tax_amount")
     if wht is not None:
         try:
             computed["withholding_tax_amount"] = float(wht)
         except (ValueError, TypeError):
-            wht_rate = 0.005 if income_tax == "236H" else 0.001
             computed["withholding_tax_amount"] = round(value_sales_excluding_st * wht_rate, 2)
     else:
-        wht_rate = 0.005 if income_tax == "236H" else 0.001
         computed["withholding_tax_amount"] = round(value_sales_excluding_st * wht_rate, 2)
 
     computed["sales_tax_withheld_at_source"] = 0
@@ -381,11 +532,14 @@ def parse_excel_for_staging(
     """Parse an Excel file for staging, returning ALL rows without failing.
 
     Each row dict includes:
-      - All 16 template fields (as parsed from Excel)
+      - All 17 template fields (as parsed from Excel)
       - Computed fields (from saved item lookup + financial calculations)
       - Seller fields (from user profile)
       - Validation state: is_valid, field_errors
       - Metadata: excel_row_number, group_key (invoice_number)
+
+    Blank invoice_number cells are auto-issued the user's next sequential
+    invoice number (based on their numbering settings and last invoice).
 
     Never raises ValueError. Returns empty list if no valid invoice data.
     Skips the sample row (INV-001).
@@ -399,6 +553,8 @@ def parse_excel_for_staging(
             file_source,
             engine="openpyxl",
             dtype={"saved_item_code": str, "income_tax": str},
+            keep_default_na=False,
+            na_values=_EXCEL_NA_VALUES,
         )
     except MemoryError:
         return []
@@ -432,8 +588,9 @@ def parse_excel_for_staging(
         logger.info("Dropping unmatched columns from Excel: %s", unmatched)
     df = df[cols_to_keep]
 
-    # Remove empty invoice_number rows and sample row
-    df = df.dropna(subset=["invoice_number"])
+    # Drop fully-empty rows (invoice_number is optional — blank rows get an
+    # auto-issued number below) and the sample row
+    df = df.dropna(how="all")
     if df.empty:
         return []
     df = df[df["invoice_number"].astype(str).str.strip() != "INV-001"]
@@ -444,7 +601,7 @@ def parse_excel_for_staging(
     from src.models.invoice import Invoice as InvoiceModel
     excel_invoice_numbers: set[str] = set()
     for _, raw_row in df.iterrows():
-        inv_num = str(raw_row["invoice_number"]).strip()
+        inv_num = _clean_ntn_cnic(raw_row.get("invoice_number"))
         if inv_num:
             excel_invoice_numbers.add(inv_num)
 
@@ -453,6 +610,7 @@ def parse_excel_for_staging(
         existing = db.exec(
             select(InvoiceModel.external_id).where(
                 InvoiceModel.external_id.in_(excel_invoice_numbers),
+                InvoiceModel.user_id == user_id,
                 InvoiceModel.is_deleted == False,
             )
         ).all()
@@ -468,6 +626,23 @@ def parse_excel_for_staging(
             "seller_province": user.fbr_seller_province or "",
             "seller_address": user.fbr_seller_address or "",
         }
+
+    # --- Auto-issue invoice numbers for blank rows ---
+    # One new sequential number per blank row, based on the user's numbering
+    # settings and latest invoice. Skips numbers already present in the file
+    # or in the user's invoice history.
+    auto_numbers: list[str] = []
+    if user:
+        taken = set(excel_invoice_numbers) | set(existing_invoice_numbers)
+        blank_count = sum(
+            1 for _, raw_row in df.iterrows()
+            if not _clean_ntn_cnic(raw_row.get("invoice_number"))
+        )
+        if blank_count:
+            auto_numbers = _generate_auto_invoice_numbers(
+                db, user, blank_count, taken
+            )
+    auto_numbers_iter = iter(auto_numbers)
 
     # --- Fetch saved items ---
     statement = select(UserSavedProduct).where(
@@ -486,9 +661,15 @@ def parse_excel_for_staging(
     for row_idx, raw_row in df.iterrows():
         excel_row_number = row_idx + 2  # 1-based + header
 
-        invoice_number = str(raw_row["invoice_number"]).strip()
+        invoice_number = _clean_ntn_cnic(raw_row.get("invoice_number"))
+        if not invoice_number:
+            # Blank invoice_number -> auto-issue the next number for this user
+            try:
+                invoice_number = next(auto_numbers_iter)
+            except StopIteration:
+                pass
 
-        # Parse all 16 template fields with defaults
+        # Parse all 17 template fields with defaults
         row_data: dict = {
             "excel_row_number": excel_row_number,
             "invoice_number": invoice_number,
@@ -514,29 +695,24 @@ def parse_excel_for_staging(
             "saved_item_code": str(raw_row.get("saved_item_code", "")).strip()
             if pd.notna(raw_row.get("saved_item_code"))
             else "",
-            "quantity": round(float(raw_row["quantity"]), 2)
-            if pd.notna(raw_row.get("quantity"))
-            else 0.0,
-            "value_sales_excluding_st": round(float(raw_row["value_sales_excluding_st"]), 2)
-            if pd.notna(raw_row.get("value_sales_excluding_st"))
-            else 0.0,
+            "product_description": str(raw_row.get("product_description", "")).strip()
+            if pd.notna(raw_row.get("product_description"))
+            else "",
+            "quantity": round(_excel_float(raw_row.get("quantity")), 2),
+            "value_sales_excluding_st": round(
+                _excel_float(raw_row.get("value_sales_excluding_st")), 2
+            ),
             "fixed_notified_value_or_retail_price": round(
-                float(raw_row["fixed_notified_value_or_retail_price"]), 2
-            )
-            if pd.notna(raw_row.get("fixed_notified_value_or_retail_price"))
-            else 0.0,
-            "further_tax": round(float(raw_row["further_tax"]), 0)
-            if pd.notna(raw_row.get("further_tax"))
-            else 0.0,
-            "discount": round(float(raw_row.get("discount", 0)), 2)
-            if pd.notna(raw_row.get("discount"))
-            else 0.0,
+                _excel_float(raw_row.get("fixed_notified_value_or_retail_price")), 2
+            ),
+            "further_tax": round(_excel_float(raw_row.get("further_tax")), 0),
+            "discount": round(_excel_float(raw_row.get("discount")), 2),
             "income_tax": str(raw_row.get("income_tax", "")).strip()
             if pd.notna(raw_row.get("income_tax"))
             else "236G",
-            "withholding_tax_amount": float(raw_row["withholding_tax_amount"])
-            if pd.notna(raw_row.get("withholding_tax_amount"))
-            else None,
+            "withholding_tax_amount": _excel_float_or_none(
+                raw_row.get("withholding_tax_amount")
+            ),
         }
 
         # Determine income_tax for this row
@@ -684,6 +860,8 @@ def parse_excel_for_manual_invoice(
             file_source,
             engine='openpyxl',
             dtype={'saved_item_code': str, 'income_tax': str},
+            keep_default_na=False,
+            na_values=_EXCEL_NA_VALUES,
         )
     except MemoryError:
         raise MemoryError(
@@ -691,11 +869,13 @@ def parse_excel_for_manual_invoice(
             "Please reduce the file size or split into smaller batches (max 1,000 rows)."
         )
 
-    df = df.dropna(subset=['invoice_number'])
+    # invoice_number is optional — blank rows get an auto-issued number below
+    df = df.dropna(how="all")
     if not df.empty:
         df = df[df['invoice_number'].astype(str).str.strip() != 'INV-001']
 
     seller_info = {}
+    user = None
     if user_id and main_db:
         user = main_db.get(User, user_id)
         if user:
@@ -731,13 +911,33 @@ def parse_excel_for_manual_invoice(
         ).all()
         existing_invoice_numbers = set(existing)
 
+    # Auto-issue invoice numbers for blank rows (one sequential number per row,
+    # skipping numbers already present in the file or in the user's history)
+    auto_numbers: list[str] = []
+    if user and main_db:
+        taken = set(excel_invoice_numbers) | set(existing_invoice_numbers)
+        blank_count = sum(
+            1 for _, row in df.iterrows()
+            if not _clean_ntn_cnic(row.get("invoice_number"))
+        )
+        if blank_count:
+            auto_numbers = _generate_auto_invoice_numbers(
+                main_db, user, blank_count, taken
+            )
+    auto_numbers_iter = iter(auto_numbers)
+
     today = date.today()
     invoice_groups: dict[str, dict] = {}
     seen_invoice_numbers: set[str] = set()  # track duplicates within the same file
     validation_errors = []
 
     for row_idx, row in df.iterrows():
-        invoice_number = str(row['invoice_number']).strip()
+        invoice_number = _clean_ntn_cnic(row.get('invoice_number'))
+        if not invoice_number:
+            try:
+                invoice_number = next(auto_numbers_iter)
+            except StopIteration:
+                pass
         excel_row = row_idx + 2
 
         if invoice_number in existing_invoice_numbers:
@@ -789,7 +989,7 @@ def parse_excel_for_manual_invoice(
         income_tax = "236G"
         if pd.notna(row.get('income_tax')):
             income_tax_raw = str(row['income_tax']).strip()
-            if income_tax_raw in ("236G", "236H"):
+            if income_tax_raw in ("236G", "236H", "None"):
                 income_tax = income_tax_raw
             elif income_tax_raw:
                 validation_errors.append(
@@ -798,13 +998,16 @@ def parse_excel_for_manual_invoice(
                 )
                 continue
 
-        quantity = round(float(row['quantity']), 2) if pd.notna(row['quantity']) else 0
-        value_sales_excluding_st = round(float(row['value_sales_excluding_st']), 2) if pd.notna(row['value_sales_excluding_st']) else 0
-        fixed_notified_value_or_retail_price = round(float(row['fixed_notified_value_or_retail_price']), 2) if pd.notna(row['fixed_notified_value_or_retail_price']) else 0
-        further_tax = round(float(row['further_tax']), 0) if pd.notna(row['further_tax']) else 0
-        discount = round(float(row['discount']), 2) if pd.notna(row.get('discount')) else 0
+        quantity = round(_excel_float(row.get('quantity')), 2)
+        value_sales_excluding_st = round(_excel_float(row.get('value_sales_excluding_st')), 2)
+        fixed_notified_value_or_retail_price = round(
+            _excel_float(row.get('fixed_notified_value_or_retail_price')), 2
+        )
+        further_tax = round(_excel_float(row.get('further_tax')), 0)
+        discount = round(_excel_float(row.get('discount')), 2)
 
         # Parse withholding_tax_amount from Excel (optional, auto-calc if omitted)
+        # WHT rate: 0.1% for 236G, 0.5% for 236H, 0 for None
         withholding_tax_amount = None
         if pd.notna(row.get('withholding_tax_amount')):
             try:
@@ -812,7 +1015,7 @@ def parse_excel_for_manual_invoice(
             except (ValueError, TypeError):
                 withholding_tax_amount = None
         if withholding_tax_amount is None:
-            wht_rate = 0.005 if income_tax == "236H" else 0.001
+            wht_rate = _withholding_tax_rate(income_tax)
             withholding_tax_amount = round(value_sales_excluding_st * wht_rate, 2)
 
         tax_rate = float(saved_item.default_rate) if saved_item.default_rate else 18.0
@@ -822,9 +1025,13 @@ def parse_excel_for_manual_invoice(
 
         uom_code = saved_item.default_uom or "NOS"
 
+        # Template product_description wins if provided; fall back to the
+        # saved item's description when the cell is blank.
+        template_desc = str(row.get('product_description') or "").strip()
+
         item = {
             "hs_code": saved_item.hs_code,
-            "product_description": saved_item.product_description,
+            "product_description": template_desc or saved_item.product_description,
             "rate": str(saved_item.default_rate or "18"),
             "uom": uom_code,
             "quantity": quantity,

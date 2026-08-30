@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+import re
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Callable, Awaitable
 from functools import wraps
@@ -12,6 +13,77 @@ from html import escape
 
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Invoice number generation
+# ---------------------------------------------------------------------------
+
+
+def extract_invoice_number_suffix(external_id: Optional[str]) -> Optional[int]:
+    """Extract the trailing numeric part of an invoice number.
+
+    e.g. "INV-0005" -> 5, "INV-2026-0007" -> 7.
+    Returns None when there are no trailing digits.
+    """
+    if not external_id:
+        return None
+    match = re.search(r"(\d+)$", str(external_id))
+    return int(match.group(1)) if match else None
+
+
+def format_invoice_number(
+    prefix: str,
+    number: int,
+    padding: int = 4,
+    include_year: bool = False,
+) -> str:
+    """Format a numeric sequence into the user's configured invoice number format.
+
+    e.g. format_invoice_number("INV-", 6, 4) -> "INV-0006"
+         format_invoice_number("INV-", 6, 4, True) -> "INV-2026-0006"
+    """
+    padded = str(number).zfill(padding)
+    if include_year:
+        return f"{prefix}{datetime.now().year}-{padded}"
+    return f"{prefix}{padded}"
+
+
+def get_next_invoice_number(db, user) -> tuple[str, int]:
+    """Compute the next invoice number for a user.
+
+    Based on the user's invoice settings (prefix, start number, padding,
+    include_year) and their latest non-deleted invoice: the latest invoice's
+    trailing number + 1, or the configured start number if the latest invoice
+    has no numeric suffix / no invoices exist yet.
+
+    Returns (formatted_number, numeric_number) so callers can generate
+    successive numbers by advancing the numeric part.
+    """
+    from src.models.invoice import Invoice
+    from sqlmodel import select
+
+    prefix = user.invoice_prefix or "INV-"
+    start_number = user.invoice_start_number or 1
+    padding = user.invoice_padding or 4
+    include_year = user.invoice_include_year or False
+
+    latest = db.exec(
+        select(Invoice)
+        .where(Invoice.user_id == user.id, Invoice.is_deleted == False)
+        .order_by(Invoice.created_at.desc())
+    ).first()
+
+    if latest and latest.external_id:
+        suffix = extract_invoice_number_suffix(latest.external_id)
+        next_number = suffix + 1 if suffix is not None else start_number
+    else:
+        next_number = start_number
+
+    return (
+        format_invoice_number(prefix, next_number, padding, include_year),
+        next_number,
+    )
 
 
 def generate_correlation_id() -> str:

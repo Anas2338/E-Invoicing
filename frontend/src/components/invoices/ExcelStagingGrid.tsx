@@ -30,7 +30,7 @@ const DROPDOWN_OPTIONS: Record<string, string[]> = {
     'ISLAMABAD', 'GILGIT BALTISTAN', 'AZAD JAMMU KASHMIR',
   ],
   buyer_registration_type: ['Registered', 'Unregistered', 'Final Consumer'],
-  income_tax: ['236G', '236H'],
+  income_tax: ['None', '236G', '236H'],
 };
 
 // Numeric columns
@@ -57,6 +57,7 @@ const GRID_COLUMNS: ColumnDef[] = [
   { key: 'buyer_address', label: 'Address', width: 'min-w-[100px] lg:min-w-0' },
   { key: 'buyer_registration_type', label: 'Reg Type', width: 'w-20 lg:w-28 xl:w-34' },
   { key: 'saved_item_code', label: 'Item Code', width: 'w-20 lg:w-24 xl:w-28' },
+  { key: 'product_description', label: 'Description', width: 'w-24 lg:w-28 xl:w-36' },
   { key: 'quantity', label: 'Qty', width: 'w-16 lg:w-20 xl:w-24' },
   { key: 'value_sales_excluding_st', label: 'Value Excl ST', width: 'w-24 lg:w-28 xl:w-36' },
   { key: 'fixed_notified_value_or_retail_price', label: 'Retail Price', width: 'w-24 lg:w-28 xl:w-36' },
@@ -450,7 +451,9 @@ export default function ExcelStagingGrid({
                         key={col.key}
                         rowId={row.id}
                         field={col.key}
-                        value={row[col.key]}
+                        // Show a 1-based sequence number instead of the
+                        // physical Excel row number (which starts at 2)
+                        value={col.key === 'excel_row_number' ? idx + 1 : row[col.key]}
                         isError={isError}
                         errorMessages={errorMessages}
                         onSave={handleUpdateCell}

@@ -137,7 +137,8 @@ export default function ManualExcelUploadForm() {
             <h2 className="text-lg sm:text-xl font-bold text-[#202223] dark:text-[#e3e3e3] mb-3">Step 1: Download Template</h2>
             <p className="text-xs sm:text-sm text-[#6d7175] dark:text-[#8c9196] mb-4">
               Download the Excel template with predefined columns for manual invoice data.
-              Includes income tax column (236G/236H).
+              Includes income tax column (None/236G/236H). Leave invoice number or product
+              description blank to auto-fill them.
             </p>
             <button
               onClick={handleDownloadTemplate}

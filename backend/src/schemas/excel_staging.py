@@ -80,6 +80,7 @@ class StagingRowUpdateRequest(BaseModel):
     buyer_address: Optional[str] = None
     buyer_registration_type: Optional[str] = None
     saved_item_code: Optional[str] = None
+    product_description: Optional[str] = None
     quantity: Optional[float] = None
     value_sales_excluding_st: Optional[float] = None
     fixed_notified_value_or_retail_price: Optional[float] = None

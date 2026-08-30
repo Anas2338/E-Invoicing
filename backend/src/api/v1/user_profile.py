@@ -327,9 +327,6 @@ async def get_next_invoice_number(
         Next invoice number to use
     """
     try:
-        from src.models.invoice import Invoice
-        from sqlalchemy import desc
-
         user = db.query(User).filter(User.id == UUID(user_id)).first()
 
         if not user:
@@ -338,42 +335,14 @@ async def get_next_invoice_number(
                 detail="User not found"
             )
 
+        # Compute the next invoice number from the user's settings + latest invoice
+        from src.utils.helpers import get_next_invoice_number
+        invoice_number, next_number = get_next_invoice_number(db, user)
+
         # Get user's invoice settings
         prefix = user.invoice_prefix or 'INV-'
-        start_number = user.invoice_start_number or 1
         padding = user.invoice_padding or 4
         include_year = user.invoice_include_year or False
-
-        # Get the latest invoice for this user
-        latest_invoice = db.query(Invoice).filter(
-            Invoice.user_id == UUID(user_id),
-            Invoice.is_deleted == False
-        ).order_by(desc(Invoice.created_at)).first()
-
-        if latest_invoice and latest_invoice.external_id:
-            # Extract numeric part from the latest invoice number
-            import re
-            match = re.search(r'(\d+)$', latest_invoice.external_id)
-
-            if match:
-                last_number = int(match.group(1))
-                next_number = last_number + 1
-            else:
-                # No numeric part found, use start number
-                next_number = start_number
-        else:
-            # No previous invoices, use start number
-            next_number = start_number
-
-        # Format the invoice number
-        padded_number = str(next_number).zfill(padding)
-
-        if include_year:
-            from datetime import datetime
-            current_year = datetime.now().year
-            invoice_number = f"{prefix}{current_year}-{padded_number}"
-        else:
-            invoice_number = f"{prefix}{padded_number}"
 
         return {
             "invoice_number": invoice_number,

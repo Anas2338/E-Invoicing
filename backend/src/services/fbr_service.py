@@ -162,23 +162,26 @@ class FBRService:
 
             # Safe float: handle empty strings from text fields
             _f = lambda k, d=0: float(item.get(k) or d)
+            # FBR accepts up to 2 decimal places for monetary values (4 for quantity) — error 0302
+            _f2 = lambda k, d=0: round(_f(k, d), 2)
+            _f4 = lambda k, d=0: round(_f(k, d), 4)
 
             transformed_item = {
                 "hsCode": item.get("hs_code", ""),
                 "productDescription": item.get("product_description", ""),
                 "rate": rate,
                 "uoM": uom_description,
-                "quantity": _f("quantity"),
-                "totalValues": _f("total_values"),
-                "valueSalesExcludingST": _f("value_sales_excluding_st"),
-                "fixedNotifiedValueOrRetailPrice": _f("fixed_notified_value_or_retail_price"),
-                "salesTaxApplicable": _f("sales_tax_applicable"),
-                "salesTaxWithheldAtSource": _f("sales_tax_withheld_at_source"),
+                "quantity": _f4("quantity"),
+                "totalValues": _f2("total_values"),
+                "valueSalesExcludingST": _f2("value_sales_excluding_st"),
+                "fixedNotifiedValueOrRetailPrice": _f2("fixed_notified_value_or_retail_price"),
+                "salesTaxApplicable": _f2("sales_tax_applicable"),
+                "salesTaxWithheldAtSource": _f2("sales_tax_withheld_at_source"),
                 "extraTax": "" if float(item.get("extra_tax") or 0) == 0 else str(item.get("extra_tax", "")),
-                "furtherTax": _f("further_tax"),
+                "furtherTax": _f2("further_tax"),
                 "sroScheduleNo": item.get("sro_schedule_no", ""),
-                "fedPayable": _f("fed_payable"),
-                "discount": _f("discount"),
+                "fedPayable": _f2("fed_payable"),
+                "discount": _f2("discount"),
                 "saleType": sale_type_description,
                 "sroItemSerialNo": item.get("sro_item_serial_no", "")
             }

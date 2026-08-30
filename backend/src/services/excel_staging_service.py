@@ -19,6 +19,7 @@ from src.models.excel_staging import (
 from src.utils.manual_excel_helper import (
     parse_excel_for_staging,
     _validate_staging_row,
+    _validate_staging_row_full,
     _compute_staging_fields,
     build_invoices_from_rows,
     _clean_ntn_cnic,
@@ -28,6 +29,28 @@ from src.models.invoice import Invoice as InvoiceModel
 from src.models.user_saved_product import UserSavedProduct
 
 logger = logging.getLogger(__name__)
+
+
+def _staging_row_to_data(row: ExcelStagingRow) -> dict:
+    """Convert a staging row model to the plain dict the validators expect."""
+    return {
+        "invoice_number": row.invoice_number,
+        "invoice_type": row.invoice_type,
+        "invoice_date": row.invoice_date,
+        "buyer_ntn_cnic": row.buyer_ntn_cnic,
+        "buyer_business_name": row.buyer_business_name,
+        "buyer_province": row.buyer_province,
+        "buyer_address": row.buyer_address,
+        "buyer_registration_type": row.buyer_registration_type,
+        "saved_item_code": row.saved_item_code,
+        "quantity": row.quantity,
+        "value_sales_excluding_st": row.value_sales_excluding_st,
+        "fixed_notified_value_or_retail_price": row.fixed_notified_value_or_retail_price,
+        "further_tax": row.further_tax,
+        "discount": row.discount,
+        "income_tax": row.income_tax,
+        "withholding_tax_amount": row.withholding_tax_amount,
+    }
 
 
 class ExcelStagingService:
@@ -223,8 +246,10 @@ class ExcelStagingService:
     ) -> ExcelStagingRow | None:
         """Update a single row's fields.
 
-        Clears field_errors for updated fields and marks row as dirty.
-        Rejects if session is not in editable state.
+        Re-validates the whole row against all rules (including duplicate
+        invoice number checks) and updates field_errors / is_valid
+        immediately. Marks row as dirty. Rejects if session is not in
+        editable state.
         """
         session = self.get_session(db, session_id, user_id)
         if session is None:
@@ -242,6 +267,7 @@ class ExcelStagingService:
             "invoice_number", "invoice_type", "invoice_date",
             "buyer_ntn_cnic", "buyer_business_name", "buyer_province",
             "buyer_address", "buyer_registration_type", "saved_item_code",
+            "product_description",
             "quantity", "value_sales_excluding_st",
             "fixed_notified_value_or_retail_price", "further_tax", "discount",
             "income_tax", "withholding_tax_amount",
@@ -250,20 +276,59 @@ class ExcelStagingService:
         for field, value in updates.items():
             if field in editable_fields:
                 setattr(row, field, value)
-                # Clear field_errors for this field — MUST reassign to create
-                # a new dict so SQLAlchemy tracks the change (in-place mutation
-                # on JSON columns is not detected by SQLAlchemy's change tracking).
-                if row.field_errors and field in row.field_errors:
-                    row.field_errors = {
-                        k: v
-                        for k, v in row.field_errors.items()
-                        if k != field
-                    }
+
+        # Keep the UI grouping separators in sync when the invoice number
+        # changes (rows are grouped by group_key == invoice_number)
+        if "invoice_number" in updates:
+            row.group_key = row.invoice_number or ""
+
+        # income_tax "None" means no withholding tax is applicable
+        if "income_tax" in updates and row.income_tax == "None":
+            row.withholding_tax_amount = 0
+
+        # Re-validate the WHOLE row against all rules (not just the edited
+        # field) so invalid edits — e.g. an invoice number that already
+        # exists in the user's history or elsewhere in this file — are
+        # flagged immediately instead of silently accepted.
+        saved_items_stmt = select(UserSavedProduct).where(
+            UserSavedProduct.user_id == user_id,
+            UserSavedProduct.is_active == 1,
+        )
+        saved_items = db.exec(saved_items_stmt).all()
+        saved_items_dict = {item.item_code: item for item in saved_items}
+
+        # Invoice numbers used by OTHER rows in this session (self excluded)
+        other_numbers_stmt = select(ExcelStagingRow.invoice_number).where(
+            ExcelStagingRow.session_id == session_id,
+            ExcelStagingRow.user_id == user_id,
+            ExcelStagingRow.id != row_id,
+        )
+        other_numbers = {n for n in db.exec(other_numbers_stmt).all() if n}
+
+        # Invoice numbers already saved in the user's history
+        existing_numbers: set[str] = set()
+        invoice_number = str(row.invoice_number or "").strip()
+        if invoice_number:
+            existing_numbers = set(db.exec(
+                select(InvoiceModel.external_id).where(
+                    InvoiceModel.external_id == invoice_number,
+                    InvoiceModel.user_id == user_id,
+                    InvoiceModel.is_deleted == False,
+                )
+            ).all())
+
+        row.field_errors = _validate_staging_row_full(
+            _staging_row_to_data(row),
+            saved_items_dict,
+            datetime.utcnow().date(),
+            other_numbers,
+            existing_numbers,
+        )
 
         # Recalculate is_valid immediately (not just on recheck)
         # so the user sees green/red feedback right after editing
         old_valid = row.is_valid
-        row.is_valid = len(row.field_errors) == 0 if row.field_errors else True
+        row.is_valid = len(row.field_errors) == 0
 
         # Keep session valid/errored counts in sync with the row change
         if old_valid != row.is_valid:
@@ -326,31 +391,42 @@ class ExcelStagingService:
 
         today = datetime.utcnow().date()
 
-        # Re-validate dirty rows
+        # Invoice numbers used by more than one row in this session
+        number_counts: dict[str, int] = {}
+        for r in all_rows:
+            num = str(r.invoice_number or "").strip()
+            if num:
+                number_counts[num] = number_counts.get(num, 0) + 1
+        other_numbers = {n for n, c in number_counts.items() if c > 1}
+
+        # Invoice numbers already saved in the user's history (batch query)
+        dirty_numbers = {
+            str(r.invoice_number or "").strip()
+            for r in all_rows if r.is_dirty
+        }
+        dirty_numbers.discard("")
+        existing_numbers: set[str] = set()
+        if dirty_numbers:
+            existing_numbers = set(db.exec(
+                select(InvoiceModel.external_id).where(
+                    InvoiceModel.external_id.in_(dirty_numbers),
+                    InvoiceModel.user_id == user_id,
+                    InvoiceModel.is_deleted == False,
+                )
+            ).all())
+
+        # Re-validate dirty rows against ALL rules (incl. duplicates)
         for row in all_rows:
             if not row.is_dirty:
                 continue
 
-            row_data = {
-                "invoice_number": row.invoice_number,
-                "invoice_type": row.invoice_type,
-                "invoice_date": row.invoice_date,
-                "buyer_ntn_cnic": row.buyer_ntn_cnic,
-                "buyer_business_name": row.buyer_business_name,
-                "buyer_province": row.buyer_province,
-                "buyer_address": row.buyer_address,
-                "buyer_registration_type": row.buyer_registration_type,
-                "saved_item_code": row.saved_item_code,
-                "quantity": row.quantity,
-                "value_sales_excluding_st": row.value_sales_excluding_st,
-                "fixed_notified_value_or_retail_price": row.fixed_notified_value_or_retail_price,
-                "further_tax": row.further_tax,
-                "discount": row.discount,
-                "income_tax": row.income_tax,
-                "withholding_tax_amount": row.withholding_tax_amount,
-            }
-
-            field_errors = _validate_staging_row(row_data, saved_items_dict, today)
+            field_errors = _validate_staging_row_full(
+                _staging_row_to_data(row),
+                saved_items_dict,
+                today,
+                other_numbers,
+                existing_numbers,
+            )
             row.field_errors = field_errors
             row.is_valid = len(field_errors) == 0
             row.is_dirty = False
@@ -417,6 +493,49 @@ class ExcelStagingService:
             ExcelStagingRow.is_valid == True,
         )
         valid_rows = list(db.exec(statement).all())
+
+        # Final duplicate guard: an invoice number may have been saved since
+        # this session was reviewed (another upload, manual creation, etc.).
+        # Without this, create_invoice silently UPDATES the existing DRAFT
+        # invoice instead of creating a new one. Also guard against duplicate
+        # numbers within the session itself.
+        duplicate_numbers: set[str] = set()
+        seen_numbers: set[str] = set()
+        for r in valid_rows:
+            num = str(r.invoice_number or "").strip()
+            if not num:
+                continue
+            if num in seen_numbers:
+                duplicate_numbers.add(num)
+            seen_numbers.add(num)
+
+        numbers_to_check = seen_numbers - duplicate_numbers
+        if numbers_to_check:
+            existing = db.exec(
+                select(InvoiceModel.external_id).where(
+                    InvoiceModel.external_id.in_(numbers_to_check),
+                    InvoiceModel.user_id == user_id,
+                    InvoiceModel.is_deleted == False,
+                )
+            ).all()
+            duplicate_numbers.update(existing)
+
+        if duplicate_numbers:
+            # Revert to review state so the user can fix the rows and retry
+            session.status = "ready_for_review"
+            db.add(session)
+            db.commit()
+            logger.warning(
+                "Commit rejected for session %s: duplicate invoice numbers %s",
+                session_id, sorted(duplicate_numbers),
+            )
+            return {
+                "error": (
+                    "Cannot upload: the following invoice number(s) already "
+                    "exist and must be changed: "
+                    + ", ".join(sorted(duplicate_numbers))
+                )
+            }
 
         # Convert to row dicts for build_invoices_from_rows
         row_dicts = []

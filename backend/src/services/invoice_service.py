@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 WITHHOLDING_TAX_RATES = {
     "236G": 0.001,  # 0.1%
     "236H": 0.005,  # 0.5%
+    "None": 0.0,    # no income tax selected -> no withholding tax
 }
 
 
