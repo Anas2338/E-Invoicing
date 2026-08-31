@@ -42,6 +42,79 @@ def _clean_ntn_cnic(value) -> str:
     return s
 
 
+def _extract_invoice_number_suffix(value) -> Optional[int]:
+    """Extract the trailing numeric part of an invoice number.
+
+    e.g. "INV-0005" -> 5, "INV-2026-0007" -> 7.
+    Returns None when there are no trailing digits.
+    """
+    import re
+    if not value:
+        return None
+    match = re.search(r"(\d+)$", str(value))
+    return int(match.group(1)) if match else None
+
+
+def _format_invoice_number(
+    prefix: str,
+    number: int,
+    padding: int = 4,
+    include_year: bool = False,
+) -> str:
+    """Format a numeric sequence into the user's configured invoice number format.
+
+    e.g. _format_invoice_number("INV-", 6, 4) -> "INV-0006"
+         _format_invoice_number("INV-", 6, 4, True) -> "INV-2026-0006"
+    """
+    padded = str(number).zfill(padding)
+    if include_year:
+        return f"{prefix}{datetime.now().year}-{padded}"
+    return f"{prefix}{padded}"
+
+
+class _AutoInvoiceNumberGenerator:
+    """Sequential invoice number generator for rows with a blank invoice_number cell.
+
+    Mirrors the main backend's logic (backend/src/utils/helpers.py
+    get_next_invoice_number and backend/src/utils/manual_excel_helper.py
+    _generate_auto_invoice_numbers): the sequence starts at the configured
+    start number (or one after the highest trailing-digit suffix among the
+    taken numbers) and skips any number already in use. `taken` contains
+    existing invoice numbers from both the automation DB and the main DB,
+    plus explicit numbers present in the uploaded file.
+    """
+
+    def __init__(
+        self,
+        prefix: str = "INV-",
+        start_number: int = 1,
+        padding: int = 4,
+        include_year: bool = False,
+        taken: Optional[set[str]] = None,
+    ):
+        self.prefix = prefix or "INV-"
+        self.padding = padding or 4
+        self.include_year = include_year
+        self.taken = set(taken or [])
+
+        max_suffix = (start_number or 1) - 1
+        for candidate in self.taken:
+            suffix = _extract_invoice_number_suffix(candidate)
+            if suffix is not None and suffix > max_suffix:
+                max_suffix = suffix
+        self.next_number = max_suffix + 1
+
+    def next(self) -> str:
+        """Return the next available invoice number and mark it as taken."""
+        candidate = _format_invoice_number(self.prefix, self.next_number, self.padding, self.include_year)
+        while candidate in self.taken:
+            self.next_number += 1
+            candidate = _format_invoice_number(self.prefix, self.next_number, self.padding, self.include_year)
+        self.taken.add(candidate)
+        self.next_number += 1
+        return candidate
+
+
 class ExcelService:
     """Service for Excel file operations."""
 
@@ -60,6 +133,7 @@ class ExcelService:
 
         # Item details - simplified with saved_item_code
         "saved_item_code",
+        "product_description",
         "quantity",
         "value_sales_excluding_st",
         "fixed_notified_value_or_retail_price",
@@ -136,6 +210,7 @@ class ExcelService:
             "buyer_address": "123 Main Street, Lahore",
             "buyer_registration_type": "Registered",
             "saved_item_code": "ITEM001",
+            "product_description": "Widget - Model X",
             "quantity": "2",
             "value_sales_excluding_st": "50000",
             "fixed_notified_value_or_retail_price": "0",
@@ -171,6 +246,7 @@ class ExcelService:
                 30,  # buyer_address
                 20,  # buyer_registration_type
                 20,  # saved_item_code
+                20,  # product_description
                 10,  # quantity
                 20,  # value_sales_excluding_st
                 25,  # fixed_notified_value_or_retail_price
@@ -203,7 +279,7 @@ class ExcelService:
                 'B': ["Sale Invoice", "Debit Note", "Credit Note"],        # invoice_type
                 'F': ["PUNJAB", "SINDH", "KPK", "BALOCHISTAN", "ISLAMABAD", "GILGIT BALTISTAN", "AZAD JAMMU KASHMIR"],  # buyer_province
                 'H': ["Registered", "Unregistered", "Final Consumer"],     # buyer_registration_type
-                'O': ["236G", "236H", "None"],                              # income_tax
+                'P': ["236G", "236H", "None"],                              # income_tax
             }
 
             for col_letter, values in option_sets.items():
@@ -381,8 +457,9 @@ class ExcelService:
                     "Please reduce the file size or split into smaller batches (max 1,000 rows)."
                 )
 
-            # Remove empty rows (rows without invoice number)
-            df = df.dropna(subset=['invoice_number'])
+            # Remove fully-empty rows (invoice_number is now optional — blank
+            # cells are auto-assigned the next available invoice number)
+            df = df.dropna(how='all')
 
             # Skip demo sample row (INV-001) if it was left in the template
             if not df.empty:
@@ -391,6 +468,7 @@ class ExcelService:
             # Fetch user's seller information from main database
             from src.models.user import User
             seller_info = {}
+            user = None
             if user_id and main_db:
                 user = main_db.get(User, user_id)
                 if user:
@@ -432,6 +510,56 @@ class ExcelService:
                     logger.warning(f"Failed to fetch transaction type descriptions: {str(e)}")
                     transaction_type_descriptions = {}
 
+            # Auto invoice number generation state (invoice_number is optional:
+            # blank cells get the next number after the last invoice in both the
+            # automation DB and the main DB)
+            from src.models.automation_invoice import AutomationInvoice
+            from src.models.invoice import Invoice
+
+            # Existing invoice numbers in the automation DB and the main DB.
+            # Explicit numbers in the file that match one of these are
+            # rejected below (duplicate detection across both databases).
+            existing_db_numbers: set[str] = set()
+            if user_id and self.db:
+                try:
+                    automation_numbers = self.db.exec(
+                        select(AutomationInvoice.invoice_number).where(
+                            AutomationInvoice.user_id == user_id
+                        )
+                    ).all()
+                    existing_db_numbers.update(automation_numbers)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch automation invoice numbers: {str(e)}")
+
+            # Existing invoice numbers in the main DB
+            if user_id and main_db:
+                try:
+                    main_numbers = main_db.exec(
+                        select(Invoice.external_id).where(
+                            Invoice.user_id == user_id,
+                            Invoice.is_deleted == False,
+                        )
+                    ).all()
+                    existing_db_numbers.update(main_numbers)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch main database invoice numbers: {str(e)}")
+
+            # Explicit invoice numbers provided in the file must be skipped
+            # when auto-assigning numbers to blank cells
+            taken_numbers = set(existing_db_numbers)
+            for value in df['invoice_number'].dropna():
+                explicit_number = _clean_ntn_cnic(value)
+                if explicit_number:
+                    taken_numbers.add(explicit_number)
+
+            invoice_number_generator = _AutoInvoiceNumberGenerator(
+                prefix=(user.invoice_prefix if user else None) or "INV-",
+                start_number=(user.invoice_start_number if user else None) or 1,
+                padding=(user.invoice_padding if user else None) or 4,
+                include_year=bool(user.invoice_include_year) if user else False,
+                taken=taken_numbers,
+            )
+
             # Convert to list of dictionaries
             invoices = []
             validation_errors = []  # Collect all validation errors
@@ -439,14 +567,29 @@ class ExcelService:
                 # Get saved_item_code
                 saved_item_code = str(row['saved_item_code']).strip() if pd.notna(row['saved_item_code']) else ""
 
+                # Resolve invoice number: use the cell value if provided, otherwise
+                # auto-assign the next number after the last invoice in both DBs
+                invoice_number_str = _clean_ntn_cnic(row.get('invoice_number'))
+                if not invoice_number_str:
+                    invoice_number_str = invoice_number_generator.next()
+                elif invoice_number_str in existing_db_numbers:
+                    # Explicit number collides with an existing invoice in the
+                    # automation DB or the main DB — reject the row
+                    validation_errors.append(
+                        f"Row {row_idx + 2} (Invoice {invoice_number_str}): "
+                        f"invoice number already exists in your invoices (main system or automation). "
+                        f"Please use a different invoice number."
+                    )
+                    continue
+
                 # Fetch saved item details
                 if not saved_item_code:
-                    validation_errors.append(f"Row {row_idx + 2} (Invoice {row['invoice_number']}): saved_item_code is required")
+                    validation_errors.append(f"Row {row_idx + 2} (Invoice {invoice_number_str}): saved_item_code is required")
                     continue
 
                 saved_item = saved_items_dict.get(saved_item_code)
                 if not saved_item:
-                    validation_errors.append(f"Row {row_idx + 2} (Invoice {row['invoice_number']}): saved_item_code '{saved_item_code}' not found in your saved items")
+                    validation_errors.append(f"Row {row_idx + 2} (Invoice {invoice_number_str}): saved_item_code '{saved_item_code}' not found in your saved items")
                     continue
 
                 # Validate invoice_type
@@ -454,7 +597,7 @@ class ExcelService:
                 invoice_type_raw = str(row['invoice_type']).strip() if pd.notna(row['invoice_type']) else ""
                 if invoice_type_raw and invoice_type_raw not in VALID_INVOICE_TYPES:
                     validation_errors.append(
-                        f"Row {row_idx + 2} (Invoice {row['invoice_number']}): "
+                        f"Row {row_idx + 2} (Invoice {invoice_number_str}): "
                         f"invoice_type '{invoice_type_raw}' is invalid. Must be one of: {', '.join(VALID_INVOICE_TYPES)}."
                     )
                     continue
@@ -464,7 +607,7 @@ class ExcelService:
                 buyer_province_raw = str(row['buyer_province']).strip() if pd.notna(row['buyer_province']) else ""
                 if buyer_province_raw and buyer_province_raw not in VALID_PROVINCES:
                     validation_errors.append(
-                        f"Row {row_idx + 2} (Invoice {row['invoice_number']}): "
+                        f"Row {row_idx + 2} (Invoice {invoice_number_str}): "
                         f"buyer_province '{buyer_province_raw}' is invalid. Must be one of: {', '.join(VALID_PROVINCES)}."
                     )
                     continue
@@ -474,7 +617,7 @@ class ExcelService:
                 buyer_reg_type_raw = str(row['buyer_registration_type']).strip() if pd.notna(row['buyer_registration_type']) else ""
                 if buyer_reg_type_raw and buyer_reg_type_raw not in VALID_REG_TYPES:
                     validation_errors.append(
-                        f"Row {row_idx + 2} (Invoice {row['invoice_number']}): "
+                        f"Row {row_idx + 2} (Invoice {invoice_number_str}): "
                         f"buyer_registration_type '{buyer_reg_type_raw}' is invalid. Must be one of: {', '.join(VALID_REG_TYPES)}."
                     )
                     continue
@@ -494,7 +637,7 @@ class ExcelService:
                         income_tax = income_tax_raw
                     elif income_tax_raw:
                         validation_errors.append(
-                            f"Row {row_idx + 2} (Invoice {row['invoice_number']}): "
+                            f"Row {row_idx + 2} (Invoice {invoice_number_str}): "
                             f"income_tax '{income_tax_raw}' is invalid. Must be '236G', '236H', or 'None'."
                         )
                         continue
@@ -539,9 +682,17 @@ class ExcelService:
                     except:
                         invoice_date_str = str(row['invoice_date']).strip()
 
+                # Product description: use the Excel cell if provided, otherwise
+                # fall back to the saved item's description
+                product_description = ""
+                if pd.notna(row.get('product_description')):
+                    product_description = str(row['product_description']).strip()
+                if not product_description:
+                    product_description = saved_item.product_description or ""
+
                 # Build FBR-compliant invoice data structure
                 invoice_data = {
-                    "invoice_number": str(row['invoice_number']).strip(),
+                    "invoice_number": invoice_number_str,
                     "invoice_type": str(row['invoice_type']).strip() if pd.notna(row['invoice_type']) else "Sale Invoice",
                     "invoice_date": invoice_date_str,
 
@@ -561,7 +712,7 @@ class ExcelService:
                     # Item details - auto-populated from saved item
                     "items": [{
                         "hs_code": saved_item.hs_code,
-                        "product_description": saved_item.product_description,
+                        "product_description": product_description,
                         "rate": saved_item.default_rate or "18",
                         "tax_rate": saved_item.default_rate or "18",
                         "uom": uom_code,

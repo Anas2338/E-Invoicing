@@ -64,7 +64,11 @@ export default function UploadPage() {
                 </li>
                 <li className="flex items-start gap-2.5">
                   <span className="text-[#92400e] dark:text-[#fbbf24] flex-shrink-0 text-xl leading-none mt-0.5">•</span>
-                  <span>Invoice numbers must be unique within the Excel file</span>
+                  <span>Invoice number is optional — blank cells are auto-assigned the next available number; explicit numbers already used in your main system or automation are rejected</span>
+                </li>
+                <li className="flex items-start gap-2.5">
+                  <span className="text-[#92400e] dark:text-[#fbbf24] flex-shrink-0 text-xl leading-none mt-0.5">•</span>
+                  <span>product_description is optional — blank cells use the saved item's description</span>
                 </li>
                 <li className="flex items-start gap-2.5">
                   <span className="text-[#92400e] dark:text-[#fbbf24] flex-shrink-0 text-xl leading-none mt-0.5">•</span>
