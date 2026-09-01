@@ -151,17 +151,150 @@ def compute_invoice_totals(invoice: Invoice) -> Dict[str, float]:
     return totals
 
 
-def build_report_data(invoices: List[Invoice], date_from: str, date_to: str) -> Dict:
+# Minimum token-overlap (Jaccard) for the fuzzy item-name fallback.
+# Excel uploads often overwrite the saved description with a template
+# string, e.g. "300 Diaper 80 Gram Per Piece" vs the saved product's
+# "ADULT DIAPER  (80 GRAM PER PIECE)" — 0.8 overlap. Unrelated products
+# (e.g. "BULB 30 WATT") score well below the threshold, so they stay
+# separate rows.
+FUZZY_MATCH_THRESHOLD = 0.55
+
+
+def _token_set(text: str) -> set:
+    """Lowercased alphanumeric tokens of a description; single-char
+    tokens dropped so codes like 'P.C' don't pollute the match."""
+    return {token for token in re.split(r'[^a-z0-9]+', str(text).lower()) if len(token) > 1}
+
+
+def _jaccard(a: set, b: set) -> float:
+    """Token overlap ratio: 1.0 = identical wording, 0.0 = nothing shared."""
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+def _build_item_name_lookup(saved_products: Optional[List]) -> Dict:
+    """
+    Build the matching table from the user's saved products (/products
+    page) so the report can show the friendly Item Name instead of the
+    raw FBR product_description.
+
+    Two tiers, most specific first:
+    - exact keys: (hs_code, product_description) -> item_name,
+      product_description -> item_name, and item_name -> itself (for
+      items typed with the saved name)
+    - fuzzy candidates: saved descriptions to fuzzy-match against, used
+      when no exact key hits (see FUZZY_MATCH_THRESHOLD)
+
+    First match wins per key, mirroring the saved-items table.
+    """
+    exact: Dict = {}
+    fuzzy: List[Dict] = []
+    seen = set()
+
+    for product in saved_products or []:
+        description = (product.product_description or '').strip()
+        item_name = (product.item_name or '').strip()
+        if not item_name:
+            continue
+        hs_code = (product.hs_code or '').strip()
+
+        if description:
+            if hs_code:
+                exact.setdefault((hs_code, description), item_name)
+            exact.setdefault(description, item_name)
+            # Dedupe repeated saved rows (e.g. ITEM-001 / ITEM-002
+            # carrying the same product) so they don't split the vote.
+            if (hs_code, description) not in seen:
+                seen.add((hs_code, description))
+                fuzzy.append({
+                    'tokens': _token_set(description),
+                    'name': item_name,
+                    'hs': hs_code,
+                })
+        if description != item_name:
+            exact.setdefault(item_name, item_name)
+
+    return {'exact': exact, 'fuzzy': fuzzy}
+
+
+def _resolve_item_name(
+    description: str,
+    hs_code: str,
+    lookup: Dict,
+) -> str:
+    """
+    Resolve an invoice item's product_description to the saved item_name.
+
+    Exact (hs_code, description) / description / item_name hits win
+    outright. Otherwise the closest fuzzy candidate above the threshold
+    wins; ties prefer the candidate with the same HS code, so
+    "300 Diaper 80 Gram Per Piece" resolves to the saved
+    "ADULT DIAPER" instead of a differently-coded lookalike.
+    Falls back to the raw description when nothing matches.
+    """
+    exact = lookup['exact']
+    name = exact.get((hs_code, description)) or exact.get(description)
+    if name:
+        return name
+
+    tokens = _token_set(description)
+    best = None
+    for candidate in lookup['fuzzy']:
+        score = _jaccard(tokens, candidate['tokens'])
+        if score < FUZZY_MATCH_THRESHOLD:
+            continue
+        if best is None or score > best['score'] or (
+            score == best['score'] and hs_code == candidate['hs'] and best['hs'] != candidate['hs']
+        ):
+            best = {'score': score, 'name': candidate['name'], 'hs': candidate['hs']}
+
+    return best['name'] if best else description
+
+
+def build_report_data(
+    invoices: List[Invoice],
+    date_from: str,
+    date_to: str,
+    saved_products: Optional[List] = None,
+) -> Dict:
     """
     Build the full report payload: per-invoice rows and grand summary.
 
     One pass over the invoices: per-invoice totals are accumulated into
     the grand totals as they are computed, so the JSON and PDF endpoints
     share identical numbers.
+
+    saved_products are the user's saved items (user_saved_products);
+    when given, item lines are labelled with the saved item_name so the
+    report matches the /products page (exact keys first, then a fuzzy
+    fallback for template-style descriptions), falling back to the raw
+    product_description for items that don't come from a saved product.
     """
     summary = {'total_invoices': len(invoices)}
     for field in INVOICE_TOTAL_FIELDS:
         summary[field] = 0.0
+
+    lookup = _build_item_name_lookup(saved_products)
+
+    # Item name -> total quantity across every invoice in the range,
+    # so the report also shows what was sold, not just the money totals.
+    item_quantities: Dict[str, float] = {}
+    for invoice in invoices:
+        for item in invoice.items or []:
+            description = (item.get('product_description') or '').strip()
+            if not description:
+                continue
+            hs_code = (item.get('hs_code') or '').strip()
+            item_name = _resolve_item_name(description, hs_code, lookup)
+            item_quantities[item_name] = item_quantities.get(item_name, 0.0) + _num(item, 'quantity')
+
+    items_summary = [
+        {'item_name': item_name, 'quantity': quantity}
+        for item_name, quantity in sorted(
+            item_quantities.items(), key=lambda kv: kv[1], reverse=True
+        )
+    ]
 
     rows = []
     for invoice in invoices:
@@ -185,5 +318,6 @@ def build_report_data(invoices: List[Invoice], date_from: str, date_to: str) -> 
         'date_from': date_from,
         'date_to': date_to,
         'summary': summary,
+        'items_summary': items_summary,
         'invoices': rows,
     }

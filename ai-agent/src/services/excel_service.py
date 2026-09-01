@@ -17,6 +17,124 @@ from src.utils.excel_validator import ExcelValidator
 logger = logging.getLogger(__name__)
 
 
+def _shade_columns_to_last_row(
+    buf: BytesIO,
+    all_column_letters: list[str],
+    fill_column_letters: list[str],
+) -> None:
+    """Apply per-column styles for the full column height (rows 1..1048576).
+
+    Excel's ``<col style="...">`` attribute applies the style to every cell in
+    that column, which styles the full column height without materializing
+    millions of cells. openpyxl does not serialize column styles, so the style
+    indices are resolved from styles.xml and injected into the sheet's <col>
+    elements after saving.
+
+    Every column gets a thin border; the ``fill_column_letters`` additionally
+    get the light blue background. The column styles use plain fonts and no
+    alignment so data rows aren't affected by header formatting.
+    """
+    import re
+    import zipfile
+    from openpyxl.utils import column_index_from_string
+
+    rgb = '00DDEBF7'
+    fill_numbers = {column_index_from_string(letter) for letter in fill_column_letters}
+    all_numbers = [column_index_from_string(letter) for letter in all_column_letters]
+
+    with zipfile.ZipFile(BytesIO(buf.getvalue())) as zin:
+        styles_xml = zin.read('xl/styles.xml').decode('utf-8')
+
+        # Resolve the fill index in the workbook's style table
+        # (fills[0] and fills[1] are the mandatory defaults).
+        fills_match = re.search(r'<fills[^>]*>(.*?)</fills>', styles_xml, re.S)
+        fill_index = None
+        for idx, fill in enumerate(re.finditer(r'<fill>(.*?)</fill>', fills_match.group(1), re.S)):
+            if f'rgb="{rgb}"' in fill.group(1):
+                fill_index = idx
+                break
+        if fill_index is None:
+            raise RuntimeError('light blue fill not found in workbook styles')
+
+        # Resolve the thin border index (a border with style="thin" sides).
+        borders_match = re.search(r'<borders[^>]*>(.*?)</borders>', styles_xml, re.S)
+        border_pattern = re.compile(r'<border\b[^>]*?/>|<border\b.*?</border>', re.S)
+        thin_border_id = None
+        for idx, border_xml in enumerate(border_pattern.findall(borders_match.group(1))):
+            if 'style="thin"' in border_xml:
+                thin_border_id = idx
+                break
+        if thin_border_id is None:
+            raise RuntimeError('thin border not found in workbook styles')
+
+        # Which fonts are bold? Column styles must not reference them.
+        # Match both full <font>…</font> elements and self-closing <font />.
+        fonts_match = re.search(r'<fonts[^>]*>(.*?)</fonts>', styles_xml, re.S)
+        fonts_bold = []
+        if fonts_match:
+            font_pattern = re.compile(r'<font\b[^>]*?/>|<font\b.*?</font>', re.S)
+            for font_xml in font_pattern.findall(fonts_match.group(1)):
+                fonts_bold.append(bool(re.search(r'<b\b', font_xml)))
+
+        # Find plain (non-bold, no alignment) cell styles for the exact
+        # fill/border combinations — rows 3+ inherit these via <col>.
+        cell_xfs_match = re.search(r'<cellXfs[^>]*>(.*?)</cellXfs>', styles_xml, re.S)
+        xfs = [m.group(0) for m in re.finditer(r'<xf\b[^>]*?>', cell_xfs_match.group(1), re.S)]
+
+        def find_style_xf(fill_id: int, border_id: int) -> int | None:
+            for xf_idx, xf in enumerate(xfs):
+                f_id = int(re.search(r'fillId="(\d+)"', xf).group(1))
+                b_id = int(re.search(r'borderId="(\d+)"', xf).group(1))
+                font_id = int(re.search(r'fontId="(\d+)"', xf).group(1))
+                if (
+                    f_id == fill_id
+                    and b_id == border_id
+                    and not fonts_bold[font_id]
+                    and 'applyAlignment' not in xf
+                ):
+                    return xf_idx
+            return None
+
+        fill_border_style = find_style_xf(fill_index, thin_border_id)
+        border_only_style = find_style_xf(0, thin_border_id)
+        if fill_border_style is None or border_only_style is None:
+            raise RuntimeError('plain (fill/border) cell styles not found for shading')
+
+        style_by_column = {
+            n: (fill_border_style if n in fill_numbers else border_only_style)
+            for n in all_numbers
+        }
+
+        def patch_cols(sheet_xml: str) -> str:
+            def add_style(match: re.Match) -> str:
+                attrs = match.group(1)
+                m_num = re.search(r'min="(\d+)"', attrs)
+                style = style_by_column[int(m_num.group(1))]
+                if 'style=' in attrs:
+                    attrs = re.sub(r'style="[^"]*"', f'style="{style}"', attrs)
+                else:
+                    attrs += f' style="{style}"'
+                return f'<col{attrs}/>'
+
+            patched = sheet_xml
+            for n in all_numbers:
+                patched = re.sub(r'<col\b([^>]*?)/>', add_style, patched)
+            return patched
+
+        entries: list[tuple[zipfile.ZipInfo, bytes]] = []
+        for item in zin.infolist():
+            content = zin.read(item.filename)
+            if item.filename.startswith('xl/worksheets/') and item.filename.endswith('.xml'):
+                content = patch_cols(content.decode('utf-8')).encode('utf-8')
+            entries.append((item, content))
+
+    buf.seek(0)
+    buf.truncate()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zout:
+        for item, content in entries:
+            zout.writestr(item, content)
+
+
 def _clean_ntn_cnic(value) -> str:
     """Normalize NTN/CNIC value from Excel cell.
 
@@ -265,12 +383,50 @@ class ExcelService:
             # Freeze the header row
             worksheet.freeze_panes = 'A2'
 
-            # Bold formatting for header row
-            from openpyxl.styles import Font
+            # — Light blue fill + thin borders across the full sheet —
+            from openpyxl.styles import Font, PatternFill, Border, Side
+
+            # Bold headings only in the header row — data rows stay plain via
+            # the column styles patched below.
             bold_font = Font(bold=True)
+            thin_side = Side(style='thin')
+            thin_border = Border(
+                left=thin_side, right=thin_side, top=thin_side, bottom=thin_side
+            )
             for col_idx in range(1, len(column_widths) + 1):
                 cell = worksheet.cell(row=1, column=col_idx)
                 cell.font = bold_font
+                cell.border = thin_border
+            # Register the thin-border style on the demo row too, so the column
+            # patch below can reference it for rows 3+ (full column height).
+            for col_idx in range(1, len(column_widths) + 1):
+                worksheet.cell(row=2, column=col_idx).border = thin_border
+
+            light_blue_fill = PatternFill(
+                start_color='DDEBF7', end_color='DDEBF7', fill_type='solid'
+            )
+            highlighted_columns = {
+                "invoice_type", "invoice_date", "buyer_business_name",
+                "buyer_province", "buyer_address", "buyer_registration_type",
+                "saved_item_code", "product_description", "quantity",
+                "value_sales_excluding_st", "scheduled_date", "scheduled_time",
+            }
+            highlighted_letters = sorted(
+                get_column_letter(self.TEMPLATE_COLUMNS.index(name) + 1)
+                for name in highlighted_columns
+            )
+            for name in highlighted_columns:
+                letter = get_column_letter(self.TEMPLATE_COLUMNS.index(name) + 1)
+                # Fill the header cell so openpyxl registers the style, then
+                # patch the <col> elements below for the full column height.
+                worksheet[f'{letter}1'].fill = light_blue_fill
+                # Fill the demo row cell explicitly so the sample line shows
+                # the colour in every viewer (rows 3+ rely on <col> style).
+                worksheet[f'{letter}2'].fill = light_blue_fill
+
+            all_column_letters = [
+                get_column_letter(i) for i in range(1, len(self.TEMPLATE_COLUMNS) + 1)
+            ]
 
             # Data validation dropdowns
             last_data_row = 1048576  # covers entire column
@@ -295,6 +451,8 @@ class ExcelService:
                 dv.promptTitle = 'Valid options'
                 worksheet.add_data_validation(dv)
                 dv.add(f'{col_letter}2:{col_letter}{last_data_row}')
+
+        _shade_columns_to_last_row(output, all_column_letters, highlighted_letters)
 
         output.seek(0)
         return output

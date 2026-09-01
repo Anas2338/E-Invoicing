@@ -86,6 +86,44 @@ def get_next_invoice_number(db, user) -> tuple[str, int]:
     )
 
 
+async def fetch_automation_invoice_numbers(request) -> set[str]:
+    """Fetch the invoice numbers currently in the automation DB for the request's user.
+
+    The automation DB is owned by the AI agent service, so this queries the
+    agent with the user's JWT. Returns an empty set when the agent is
+    unreachable or the request carries no token — callers then fall back to
+    main-DB-only numbering.
+    """
+    import httpx
+    from src.config.settings import settings
+
+    # Forward the user's JWT (same token priority as AuthMiddleware)
+    token = request.cookies.get("access_token")
+    if not token:
+        auth_header = request.headers.get("authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header.split(" ")[1]
+    if not token:
+        return set()
+
+    agent_url = f"{settings.ai_agent_base_url.rstrip('/')}/api/v1/automation/invoice-numbers/used"
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            response = await client.get(
+                agent_url,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if response.status_code != 200:
+                logger.warning(f"AI agent returned HTTP {response.status_code} for used invoice numbers")
+                return set()
+            data = response.json()
+    except Exception as e:
+        logger.warning(f"Could not fetch automation invoice numbers from AI agent: {str(e)}")
+        return set()
+
+    return {str(n) for n in data.get("invoice_numbers", [])}
+
+
 def generate_correlation_id() -> str:
     """
     Generate a unique correlation ID for tracking requests across services.

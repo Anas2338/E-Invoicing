@@ -69,6 +69,7 @@ class ExcelStagingService:
         user_id: UUID,
         filename: str,
         file_bytes: BytesIO,
+        automation_invoice_numbers: set[str] | None = None,
     ) -> ExcelStagingSession:
         """Parse an Excel file and create a staging session with rows.
 
@@ -80,7 +81,9 @@ class ExcelStagingService:
             self._delete_session(db, existing.id, user_id)
 
         # Parse the file
-        rows_data = parse_excel_for_staging(file_bytes, user_id, db)
+        rows_data = parse_excel_for_staging(
+            file_bytes, user_id, db, automation_invoice_numbers
+        )
 
         if not rows_data:
             raise ValueError(

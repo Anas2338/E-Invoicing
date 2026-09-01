@@ -185,9 +185,16 @@ async def upload_manual_excel(
 
     file_bytes.seek(0)
 
+    # Fetch invoice numbers already in use in the automation DB (not yet
+    # transferred) so auto-issued numbers skip them
+    from src.utils.helpers import fetch_automation_invoice_numbers
+    automation_invoice_numbers = await fetch_automation_invoice_numbers(request)
+
     # Parse Excel file for manual invoices
     try:
-        invoice_data_list = parse_excel_for_manual_invoice(file_bytes, user_uuid, db)
+        invoice_data_list = parse_excel_for_manual_invoice(
+            file_bytes, user_uuid, db, automation_invoice_numbers
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

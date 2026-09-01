@@ -3,7 +3,7 @@ API endpoints for managing user profile including FBR credentials and saved prod
 Provides a unified interface for profile management.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel
 from uuid import UUID
@@ -16,6 +16,7 @@ from src.models.user import User
 from src.models.user_saved_product import UserSavedProduct
 from src.utils.encryption import get_encryption_service
 from src.services.auto_posting_service import AutoPostingService
+from src.utils.helpers import extract_invoice_number_suffix, format_invoice_number
 from src.schemas.auto_posting import (
     AutoPostingConfig,
     AutoPostingConfigUpdate,
@@ -317,11 +318,16 @@ async def update_invoice_settings(
 
 @router.get("/profile/next-invoice-number", response_model=Dict[str, Any])
 async def get_next_invoice_number(
+    request: Request,
     db=Depends(get_database_session),
     user_id: str = Depends(require_authentication)
 ):
     """
     Generate the next invoice number based on user's settings and latest invoice.
+
+    Also accounts for invoice numbers in the automation database (AI agent)
+    that have not been transferred to the main database yet, so manual
+    invoices never collide with pending automation invoices.
 
     Returns:
         Next invoice number to use
@@ -336,13 +342,23 @@ async def get_next_invoice_number(
             )
 
         # Compute the next invoice number from the user's settings + latest invoice
-        from src.utils.helpers import get_next_invoice_number
+        from src.utils.helpers import get_next_invoice_number, fetch_automation_invoice_numbers
         invoice_number, next_number = get_next_invoice_number(db, user)
 
         # Get user's invoice settings
         prefix = user.invoice_prefix or 'INV-'
         padding = user.invoice_padding or 4
         include_year = user.invoice_include_year or False
+
+        # Advance past any invoice numbers already used in the automation DB
+        automation_numbers = await fetch_automation_invoice_numbers(request)
+        automation_suffixes = [
+            s for n in automation_numbers
+            if (s := extract_invoice_number_suffix(n)) is not None
+        ]
+        if automation_suffixes:
+            next_number = max(next_number, max(automation_suffixes) + 1)
+            invoice_number = format_invoice_number(prefix, next_number, padding, include_year)
 
         return {
             "invoice_number": invoice_number,

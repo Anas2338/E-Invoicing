@@ -79,12 +79,18 @@ async def upload_excel(
             detail="File is empty or contains no valid data.",
         )
 
+    # Fetch invoice numbers already in use in the automation DB (not yet
+    # transferred) so auto-issued numbers skip them
+    from src.utils.helpers import fetch_automation_invoice_numbers
+    automation_invoice_numbers = await fetch_automation_invoice_numbers(request)
+
     try:
         session = staging_service.create_session_from_upload(
             db=db,
             user_id=UUID(user_id),
             filename=file.filename,
             file_bytes=BytesIO(contents),
+            automation_invoice_numbers=automation_invoice_numbers,
         )
     except DataError as e:
         # Catch data errors (column size, type mismatches) and show a clean message

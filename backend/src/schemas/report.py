@@ -31,6 +31,17 @@ class ReportSummary(BaseModel):
     value_including_tax: float
 
 
+class ReportItemSummary(BaseModel):
+    """
+    One item line in the report: the item name (the user's saved
+    item_name when the item maps to a saved product, otherwise the raw
+    product description) and its total quantity across all invoices in
+    the selected date range.
+    """
+    item_name: str
+    quantity: float
+
+
 class ReportInvoiceRow(BaseModel):
     """
     One invoice row in the report, with per-invoice totals.
@@ -56,6 +67,7 @@ class InvoiceReportResponse(BaseModel):
     date_from: str
     date_to: str
     summary: ReportSummary
+    items_summary: List[ReportItemSummary]
     invoices: List[ReportInvoiceRow]
 
 

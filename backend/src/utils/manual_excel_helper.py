@@ -160,6 +160,124 @@ MANUAL_TEMPLATE_COLUMNS = [
 ]
 
 
+def _shade_columns_to_last_row(
+    buf: BytesIO,
+    all_column_letters: list[str],
+    fill_column_letters: list[str],
+) -> None:
+    """Apply per-column styles for the full column height (rows 1..1048576).
+
+    Excel's ``<col style="...">`` attribute applies the style to every cell in
+    that column, which styles the full column height without materializing
+    millions of cells. openpyxl does not serialize column styles, so the style
+    indices are resolved from styles.xml and injected into the sheet's <col>
+    elements after saving.
+
+    Every column gets a thin border; the ``fill_column_letters`` additionally
+    get the light blue background. The column styles use plain fonts and no
+    alignment so data rows aren't affected by header formatting.
+    """
+    import re
+    import zipfile
+    from openpyxl.utils import column_index_from_string
+
+    rgb = '00DDEBF7'
+    fill_numbers = {column_index_from_string(letter) for letter in fill_column_letters}
+    all_numbers = [column_index_from_string(letter) for letter in all_column_letters]
+
+    with zipfile.ZipFile(BytesIO(buf.getvalue())) as zin:
+        styles_xml = zin.read('xl/styles.xml').decode('utf-8')
+
+        # Resolve the fill index in the workbook's style table
+        # (fills[0] and fills[1] are the mandatory defaults).
+        fills_match = re.search(r'<fills[^>]*>(.*?)</fills>', styles_xml, re.S)
+        fill_index = None
+        for idx, fill in enumerate(re.finditer(r'<fill>(.*?)</fill>', fills_match.group(1), re.S)):
+            if f'rgb="{rgb}"' in fill.group(1):
+                fill_index = idx
+                break
+        if fill_index is None:
+            raise RuntimeError('light blue fill not found in workbook styles')
+
+        # Resolve the thin border index (a border with style="thin" sides).
+        borders_match = re.search(r'<borders[^>]*>(.*?)</borders>', styles_xml, re.S)
+        border_pattern = re.compile(r'<border\b[^>]*?/>|<border\b.*?</border>', re.S)
+        thin_border_id = None
+        for idx, border_xml in enumerate(border_pattern.findall(borders_match.group(1))):
+            if 'style="thin"' in border_xml:
+                thin_border_id = idx
+                break
+        if thin_border_id is None:
+            raise RuntimeError('thin border not found in workbook styles')
+
+        # Which fonts are bold? Column styles must not reference them.
+        # Match both full <font>…</font> elements and self-closing <font />.
+        fonts_match = re.search(r'<fonts[^>]*>(.*?)</fonts>', styles_xml, re.S)
+        fonts_bold = []
+        if fonts_match:
+            font_pattern = re.compile(r'<font\b[^>]*?/>|<font\b.*?</font>', re.S)
+            for font_xml in font_pattern.findall(fonts_match.group(1)):
+                fonts_bold.append(bool(re.search(r'<b\b', font_xml)))
+
+        # Find plain (non-bold, no alignment) cell styles for the exact
+        # fill/border combinations — rows 3+ inherit these via <col>.
+        cell_xfs_match = re.search(r'<cellXfs[^>]*>(.*?)</cellXfs>', styles_xml, re.S)
+        xfs = [m.group(0) for m in re.finditer(r'<xf\b[^>]*?>', cell_xfs_match.group(1), re.S)]
+
+        def find_style_xf(fill_id: int, border_id: int) -> int | None:
+            for xf_idx, xf in enumerate(xfs):
+                f_id = int(re.search(r'fillId="(\d+)"', xf).group(1))
+                b_id = int(re.search(r'borderId="(\d+)"', xf).group(1))
+                font_id = int(re.search(r'fontId="(\d+)"', xf).group(1))
+                if (
+                    f_id == fill_id
+                    and b_id == border_id
+                    and not fonts_bold[font_id]
+                    and 'applyAlignment' not in xf
+                ):
+                    return xf_idx
+            return None
+
+        fill_border_style = find_style_xf(fill_index, thin_border_id)
+        border_only_style = find_style_xf(0, thin_border_id)
+        if fill_border_style is None or border_only_style is None:
+            raise RuntimeError('plain (fill/border) cell styles not found for shading')
+
+        style_by_column = {
+            n: (fill_border_style if n in fill_numbers else border_only_style)
+            for n in all_numbers
+        }
+
+        def patch_cols(sheet_xml: str) -> str:
+            def add_style(match: re.Match) -> str:
+                attrs = match.group(1)
+                m_num = re.search(r'min="(\d+)"', attrs)
+                style = style_by_column[int(m_num.group(1))]
+                if 'style=' in attrs:
+                    attrs = re.sub(r'style="[^"]*"', f'style="{style}"', attrs)
+                else:
+                    attrs += f' style="{style}"'
+                return f'<col{attrs}/>'
+
+            patched = sheet_xml
+            for n in all_numbers:
+                patched = re.sub(r'<col\b([^>]*?)/>', add_style, patched)
+            return patched
+
+        entries: list[tuple[zipfile.ZipInfo, bytes]] = []
+        for item in zin.infolist():
+            content = zin.read(item.filename)
+            if item.filename.startswith('xl/worksheets/') and item.filename.endswith('.xml'):
+                content = patch_cols(content.decode('utf-8')).encode('utf-8')
+            entries.append((item, content))
+
+    buf.seek(0)
+    buf.truncate()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zout:
+        for item, content in entries:
+            zout.writestr(item, content)
+
+
 def generate_manual_excel_template(
     invoice_types: list[str] | None = None,
     provinces: list[str] | None = None,
@@ -242,7 +360,7 @@ def generate_manual_excel_template(
             col_letter('income_tax'): ["None", "236G", "236H"],                 # income_tax
         }
 
-        for col_letter, values in option_sets.items():
+        for letter, values in option_sets.items():
             options_str = ','.join(values)
             dv = DataValidation(
                 type='list',
@@ -254,7 +372,52 @@ def generate_manual_excel_template(
             dv.prompt = 'Select from the dropdown list'
             dv.promptTitle = 'Valid options'
             worksheet.add_data_validation(dv)
-            dv.add(f'{col_letter}2:{col_letter}{last_data_row}')
+            dv.add(f'{letter}2:{letter}{last_data_row}')
+
+        # — Light blue fill + thin borders across the full sheet —
+        from openpyxl.styles import PatternFill, Font, Border, Side
+
+        # Bold headings only in the header row — data rows stay plain via
+        # the column styles patched below.
+        header_font = Font(bold=True)
+        thin_side = Side(style='thin')
+        thin_border = Border(
+            left=thin_side, right=thin_side, top=thin_side, bottom=thin_side
+        )
+        for cell in worksheet[1]:
+            cell.font = header_font
+            cell.border = thin_border
+        # Register the thin-border style on the demo row too, so the column
+        # patch below can reference it for rows 3+ (full column height).
+        for cell in worksheet[2]:
+            cell.border = thin_border
+
+        light_blue_fill = PatternFill(
+            start_color='DDEBF7', end_color='DDEBF7', fill_type='solid'
+        )
+        highlighted_columns = {
+            "invoice_type", "invoice_date", "buyer_business_name",
+            "buyer_province", "buyer_address", "buyer_registration_type",
+            "saved_item_code", "product_description", "quantity",
+            "value_sales_excluding_st",
+        }
+        highlighted_letters = sorted(
+            col_letter(column_name) for column_name in highlighted_columns
+        )
+        for column_name in highlighted_columns:
+            letter = col_letter(column_name)
+            # Fill the header cell so openpyxl registers the style, then patch
+            # the <col> elements below so Excel shades the full column height.
+            worksheet[f'{letter}1'].fill = light_blue_fill
+            # Fill the demo row cell explicitly so the sample line shows the
+            # colour in every viewer (rows 3+ rely on the <col> style patch).
+            worksheet[f'{letter}2'].fill = light_blue_fill
+
+        all_column_letters = [
+            get_column_letter(i) for i in range(1, len(MANUAL_TEMPLATE_COLUMNS) + 1)
+        ]
+
+    _shade_columns_to_last_row(output, all_column_letters, highlighted_letters)
 
     output.seek(0)
     return output
@@ -528,6 +691,7 @@ def parse_excel_for_staging(
     file_source: BytesIO,
     user_id: UUID,
     db: Session,
+    automation_invoice_numbers: set[str] | None = None,
 ) -> list[dict]:
     """Parse an Excel file for staging, returning ALL rows without failing.
 
@@ -629,11 +793,16 @@ def parse_excel_for_staging(
 
     # --- Auto-issue invoice numbers for blank rows ---
     # One new sequential number per blank row, based on the user's numbering
-    # settings and latest invoice. Skips numbers already present in the file
-    # or in the user's invoice history.
+    # settings and latest invoice. Skips numbers already present in the file,
+    # in the user's invoice history, or in the automation database (not yet
+    # transferred to the main database).
     auto_numbers: list[str] = []
     if user:
-        taken = set(excel_invoice_numbers) | set(existing_invoice_numbers)
+        taken = (
+            set(excel_invoice_numbers)
+            | set(existing_invoice_numbers)
+            | (automation_invoice_numbers or set())
+        )
         blank_count = sum(
             1 for _, raw_row in df.iterrows()
             if not _clean_ntn_cnic(raw_row.get("invoice_number"))
@@ -727,7 +896,14 @@ def parse_excel_for_staging(
         field_errors = _validate_staging_row(row_data, saved_items_dict, today)
 
         # Check for duplicate invoice number already in the database
-        if not field_errors.get("invoice_number") and invoice_number in existing_invoice_numbers:
+        # (including automation invoices not yet transferred)
+        if (
+            not field_errors.get("invoice_number")
+            and (
+                invoice_number in existing_invoice_numbers
+                or invoice_number in (automation_invoice_numbers or set())
+            )
+        ):
             field_errors["invoice_number"] = [
                 f"invoice number '{invoice_number}' already exists in your invoice history"
             ]
@@ -846,6 +1022,7 @@ def parse_excel_for_manual_invoice(
     file_source: BytesIO | str,
     user_id: UUID = None,
     main_db: Session = None,
+    automation_invoice_numbers: set[str] | None = None,
 ) -> list[dict]:
     """Parse Excel file for manual invoice creation.
     Validates invoice_date is today or previous date (no future dates).
@@ -912,10 +1089,15 @@ def parse_excel_for_manual_invoice(
         existing_invoice_numbers = set(existing)
 
     # Auto-issue invoice numbers for blank rows (one sequential number per row,
-    # skipping numbers already present in the file or in the user's history)
+    # skipping numbers already present in the file, in the user's history, or
+    # in the automation database — not yet transferred to the main database)
     auto_numbers: list[str] = []
     if user and main_db:
-        taken = set(excel_invoice_numbers) | set(existing_invoice_numbers)
+        taken = (
+            set(excel_invoice_numbers)
+            | set(existing_invoice_numbers)
+            | (automation_invoice_numbers or set())
+        )
         blank_count = sum(
             1 for _, row in df.iterrows()
             if not _clean_ntn_cnic(row.get("invoice_number"))
@@ -940,7 +1122,10 @@ def parse_excel_for_manual_invoice(
                 pass
         excel_row = row_idx + 2
 
-        if invoice_number in existing_invoice_numbers:
+        if (
+            invoice_number in existing_invoice_numbers
+            or invoice_number in (automation_invoice_numbers or set())
+        ):
             validation_errors.append(
                 f"Row {excel_row} (Invoice {invoice_number}): "
                 f"invoice number already exists in your history."

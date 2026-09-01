@@ -18,11 +18,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from slowapi import Limiter
 from slowapi.util import get_remote_address
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.api.deps import get_database_session
 from src.api.middleware.auth_middleware import require_authentication
 from src.models.user import User
+from src.models.user_saved_product import UserSavedProduct
 from src.schemas.report import InvoiceReportResponse, ReportYearsResponse
 from src.services.invoice_service import get_user_environment_filter
 from src.services.report_pdf_service import ReportPDFService
@@ -84,7 +86,10 @@ def get_invoice_report(
     env_filter = get_user_environment_filter(user) if user else None
 
     invoices = fetch_report_invoices(db, user_uuid, date_from, date_to, env_filter)
-    data = build_report_data(invoices, date_from, date_to)
+    saved_products = db.execute(
+        select(UserSavedProduct).where(UserSavedProduct.user_id == user_uuid)
+    ).scalars().all()
+    data = build_report_data(invoices, date_from, date_to, saved_products)
 
     return InvoiceReportResponse(**data)
 

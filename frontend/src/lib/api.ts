@@ -72,6 +72,11 @@ export interface ReportSummary {
   value_including_tax: number;
 }
 
+export interface ReportItemSummary {
+  item_name: string;
+  quantity: number;
+}
+
 export interface ReportInvoiceRow {
   id: string;
   invoice_number: string;
@@ -91,6 +96,7 @@ export interface InvoiceReportResponse {
   date_from: string;
   date_to: string;
   summary: ReportSummary;
+  items_summary: ReportItemSummary[];
   invoices: ReportInvoiceRow[];
 }
 

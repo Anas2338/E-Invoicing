@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { api, type InvoiceReportResponse } from '@/lib/api';
 import { ReportSummaryTable } from '@/components/reports/report-summary-table';
+import { ReportItemsTable } from '@/components/reports/report-items-table';
 import { ReportDownloadButton } from '@/components/reports/report-download-button';
 
 const filterInputClass =
@@ -270,7 +271,12 @@ export default function ReportPage() {
               </p>
             </div>
           ) : (
-            <ReportSummaryTable summary={report.summary} />
+            <>
+              <ReportSummaryTable summary={report.summary} />
+              {report.items_summary.length > 0 && (
+                <ReportItemsTable items={report.items_summary} />
+              )}
+            </>
           )}
         </div>
       )}
