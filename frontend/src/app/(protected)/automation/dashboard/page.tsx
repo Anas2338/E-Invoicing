@@ -19,28 +19,6 @@ export default function DashboardPage() {
   const [retryingInvoiceId, setRetryingInvoiceId] = useState<string | null>(null);
   const [pausingInvoiceId, setPausingInvoiceId] = useState<string | null>(null);
   const [resumingInvoiceId, setResumingInvoiceId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!authLoading && user && !user.automation_enabled) {
-      toast.error('Automation access not enabled. Please contact your administrator.');
-      router.push('/dashboard');
-    }
-  }, [user, authLoading, router]);
-
-  if (authLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#008060] dark:border-[#00a876] mx-auto"></div>
-          <p className="mt-4 text-[#6d7175] dark:text-[#8c9196]">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user?.automation_enabled) {
-    return null;
-  }
   const [pagination, setPagination] = useState({
     total: 0,
     page: 1,
@@ -63,8 +41,31 @@ export default function DashboardPage() {
   });
 
   useEffect(() => {
+    if (authLoading) return;
     loadInvoices();
-  }, [pagination.page, filters]);
+  }, [pagination.page, filters, authLoading]);
+
+  useEffect(() => {
+    if (!authLoading && user && !user.automation_enabled) {
+      toast.error('Automation access not enabled. Please contact your administrator.');
+      router.push('/dashboard');
+    }
+  }, [user, authLoading, router]);
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#008060] dark:border-[#00a876] mx-auto"></div>
+          <p className="mt-4 text-[#6d7175] dark:text-[#8c9196]">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user?.automation_enabled) {
+    return null;
+  }
 
   const computeTotalAmount = (invoiceData: Record<string, any> | undefined | null): number => {
     if (!invoiceData) return 0;
@@ -111,10 +112,10 @@ export default function DashboardPage() {
 
       setInvoices(filteredInvoices);
       setPagination({
-        total: filteredInvoices.length,
-        page: pagination.page,
-        page_size: pagination.page_size,
-        total_pages: Math.ceil(filteredInvoices.length / pagination.page_size)
+        total: response.total,
+        page: response.page,
+        page_size: response.page_size,
+        total_pages: response.total_pages
       });
     } catch (error) {
       toast.error('Failed to load invoices');
@@ -135,7 +136,7 @@ export default function DashboardPage() {
   const handleRetry = async (invoiceId: string) => {
     try {
       setRetryingInvoiceId(invoiceId);
-      const response = await automationApi.retryInvoice(invoiceId);
+      await automationApi.retryInvoice(invoiceId);
       toast.success('Invoice queued for retry. AI agent will process it in the next cycle.');
       loadInvoices();
     } catch (error: any) {
