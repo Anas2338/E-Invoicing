@@ -11,7 +11,8 @@ import { toast } from 'sonner';
 
 interface Invoice {
   id: string;
-  invoice_number: string;
+  // null until the transfer job assigns the number at the scheduled time
+  invoice_number: string | null;
   invoice_data: any;
   scheduled_date: string;
   scheduled_time: string;
@@ -762,7 +763,7 @@ export function InvoiceTable({
                           className="mt-1 shrink-0 data-[state=checked]:bg-emerald-500 data-[state=checked]:border-emerald-500"
                         />
                         <div className="flex-1 min-w-0">
-                          <div className="text-sm font-bold text-slate-900 dark:text-neutral-100 tracking-tight truncate">{invoice.invoice_number}</div>
+                          <div className="text-sm font-bold text-slate-900 dark:text-neutral-100 tracking-tight truncate">{invoice.invoice_number || '—'}</div>
                           <div className="text-xs font-medium text-slate-400 dark:text-neutral-500 mt-0.5">Automation Invoice</div>
                         </div>
                       </div>
@@ -1094,7 +1095,7 @@ export function InvoiceTable({
                               />
                             </td>
                             <td className="px-1 py-4 align-middle w-[11%] border-r-2 border-b-1 border-blue-200">
-                              <div className="text-[11px] lg:text-[13px] xl:text-sm font-medium text-slate-700">{invoice.invoice_number}</div>
+                              <div className="text-[11px] lg:text-[13px] xl:text-sm font-medium text-slate-700">{invoice.invoice_number || '—'}</div>
                               {/* <div className="text-[9px] lg:text-[10px] xl:text-xs font-medium text-slate-500 truncate mt-0.5">Automation</div> */}
                             </td>
                             <td className="px-2 py-4 w-[29%] border-r-2 border-b-1 border-blue-200">

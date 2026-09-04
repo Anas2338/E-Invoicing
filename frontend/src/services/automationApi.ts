@@ -52,7 +52,8 @@ export interface AutomationInvoice {
   id: string;
   user_id: string;
   excel_upload_session_id: string;
-  invoice_number: string;
+  // null until the transfer job assigns the number at the scheduled time
+  invoice_number: string | null;
   invoice_data: Record<string, any>;
   scheduled_date: string;
   scheduled_time: string;

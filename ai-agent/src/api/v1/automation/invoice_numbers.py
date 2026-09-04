@@ -32,12 +32,18 @@ async def get_used_invoice_numbers(
     transferred numbers also exist in the main database, but including them
     is harmless — the caller takes the maximum suffix, not the count.
 
+    Only rows that have been ASSIGNED a number are returned: since invoice
+    numbers are assigned at transfer time, rows still pending/validated have
+    invoice_number = NULL and must not leak into this list (NULLs would be
+    stringified as "None" and poison the caller's next-number computation).
+
     Returns:
         {"invoice_numbers": ["INV-0006", "INV-0007", ...]}
     """
     numbers = db.exec(
         select(AutomationInvoice.invoice_number).where(
-            AutomationInvoice.user_id == UUID(user_id)
+            AutomationInvoice.user_id == UUID(user_id),
+            AutomationInvoice.invoice_number.is_not(None),
         )
     ).all()
 

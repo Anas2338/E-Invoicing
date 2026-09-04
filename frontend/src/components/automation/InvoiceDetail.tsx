@@ -187,7 +187,7 @@ export default function InvoiceDetail({ invoiceId, onClose, onUpdate }: InvoiceD
       {/* Header */}
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-[#202223] dark:text-[#e3e3e3]">
-          Invoice Details: {invoice.invoice_number}
+          Invoice Details: {invoice.invoice_number || '—'}
         </h2>
         <div className="flex items-center gap-2">
           </div>

@@ -95,10 +95,11 @@ class AutomationService:
             if 'invoice_date' in invoice_data_json and hasattr(invoice_data_json['invoice_date'], 'isoformat'):
                 invoice_data_json['invoice_date'] = invoice_data_json['invoice_date'].isoformat()
 
+            # invoice_number is intentionally not set — it stays NULL until the
+            # transfer job assigns the next number at schedule time
             automation_invoice = AutomationInvoice(
                 user_id=user_id,
                 excel_upload_session_id=session_id,
-                invoice_number=invoice_data['invoice_number'],
                 invoice_data=invoice_data_json,
                 scheduled_date=scheduled_date,
                 scheduled_time=scheduled_time,

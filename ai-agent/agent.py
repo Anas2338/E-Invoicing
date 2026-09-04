@@ -157,7 +157,7 @@ class AIAgent:
             self._update_heartbeat()
 
             # Import transfer service
-            from src.services.transfer_service import TransferService
+            from src.services.transfer_service import TransferService, InvoiceNumberAssigner
             from src.database.session import get_db_session as get_main_db_session
             import asyncio
 
@@ -216,6 +216,7 @@ class AIAgent:
 
                     # Transfer invoices immediately using TransferService
                     transfer_service = TransferService()
+                    assigner = InvoiceNumberAssigner(main_db)
 
                     transferred_count = 0
                     failed_count = 0
@@ -223,16 +224,23 @@ class AIAgent:
                     for invoice in all_validated_invoices:
                         try:
                             logger.info(
-                                f"AI Agent: Transferring invoice {invoice.invoice_number} (ID: {invoice.id}) "
-                                f"scheduled for {invoice.scheduled_date} {invoice.scheduled_time}"
+                                f"AI Agent: Transferring invoice {invoice.invoice_number or invoice.id} "
+                                f"(ID: {invoice.id}) scheduled for "
+                                f"{invoice.scheduled_date} {invoice.scheduled_time}"
                             )
 
-                            # Transform and transfer invoice
-                            manual_invoice = transfer_service.transform_invoice_data(invoice)
+                            # Assign the next invoice number at transfer time and transform
+                            assigned_number = assigner.next_for(invoice.user_id)
+                            manual_invoice = transfer_service.transform_invoice_data(
+                                invoice, assigned_number
+                            )
 
                             # Check for duplicate
                             if transfer_service.check_duplicate(main_db, invoice.user_id, invoice.id):
                                 logger.warning(f"Duplicate detected: invoice {invoice.id} already transferred")
+                                invoice.invoice_number = assigned_number
+                                if invoice.invoice_data is not None:
+                                    invoice.invoice_data = {**invoice.invoice_data, "invoice_number": assigned_number}
                                 invoice.status = AutomationInvoiceStatus.TRANSFERRED
                                 invoice.transferred_at = datetime.utcnow()
                                 invoice.transfer_error = "Duplicate - already transferred"
@@ -245,7 +253,10 @@ class AIAgent:
                             main_db.add(manual_invoice)
                             main_db.flush()
 
-                            # Update automation invoice status
+                            # Update automation invoice status with assigned number
+                            invoice.invoice_number = assigned_number
+                            if invoice.invoice_data is not None:
+                                invoice.invoice_data = {**invoice.invoice_data, "invoice_number": assigned_number}
                             invoice.status = AutomationInvoiceStatus.TRANSFERRED
                             invoice.transferred_at = datetime.utcnow()
                             invoice.transfer_error = None

@@ -6,7 +6,7 @@ interface PrintPreviewModalProps {
   isOpen: boolean;
   onClose: () => void;
   invoiceId: string;
-  invoiceNumber: string;
+  invoiceNumber: string | null;
   onDownload: () => void;
   onOpenInNewTab: () => void;
   isLoading?: boolean;
@@ -49,7 +49,7 @@ export function PrintPreviewModal({
         {/* Content */}
         <div className="mb-6">
           <p className="text-sm text-[#6d7175] dark:text-[#8c9196] mb-2">
-            Invoice: <span className="font-semibold text-[#202223] dark:text-[#e3e3e3]">{invoiceNumber}</span>
+            Invoice: <span className="font-semibold text-[#202223] dark:text-[#e3e3e3]">{invoiceNumber || '—'}</span>
           </p>
           <p className="text-sm text-[#6d7175] dark:text-[#8c9196]">
             Choose how you want to view the PDF:

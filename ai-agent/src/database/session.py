@@ -76,9 +76,25 @@ if settings.main_database_url:
 
 
 def create_db_and_tables():
-    """Create automation database tables."""
+    """Create automation database tables and apply idempotent migrations.
+
+    create_all() does not alter existing tables, so any schema relaxation
+    needed after a deploy is applied here on every startup (same pattern as
+    sync_enum_values()).
+    """
     from src.models.automation_base import automation_metadata
     automation_metadata.create_all(bind=engine)
+
+    # Migration: automation_invoice.invoice_number is now optional — invoices
+    # are stored without a number at upload and only get one when the transfer
+    # job assigns the next number at schedule time. DROP NOT NULL is a no-op
+    # when the column is already nullable, so it is safe to run every startup.
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text(
+            "ALTER TABLE automation_invoice ALTER COLUMN invoice_number DROP NOT NULL"
+        ))
+    logger.info("Automation DB migration: automation_invoice.invoice_number is nullable")
 
 
 @contextmanager

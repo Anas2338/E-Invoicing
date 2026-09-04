@@ -335,7 +335,7 @@ export default function InvoiceList({ onInvoiceClick }: InvoiceListProps) {
                       onClick={() => onInvoiceClick?.(invoice)}
                       className="px-4 py-3 text-sm text-[#202223] dark:text-[#e3e3e3] cursor-pointer"
                     >
-                      {invoice.invoice_number}
+                      {invoice.invoice_number || '—'}
                     </td>
                     <td
                       onClick={() => onInvoiceClick?.(invoice)}

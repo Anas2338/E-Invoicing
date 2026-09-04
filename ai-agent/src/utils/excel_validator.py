@@ -17,8 +17,8 @@ class ExcelValidator:
 
     # Required columns for invoice automation Excel template (simplified with saved_item_code)
     REQUIRED_COLUMNS = [
-        # Invoice identification
-        "invoice_number",
+        # Invoice identification (invoice_number is intentionally absent:
+        # numbers are assigned by the transfer job at schedule time, not on upload)
         "invoice_type",
         "invoice_date",
 
@@ -209,10 +209,8 @@ class ExcelValidator:
         if not is_valid:
             errors.append(error_msg)
 
-        # Validate no duplicates
-        is_valid, error_msg = ExcelValidator.validate_no_duplicate_invoices(file_source)
-        if not is_valid:
-            errors.append(error_msg)
+        # Note: no duplicate invoice-number check — the automation template no
+        # longer has an invoice_number column (numbers are assigned at transfer).
 
         return len(errors) == 0, errors
 

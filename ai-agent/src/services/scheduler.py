@@ -17,10 +17,22 @@ def transfer_validated_invoices():
     """
     Transfer VALIDATED invoices whose scheduled time has arrived to the main database.
 
-    Runs every 5 minutes. Uses proper Pakistan timezone for schedule comparison.
+    Uses proper Pakistan timezone for schedule comparison.
+
+    Invoice numbers are assigned here, at transfer time: each invoice gets the
+    next number per the user's numbering settings (prefix/start/padding/
+    include_year), seeded from the external_ids already in the main DB. The
+    per-user snapshot is taken once per cycle and advanced by the generator,
+    so numbers follow schedule order (scheduled_date, scheduled_time ASC).
+
+    Accepted limitation: a manual invoice created in the backend between the
+    per-user snapshot and the transfer commit could theoretically receive the
+    same number. The main DB has no unique constraint on external_id, so the
+    collision would go undetected (same race existed under upload-time
+    numbering). Hardening (unique index + retry) is a future improvement.
     """
     from src.models.automation_invoice import AutomationInvoice, AutomationInvoiceStatus
-    from src.services.transfer_service import TransferService
+    from src.services.transfer_service import TransferService, InvoiceNumberAssigner
     from sqlmodel import select, and_, or_
 
     logger.info("Running validated invoice transfer...")
@@ -61,13 +73,15 @@ def transfer_validated_invoices():
                 logger.info(f"Found {len(invoices)} invoice(s) ready for transfer")
 
                 transfer_service = TransferService()
+                assigner = InvoiceNumberAssigner(main_db)
                 transferred = 0
                 failed = 0
 
                 for invoice in invoices:
-                    # Pre-capture metadata — invoice may be deleted mid-transfer
+                    # Pre-capture metadata — invoice may be deleted mid-transfer.
+                    # invoice_number is NULL until assigned below.
                     inv_id = invoice.id
-                    inv_number = invoice.invoice_number
+                    inv_number = invoice.invoice_number or str(inv_id)
                     try:
                         logger.info(
                             f"Transferring invoice {inv_number} "
@@ -75,11 +89,17 @@ def transfer_validated_invoices():
                             f"{invoice.scheduled_date} {invoice.scheduled_time}"
                         )
 
-                        manual_invoice = transfer_service.transform_invoice_data(invoice)
+                        assigned_number = assigner.next_for(invoice.user_id)
+                        manual_invoice = transfer_service.transform_invoice_data(
+                            invoice, assigned_number
+                        )
 
                         if transfer_service.check_duplicate(main_db, invoice.user_id, inv_id):
                             logger.warning(f"Duplicate: invoice {inv_id} already in main DB")
                             try:
+                                invoice.invoice_number = assigned_number
+                                if invoice.invoice_data is not None:
+                                    invoice.invoice_data = {**invoice.invoice_data, "invoice_number": assigned_number}
                                 invoice.status = AutomationInvoiceStatus.TRANSFERRED
                                 invoice.transferred_at = datetime.utcnow()
                                 invoice.transfer_error = "Duplicate - already transferred"
@@ -98,6 +118,9 @@ def transfer_validated_invoices():
                         main_db.add(manual_invoice)
                         main_db.flush()
 
+                        invoice.invoice_number = assigned_number
+                        if invoice.invoice_data is not None:
+                            invoice.invoice_data = {**invoice.invoice_data, "invoice_number": assigned_number}
                         invoice.status = AutomationInvoiceStatus.TRANSFERRED
                         invoice.transferred_at = datetime.utcnow()
                         invoice.transfer_error = None
@@ -108,7 +131,7 @@ def transfer_validated_invoices():
 
                         transferred += 1
                         logger.info(
-                            f"[OK] Transferred invoice {inv_number} "
+                            f"[OK] Transferred invoice {assigned_number} "
                             f"-> Main DB ID: {manual_invoice.id}"
                         )
 

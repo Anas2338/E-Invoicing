@@ -51,8 +51,9 @@ class AutomationInvoice(SQLModel, table=True):
         index=True
     )
 
-    # Invoice identification
-    invoice_number: str = Field(max_length=100, index=True)
+    # Invoice identification (None until the transfer job assigns the next
+    # number at transfer time — invoice numbers are no longer assigned on upload)
+    invoice_number: Optional[str] = Field(default=None, max_length=100, index=True)
 
     # Invoice data (full invoice details from Excel as JSON)
     invoice_data: dict = Field(sa_column=Column(JSON))

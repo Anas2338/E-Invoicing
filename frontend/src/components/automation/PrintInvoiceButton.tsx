@@ -8,7 +8,7 @@ import { PrintPreviewModal } from './PrintPreviewModal';
 
 interface PrintInvoiceButtonProps {
   invoiceId: string;
-  invoiceNumber: string;
+  invoiceNumber: string | null;
   status: string;
   className?: string;
 }
@@ -61,7 +61,7 @@ export function PrintInvoiceButton({
       link.href = url;
 
       // Generate filename: invoice_<invoice_number>.pdf
-      const sanitizedNumber = invoiceNumber.replace(/\//g, '_');
+      const sanitizedNumber = (invoiceNumber || 'pending').replace(/\//g, '_');
       link.download = `invoice_${sanitizedNumber}.pdf`;
 
       // Trigger download

@@ -142,7 +142,7 @@ export function InvoiceDetailModal({ invoice, onClose, onRetry }: InvoiceDetailM
           <div className="flex items-center gap-3">
             {getStatusIcon(inv.status)}
             <div>
-              <h2 className="text-xl font-bold text-[#202223] dark:text-[#e3e3e3]">{inv.invoice_number}</h2>
+              <h2 className="text-xl font-bold text-[#202223] dark:text-[#e3e3e3]">{inv.invoice_number || '—'}</h2>
               <p className="text-sm text-[#6d7175] dark:text-[#8c9196]">Invoice Details</p>
             </div>
           </div>

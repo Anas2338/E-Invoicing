@@ -164,7 +164,8 @@ async def get_invoice_pdf(
         pdf_bytes = pdf_service.generate_invoice_pdf(invoice)
 
         # Create filename: invoice_<invoice_number>.pdf
-        invoice_number = invoice.invoice_number.replace('/', '_')
+        # (invoice_number is NULL until transfer — fall back to "pending")
+        invoice_number = (invoice.invoice_number or 'pending').replace('/', '_')
         filename = f"invoice_{invoice_number}.pdf"
 
         logger.info(

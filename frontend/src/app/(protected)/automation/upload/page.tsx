@@ -64,7 +64,7 @@ export default function UploadPage() {
                 </li>
                 <li className="flex items-start gap-2.5">
                   <span className="text-[#92400e] dark:text-[#fbbf24] flex-shrink-0 text-xl leading-none mt-0.5">•</span>
-                  <span>Invoice number is optional — blank cells are auto-assigned the next available number; explicit numbers already used in your main system or automation are rejected</span>
+                  <span>Do not include invoice numbers in the Excel file — the template no longer has that column. Each invoice gets its number automatically when it transfers to the main system at its scheduled time</span>
                 </li>
                 <li className="flex items-start gap-2.5">
                   <span className="text-[#92400e] dark:text-[#fbbf24] flex-shrink-0 text-xl leading-none mt-0.5">•</span>

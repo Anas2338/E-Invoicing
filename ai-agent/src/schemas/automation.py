@@ -30,7 +30,7 @@ class InvoiceSource(str, Enum):
 
 class AutomationInvoiceBase(BaseModel):
     """Base schema for automation invoice."""
-    invoice_number: str = Field(..., max_length=100)
+    invoice_number: Optional[str] = Field(default=None, max_length=100)
     invoice_data: dict
     scheduled_date: date
     scheduled_time: time
