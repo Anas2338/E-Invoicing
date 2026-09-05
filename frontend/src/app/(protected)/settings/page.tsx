@@ -14,6 +14,7 @@ import { Key, Building, Hash, User, Mail, Eye, EyeOff, MapPin, Home, ArrowLeft, 
 import { toast } from 'react-toastify';
 import InvoiceSettingsSection from '@/components/profile/InvoiceSettingsSection';
 import AutoPostingSettings from '@/components/profile/AutoPostingSettings';
+import TeamMembersSection from '@/components/profile/TeamMembersSection';
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -260,6 +261,10 @@ export default function SettingsPage() {
 
           {/* Auto-Posting Settings */}
           <AutoPostingSettings />
+
+          {/* Team Members — visible to every company owner (a standalone
+              account is the owner of its own single-member company) */}
+          {userProfile?.is_company_owner && <TeamMembersSection />}
         </div>
 
         {/* Right Column */}

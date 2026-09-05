@@ -146,6 +146,14 @@ def login_user(request: Request, user_login: UserLogin, db: Session = Depends(ge
                 detail=rejection_msg
             )
 
+        # Deactivated accounts (employees removed by their company owner) cannot log in
+        if not user.is_active:
+            logger.warning(f"Deactivated account login attempt: {email}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account deactivated. Please contact your administrator."
+            )
+
         logger.info(f"Account approved, creating tokens for: {email}")
 
         # Successful login - reset failed attempts and update last login
@@ -185,7 +193,9 @@ def login_user(request: Request, user_login: UserLogin, db: Session = Depends(ge
             "approval_flags": user.approval_flags or {},
             "has_production_access": (user.approval_flags.get('has_production_access', False) if user.approval_flags else False) or bool(user.fbr_production_token),
             "can_post_to_production": (user.approval_flags.get('can_post_to_production', False) if user.approval_flags else False) or bool(user.fbr_production_token),
-            "automation_enabled": user.automation_enabled
+            "automation_enabled": user.automation_enabled,
+            "company_id": str(user.company_id) if user.company_id else None,
+            "is_company_owner": user.company_id is None or user.company_id == user.id
         }
 
         # Create response with httpOnly cookie, access token in body, and CSRF token for cross-origin support
@@ -366,6 +376,9 @@ def register_user(request: Request, user_create: UserCreate, db: Session = Depen
             account_status='pending',  # New users start as pending
             approval_flags={"has_production_access": False, "can_post_to_production": False}
         )
+        # Every self-registered account is its own single-member company
+        # (company_id = id → company owner). Employees point at their owner.
+        new_user.company_id = new_user.id
 
         db.add(new_user)
         db.commit()
@@ -422,6 +435,8 @@ def get_profile(
             has_production_access=(user.approval_flags.get('has_production_access', False) if user.approval_flags else False) or bool(user.fbr_production_token),
             can_post_to_production=(user.approval_flags.get('can_post_to_production', False) if user.approval_flags else False) or bool(user.fbr_production_token),
             automation_enabled=user.automation_enabled,
+            company_id=user.company_id,
+            is_company_owner=user.company_id is None or user.company_id == user.id,
             fbr_seller_ntn=user.fbr_seller_ntn,
             fbr_business_name=user.fbr_business_name,
             fbr_seller_province=user.fbr_seller_province,
@@ -481,6 +496,8 @@ def update_profile(
             has_production_access=(user.approval_flags.get('has_production_access', False) if user.approval_flags else False) or bool(user.fbr_production_token),
             can_post_to_production=(user.approval_flags.get('can_post_to_production', False) if user.approval_flags else False) or bool(user.fbr_production_token),
             automation_enabled=user.automation_enabled,
+            company_id=user.company_id,
+            is_company_owner=user.company_id is None or user.company_id == user.id,
             fbr_seller_ntn=user.fbr_seller_ntn,
             fbr_business_name=user.fbr_business_name,
             fbr_seller_province=user.fbr_seller_province,

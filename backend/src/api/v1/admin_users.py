@@ -248,6 +248,24 @@ def delete_user(
                 detail="Cannot delete your own account"
             )
 
+        # FR-013: a company owner with active employees cannot be deleted —
+        # the employees' data belongs to the company.
+        if user.company_id == user.id:
+            # Exclude the owner's own row (owner.company_id == owner.id), so
+            # the guard only fires when OTHER active members exist.
+            active_employees = db.exec(
+                select(User).where(
+                    User.company_id == user.id,
+                    User.id != user.id,
+                    User.is_active == True,  # noqa: E712
+                )
+            ).first()
+            if active_employees:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Cannot delete a company owner with active employees. Deactivate the employees first."
+                )
+
         db.delete(user)
         db.commit()
 

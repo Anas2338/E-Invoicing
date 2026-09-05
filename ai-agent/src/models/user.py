@@ -44,6 +44,11 @@ class UserBase(SQLModel):
     # Session invalidation field
     token_version: int = Field(default=0)
 
+    # Company linking — company_id == id means company owner (standalone
+    # accounts are owners of their own single-member company); employees
+    # point at their owner's id. Mirrors backend/src/models/user.py.
+    company_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column(Uuid, nullable=True, index=True))
+
     # FBR Integration fields
     fbr_access_token: Optional[str] = Field(default=None, sa_column=Column(String, nullable=True))  # Deprecated, kept for backward compatibility
     fbr_sandbox_token: Optional[str] = Field(default=None, sa_column=Column(String, nullable=True))

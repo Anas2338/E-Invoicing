@@ -24,6 +24,8 @@ interface User {
   has_production_access?: boolean;
   can_post_to_production?: boolean;
   automation_enabled?: boolean;
+  company_id?: string | null;
+  is_company_owner?: boolean;
 }
 
 interface AuthContextType {

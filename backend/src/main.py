@@ -17,6 +17,7 @@ from src.api.v1.admin_users import router as admin_users_router
 from src.api.v1.admin_sync import router as admin_sync_router
 from src.api.v1.notifications import router as notifications_router
 from src.api.v1.excel_staging import router as excel_staging_router
+from src.api.v1.company import router as company_router
 from src.api.v1.saved_products import router as saved_products_router
 from src.api.v1.user_profile import router as user_profile_router
 from src.api.v1.dashboard import router as dashboard_router
@@ -128,6 +129,7 @@ app.include_router(user_profile_router, prefix="/api/v1", tags=["user-profile"])
 app.include_router(dashboard_router, prefix="/api/v1/dashboard", tags=["dashboard"])
 app.include_router(reports_router, prefix="/api/v1/reports", tags=["reports"])
 app.include_router(excel_staging_router, prefix="/api/v1/invoices/excel/staging", tags=["excel-staging"])
+app.include_router(company_router, prefix="/api/v1/company", tags=["company"])
 
 @app.get("/")
 def read_root():

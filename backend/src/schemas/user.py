@@ -67,6 +67,11 @@ class UserProfile(UserResponse):
     can_post_to_production: bool = False
     automation_enabled: bool = False
 
+    # Company linking — company_id == id ⇒ company owner (standalone accounts
+    # are owners of their own single-member company). Employees point at owner.
+    company_id: Optional[uuid.UUID] = None
+    is_company_owner: bool = True
+
     # FBR Integration fields
     fbr_seller_ntn: Optional[str] = None
     fbr_business_name: Optional[str] = None
