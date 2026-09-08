@@ -21,7 +21,6 @@ from src.schemas.automation import (
     InvoiceDetailResponse,
     InvoiceIdsResponse
 )
-from src.api.middleware.auth_middleware import require_authentication
 from src.middleware.rbac import require_automation_access
 
 router = APIRouter(prefix="/dashboard", tags=["automation-dashboard"])

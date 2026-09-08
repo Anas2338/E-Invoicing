@@ -9,6 +9,7 @@ from src.models.fbr_response import FBRResponse
 from src.schemas.fbr import BulkPostingResult, FBREnvironment
 from src.services.fbr_client import FBRClient
 from src.services.fbr_service import fbr_service
+from src.services.company_service import resolve_effective_user
 from src.utils.encryption import get_encryption_service
 from src.utils.helpers import generate_correlation_id
 
@@ -53,6 +54,11 @@ class PostingService:
         user = db.query(User).filter(User.id == UUID(user_id)).first()
         if not user:
             raise ValueError("User not found")
+
+        # Company-linked members post under the OWNER's credentials — the
+        # owner's row holds the company's single FBR credential set (effective
+        # user). Posting logs stay keyed to the acting user elsewhere.
+        user = resolve_effective_user(db, user)
 
         # Determine which environment's token to use:
         # - Auto-posting: use the provided posting_environment (user.auto_posting_environment)

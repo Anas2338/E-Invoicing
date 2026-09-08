@@ -6,7 +6,8 @@ endpoint and the PDF report endpoint, so the web totals and the PDF
 totals are identical by construction.
 
 Filtering follows the existing conventions in invoice_service.py:
-- Ownership enforced via Invoice.user_id == user_uuid
+- Ownership enforced via the company-member scope (_member_scope_ids:
+  actor + every member of their company, so company data is shared)
 - Soft-deleted invoices excluded (is_deleted == False)
 - Environment override from get_user_environment_filter
 - invoice_date is a String "YYYY-MM-DD" column, so lexicographic
@@ -22,8 +23,23 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.models.invoice import Invoice
+from src.models.user import User
 
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _member_scope_ids(db: Session, user_uuid: UUID) -> List[UUID]:
+    """
+    Company-wide VISIBILITY scope: the actor plus every member of their
+    company (deactivated employees included). Standalone accounts resolve to
+    ``[user_uuid]`` — identical to pre-company behavior.
+    """
+    user = db.get(User, user_uuid)
+    if user is None:
+        return [user_uuid]
+    from src.services.company_service import get_company_member_ids
+
+    return get_company_member_ids(db, user)
 
 # Item fields summed for the report, in the same coercion convention as
 # PDFService._build_totals_row (float(item.get(field, 0) or 0)).
@@ -96,11 +112,11 @@ def fetch_report_invoices(
     environment: Optional[str] = None,
 ) -> List[Invoice]:
     """
-    Fetch the user's non-deleted invoices whose invoice_date falls within
+    Fetch the company's non-deleted invoices whose invoice_date falls within
     [date_from, date_to] (inclusive), optionally scoped to an environment.
     """
     statement = select(Invoice).where(
-        Invoice.user_id == user_uuid,
+        Invoice.user_id.in_(_member_scope_ids(db, user_uuid)),
         Invoice.is_deleted == False,  # noqa: E712 — SQLAlchemy idiom
         Invoice.invoice_date >= date_from,
         Invoice.invoice_date <= date_to,
@@ -121,12 +137,12 @@ def fetch_available_years(
     environment: Optional[str] = None,
 ) -> List[int]:
     """
-    Distinct invoice years (from invoice_date) across the user's
+    Distinct invoice years (from invoice_date) across the company's
     non-deleted invoices, newest first. Feeds the Year dropdown on the
     report page so only years with actual data are offered.
     """
     statement = select(func.distinct(func.substr(Invoice.invoice_date, 1, 4))).where(
-        Invoice.user_id == user_uuid,
+        Invoice.user_id.in_(_member_scope_ids(db, user_uuid)),
         Invoice.is_deleted == False,  # noqa: E712 — SQLAlchemy idiom
     )
 

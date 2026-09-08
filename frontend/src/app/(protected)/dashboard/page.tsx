@@ -99,18 +99,22 @@ export default function DashboardPage() {
       }
     };
 
-    const fetchFbrCredentials = async () => {
+    const fetchFbrIdentity = async () => {
       try {
-        const fbrData = await api.auth.getFbrCredentials();
-        setFbrNtn(fbrData.fbr_seller_ntn || '');
-        setFbrBusinessName(fbrData.fbr_business_name || '');
+        // Company-resolved seller identity: /auth/profile serves the OWNER's
+        // seller fields to company members (token-free), so employees see the
+        // company name/NTN here. The fbr-credentials endpoint only returns the
+        // actor's own row, which is empty for employees ("No gateway name").
+        const profile = await api.auth.getProfile();
+        setFbrNtn(profile.fbr_seller_ntn || '');
+        setFbrBusinessName(profile.fbr_business_name || '');
       } catch {
-        // Silently fail — credentials are non-critical for dashboard
+        // Silently fail — identity display is non-critical for dashboard
       }
     };
 
     fetchDashboardData();
-    fetchFbrCredentials();
+    fetchFbrIdentity();
   }, []);
 
   const handleSubmit = async (data: any) => {

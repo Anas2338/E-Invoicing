@@ -16,6 +16,18 @@ import InvoiceSettingsSection from '@/components/profile/InvoiceSettingsSection'
 import AutoPostingSettings from '@/components/profile/AutoPostingSettings';
 import TeamMembersSection from '@/components/profile/TeamMembersSection';
 
+// FBR province codes as stored on the user row, mapped to display labels
+// (mirrors the Select options in the owner's Business Information form)
+const PROVINCE_DISPLAY: Record<string, string> = {
+  PUNJAB: 'Punjab',
+  SINDH: 'Sindh',
+  KPK: 'Khyber Pakhtunkhwa',
+  BALOCHISTAN: 'Balochistan',
+  GILGIT_BALTISTAN: 'Gilgit-Baltistan',
+  AJK: 'Azad Jammu & Kashmir',
+  ISLAMABAD: 'Islamabad Capital Territory',
+};
+
 export default function SettingsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -167,6 +179,11 @@ export default function SettingsPage() {
     }
   };
 
+  // Company members see owner-managed settings read-only or hidden (US5 AC1):
+  // only the company owner — including a standalone account, which is the
+  // owner of its own single-member company — may edit them.
+  const isCompanyOwner = !!userProfile?.is_company_owner;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -256,11 +273,15 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          {/* Invoice Numbering Settings */}
-          <InvoiceSettingsSection />
+          {/* Invoice Numbering Settings — owner-only: numbering is a single
+              company-wide sequence configured on the owner's row. Employees
+              consume the numbers via the invoice flow but never edit the
+              settings (US5 AC1). */}
+          {isCompanyOwner && <InvoiceSettingsSection />}
 
-          {/* Auto-Posting Settings */}
-          <AutoPostingSettings />
+          {/* Auto-Posting Settings — owner-only: Automation settings are
+              single-source company state (US5 AC1). */}
+          {isCompanyOwner && <AutoPostingSettings />}
 
           {/* Team Members — visible to every company owner (a standalone
               account is the owner of its own single-member company) */}
@@ -277,10 +298,18 @@ export default function SettingsPage() {
             FBR Integration Credentials
           </CardTitle>
           <CardDescription className="text-sm">
-            View your FBR tokens (managed by admin) and configure your business information.
+            {isCompanyOwner
+              ? 'View your FBR tokens (managed by admin) and configure your business information.'
+              : 'Company FBR credentials and business information are managed by the company account owner.'}
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {/* Business info / FBR credentials are owner-only writes (US5 AC1,
+              backend 403). Employees see the company's seller identity
+              read-only — values served from the OWNER row via the profile
+              payload (T034) — with no edit controls and no token state. */}
+          {isCompanyOwner ? (
+            <>
           {/* Token Status Display */}
           <div className="space-y-4 mb-6">
             <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
@@ -413,6 +442,59 @@ export default function SettingsPage() {
               </Button>
             </div>
           </form>
+            </>
+          ) : (
+            <div className="space-y-6 pt-4 border-t border-[#e1e3e5] dark:border-[#2e2e2e]">
+              <h3 className="text-lg font-semibold text-[#202223] dark:text-[#e3e3e3] mb-4">
+                Business Information
+              </h3>
+              <p className="text-sm text-[#6d7175] dark:text-[#8c9196]">
+                Your company's seller identity — set and managed by the company
+                account owner. These details auto-fill on every invoice the
+                company creates.
+              </p>
+
+              <div>
+                <Label htmlFor="companySellerNtn" className="flex items-center gap-2">
+                  <Hash className="h-4 w-4" />
+                  Seller NTN/CNIC
+                </Label>
+                <p id="companySellerNtn" className="mt-1 text-[#202223] dark:text-[#e3e3e3] font-medium">
+                  {userProfile?.fbr_seller_ntn || 'Not configured'}
+                </p>
+              </div>
+
+              <div>
+                <Label htmlFor="companyBusinessName" className="flex items-center gap-2">
+                  <Building className="h-4 w-4" />
+                  Business Name
+                </Label>
+                <p id="companyBusinessName" className="mt-1 text-[#202223] dark:text-[#e3e3e3] font-medium">
+                  {userProfile?.fbr_business_name || 'Not configured'}
+                </p>
+              </div>
+
+              <div>
+                <Label htmlFor="companySellerProvince" className="flex items-center gap-2">
+                  <MapPin className="h-4 w-4" />
+                  Province
+                </Label>
+                <p id="companySellerProvince" className="mt-1 text-[#202223] dark:text-[#e3e3e3] font-medium">
+                  {PROVINCE_DISPLAY[userProfile?.fbr_seller_province ?? ''] || 'Not configured'}
+                </p>
+              </div>
+
+              <div>
+                <Label htmlFor="companySellerAddress" className="flex items-center gap-2">
+                  <Home className="h-4 w-4" />
+                  Business Address
+                </Label>
+                <p id="companySellerAddress" className="mt-1 text-[#202223] dark:text-[#e3e3e3] font-medium">
+                  {userProfile?.fbr_seller_address || 'Not configured'}
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Admin Only: System Sync Token */}
           {userProfile?.role === 'admin' && (

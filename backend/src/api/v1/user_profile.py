@@ -14,6 +14,7 @@ from src.api.middleware.auth_middleware import require_authentication
 from src.api.deps import get_database_session
 from src.models.user import User
 from src.models.user_saved_product import UserSavedProduct
+from src.services.company_service import get_company_member_ids, is_company_owner
 from src.utils.encryption import get_encryption_service
 from src.services.auto_posting_service import AutoPostingService
 from src.utils.helpers import extract_invoice_number_suffix, format_invoice_number
@@ -25,6 +26,27 @@ from src.schemas.auto_posting import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# contracts §3 — employees get 403 on company-level settings writes
+_COMPANY_SETTINGS_OWNER_ONLY = "Only the company owner can update company settings"
+
+
+def _require_company_settings_owner(user: User) -> None:
+    """
+    403 unless the actor is the company owner (``company_id == id``).
+
+    Numbering and auto-posting configuration are single-source company state
+    held on the owner's row; members may not mutate them (contracts §3).
+    """
+    if not is_company_owner(user):
+        logger.warning(
+            "Non-owner user %s attempted company settings update (FR-015)",
+            user.id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=_COMPANY_SETTINGS_OWNER_ONLY,
+        )
 
 
 class UserProfileResponse(BaseModel):
@@ -82,15 +104,19 @@ async def get_user_profile(
                 detail="User not found"
             )
 
+        # Saved products are company-shared, so the counts reflect every
+        # member's items (identical numbers for owner and employees).
+        member_ids = get_company_member_ids(db, user)
+
         # Count saved products
         saved_products_count = db.query(UserSavedProduct).filter(
-            UserSavedProduct.user_id == UUID(user_id),
+            UserSavedProduct.user_id.in_(member_ids),
             UserSavedProduct.is_active == 1
         ).count()
 
         # Count validated products
         validated_products_count = db.query(UserSavedProduct).filter(
-            UserSavedProduct.user_id == UUID(user_id),
+            UserSavedProduct.user_id.in_(member_ids),
             UserSavedProduct.is_active == 1,
             UserSavedProduct.fbr_validated == True
         ).count()
@@ -171,14 +197,18 @@ async def update_user_profile(
 
         logger.info(f"User {user_id} updated profile")
 
+        # Saved products are company-shared, so the counts reflect every
+        # member's items (identical numbers for owner and employees).
+        member_ids = get_company_member_ids(db, user)
+
         # Count saved products
         saved_products_count = db.query(UserSavedProduct).filter(
-            UserSavedProduct.user_id == UUID(user_id),
+            UserSavedProduct.user_id.in_(member_ids),
             UserSavedProduct.is_active == 1
         ).count()
 
         validated_products_count = db.query(UserSavedProduct).filter(
-            UserSavedProduct.user_id == UUID(user_id),
+            UserSavedProduct.user_id.in_(member_ids),
             UserSavedProduct.is_active == 1,
             UserSavedProduct.fbr_validated == True
         ).count()
@@ -280,6 +310,10 @@ async def update_invoice_settings(
                 detail="User not found"
             )
 
+        # Owner-only write: numbering settings are single-source company state
+        # held on the owner's row (contracts §3); employees get 403.
+        _require_company_settings_owner(user)
+
         # Update fields if provided
         if settings_update.invoice_prefix is not None:
             user.invoice_prefix = settings_update.invoice_prefix
@@ -345,10 +379,14 @@ async def get_next_invoice_number(
         from src.utils.helpers import get_next_invoice_number, fetch_automation_invoice_numbers
         invoice_number, next_number = get_next_invoice_number(db, user)
 
-        # Get user's invoice settings
-        prefix = user.invoice_prefix or 'INV-'
-        padding = user.invoice_padding or 4
-        include_year = user.invoice_include_year or False
+        # Company-linked members number under the OWNER's settings — the
+        # company's single numbering configuration (the owner's row also holds
+        # the company's only FBR credential set).
+        from src.services.company_service import resolve_effective_user
+        effective_user = resolve_effective_user(db, user)
+        prefix = effective_user.invoice_prefix or 'INV-'
+        padding = effective_user.invoice_padding or 4
+        include_year = effective_user.invoice_include_year or False
 
         # Advance past any invoice numbers already used in the automation DB
         automation_numbers = await fetch_automation_invoice_numbers(request)
@@ -442,6 +480,10 @@ async def update_auto_posting_config(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found"
             )
+
+        # Owner-only write: auto-posting config is single-source company state
+        # held on the owner's row (contracts §3); employees get 403.
+        _require_company_settings_owner(user)
 
         # Initialize service for validation
         service = AutoPostingService(db)

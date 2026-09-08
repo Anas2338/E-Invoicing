@@ -200,15 +200,20 @@ def list_employees(
     db: Session = Depends(get_db),
 ):
     """
-    List the caller's company members — owner + active + deactivated
-    employees (deactivated members keep company_id so their rows remain
-    company data). Owner-only.
+    List the caller's company team — owner + active employees.
+
+    Removed (deactivated) members are hidden from the team list: their
+    accounts keep company_id so every row they created stays company
+    data, but they only reappear here if a portal admin re-activates
+    them. Owner-only.
     """
     actor = _load_actor(db, current_user_id)
     _require_owner(actor)
 
     members = db.exec(
-        select(User).where(User.company_id == actor.id).order_by(User.created_at)
+        select(User)
+        .where(User.company_id == actor.id, User.is_active.is_(True))
+        .order_by(User.created_at)
     ).all()
 
     return {

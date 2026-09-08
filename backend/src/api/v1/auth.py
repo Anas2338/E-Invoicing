@@ -16,6 +16,7 @@ from src.models.user import User
 from src.schemas.user import UserCreate, UserLogin, UserToken, UserProfile, UserProfileUpdate, PasswordResetWithPin, PasswordResetRequest, PasswordResetVerify, PasswordResetConfirm
 from src.services.email_service import send_reset_pin_email
 from src.api.middleware.auth_middleware import require_authentication
+from src.services.company_service import is_company_owner, resolve_effective_user
 from src.utils.jwt_utils import create_access_token, create_refresh_token
 from src.utils.helpers import sanitize_input
 from src.utils.password_validator import validate_password_strength
@@ -183,6 +184,10 @@ def login_user(request: Request, user_login: UserLogin, db: Session = Depends(ge
         csrf_token = secrets.token_urlsafe(32)
 
         # Prepare user profile response
+        # Company-linked members act under the OWNER's row — it holds the
+        # company's single FBR credential set, so derived access flags show
+        # the company's capability. Tokens are never returned.
+        effective_user = resolve_effective_user(db, user)
         user_profile = {
             "id": str(user.id),
             "email": user.email,
@@ -191,8 +196,8 @@ def login_user(request: Request, user_login: UserLogin, db: Session = Depends(ge
             "created_at": user.created_at.isoformat() if user.created_at else None,
             "updated_at": user.updated_at.isoformat() if user.updated_at else None,
             "approval_flags": user.approval_flags or {},
-            "has_production_access": (user.approval_flags.get('has_production_access', False) if user.approval_flags else False) or bool(user.fbr_production_token),
-            "can_post_to_production": (user.approval_flags.get('can_post_to_production', False) if user.approval_flags else False) or bool(user.fbr_production_token),
+            "has_production_access": (effective_user.approval_flags.get('has_production_access', False) if effective_user.approval_flags else False) or bool(effective_user.fbr_production_token),
+            "can_post_to_production": (effective_user.approval_flags.get('can_post_to_production', False) if effective_user.approval_flags else False) or bool(effective_user.fbr_production_token),
             "automation_enabled": user.automation_enabled,
             "company_id": str(user.company_id) if user.company_id else None,
             "is_company_owner": user.company_id is None or user.company_id == user.id
@@ -423,6 +428,11 @@ def get_profile(
                 detail="User not found"
             )
 
+        # Company-linked members are served the OWNER's seller identity and
+        # numbering settings — the owner's row is the company's single
+        # configuration source. Token fields are never returned.
+        effective_user = resolve_effective_user(db, user)
+
         return UserProfile(
             id=user.id,
             email=user.email,
@@ -432,19 +442,19 @@ def get_profile(
             created_at=user.created_at,
             updated_at=user.updated_at,
             approval_flags=user.approval_flags or {},
-            has_production_access=(user.approval_flags.get('has_production_access', False) if user.approval_flags else False) or bool(user.fbr_production_token),
-            can_post_to_production=(user.approval_flags.get('can_post_to_production', False) if user.approval_flags else False) or bool(user.fbr_production_token),
+            has_production_access=(effective_user.approval_flags.get('has_production_access', False) if effective_user.approval_flags else False) or bool(effective_user.fbr_production_token),
+            can_post_to_production=(effective_user.approval_flags.get('can_post_to_production', False) if effective_user.approval_flags else False) or bool(effective_user.fbr_production_token),
             automation_enabled=user.automation_enabled,
             company_id=user.company_id,
             is_company_owner=user.company_id is None or user.company_id == user.id,
-            fbr_seller_ntn=user.fbr_seller_ntn,
-            fbr_business_name=user.fbr_business_name,
-            fbr_seller_province=user.fbr_seller_province,
-            fbr_seller_address=user.fbr_seller_address,
-            invoice_prefix=user.invoice_prefix,
-            invoice_start_number=user.invoice_start_number,
-            invoice_padding=user.invoice_padding,
-            invoice_include_year=user.invoice_include_year,
+            fbr_seller_ntn=effective_user.fbr_seller_ntn,
+            fbr_business_name=effective_user.fbr_business_name,
+            fbr_seller_province=effective_user.fbr_seller_province,
+            fbr_seller_address=effective_user.fbr_seller_address,
+            invoice_prefix=effective_user.invoice_prefix,
+            invoice_start_number=effective_user.invoice_start_number,
+            invoice_padding=effective_user.invoice_padding,
+            invoice_include_year=effective_user.invoice_include_year,
         )
     except HTTPException:
         raise
@@ -484,6 +494,11 @@ def update_profile(
         db.commit()
         db.refresh(user)
 
+        # Company-linked members are served the OWNER's seller identity and
+        # numbering settings — the owner's row is the company's single
+        # configuration source. Token fields are never returned.
+        effective_user = resolve_effective_user(db, user)
+
         return UserProfile(
             id=user.id,
             email=user.email,
@@ -493,19 +508,19 @@ def update_profile(
             created_at=user.created_at,
             updated_at=user.updated_at,
             approval_flags=user.approval_flags or {},
-            has_production_access=(user.approval_flags.get('has_production_access', False) if user.approval_flags else False) or bool(user.fbr_production_token),
-            can_post_to_production=(user.approval_flags.get('can_post_to_production', False) if user.approval_flags else False) or bool(user.fbr_production_token),
+            has_production_access=(effective_user.approval_flags.get('has_production_access', False) if effective_user.approval_flags else False) or bool(effective_user.fbr_production_token),
+            can_post_to_production=(effective_user.approval_flags.get('can_post_to_production', False) if effective_user.approval_flags else False) or bool(effective_user.fbr_production_token),
             automation_enabled=user.automation_enabled,
             company_id=user.company_id,
             is_company_owner=user.company_id is None or user.company_id == user.id,
-            fbr_seller_ntn=user.fbr_seller_ntn,
-            fbr_business_name=user.fbr_business_name,
-            fbr_seller_province=user.fbr_seller_province,
-            fbr_seller_address=user.fbr_seller_address,
-            invoice_prefix=user.invoice_prefix,
-            invoice_start_number=user.invoice_start_number,
-            invoice_padding=user.invoice_padding,
-            invoice_include_year=user.invoice_include_year,
+            fbr_seller_ntn=effective_user.fbr_seller_ntn,
+            fbr_business_name=effective_user.fbr_business_name,
+            fbr_seller_province=effective_user.fbr_seller_province,
+            fbr_seller_address=effective_user.fbr_seller_address,
+            invoice_prefix=effective_user.invoice_prefix,
+            invoice_start_number=effective_user.invoice_start_number,
+            invoice_padding=effective_user.invoice_padding,
+            invoice_include_year=effective_user.invoice_include_year,
         )
     except HTTPException:
         raise
@@ -684,6 +699,18 @@ def update_fbr_credentials(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found"
+            )
+
+        # Owner-only write: FBR credentials + seller identity are company-level
+        # settings held on the owner's row (contracts §3); employees get 403.
+        if not is_company_owner(user):
+            logger.warning(
+                "Non-owner user %s attempted FBR credentials update (FR-015)",
+                user.id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the company owner can update company settings"
             )
 
         # Determine which environment to update

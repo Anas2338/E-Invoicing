@@ -14,7 +14,6 @@ from src.database.session import get_automation_db
 from src.services.pdf_service import PDFService
 from src.services.automation_service import AutomationService
 from src.models.automation_invoice import AutomationInvoice, AutomationInvoiceStatus
-from src.api.middleware.auth_middleware import require_authentication
 from src.middleware.rbac import require_automation_access
 from src.schemas.automation import BatchPdfRequest
 

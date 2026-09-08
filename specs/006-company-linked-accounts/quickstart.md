@@ -31,8 +31,8 @@ cd ai-agent && uvicorn src.main:app --port 8002
 5. **Company worker behavior**: as the employee create + validate + post an invoice to the FBR sandbox → succeeds **with the company's credentials** (check the posting log); next invoice number continues the owner's sequence (`INV-XXXX` from company max, not a fresh `INV-0001`); buyers list shows company buyers.
 6. **Owner-only surfaces**: as the employee, Settings shows read-only company identity but no editable Business Information / numbering / auto-posting forms; direct PUTs to `/auth/profile/fbr-credentials` and `/profile/invoice-settings` → 403. Owner still edits all of it.
 7. **Delete matrix**: employee deleting the owner's manual invoice → allowed; deleting an automation-posted invoice → 403; owner deletes both fine.
-8. **Deactivation**: owner deactivates the employee → employee's open session dies (token bumped) and next login → 403; owner's dashboard still shows the employee's historical invoices. Add-employee with the deactivated email → 409.
-9. **Regression**: a second standalone account (not linked) sees only its own data, no Team section, Automation per its own flag; direct automation API with its JWT → 403 unless enabled.
+8. **Delete (removal)**: owner clicks **Delete** on the employee → the member is removed from the team list, their open session dies (token bumped) and next login → 403; owner's dashboard still shows the employee's historical invoices. Add-employee with the removed email → 409 (account row retained — delete is a soft deactivation, never a hard row deletion).
+9. **Regression**: a second standalone account (a single-member company owner) sees only its own data; its Settings Team section lists only itself; Automation behaves per its own flag; direct automation API with its JWT → 403 unless enabled.
 
 ## Automated tests
 

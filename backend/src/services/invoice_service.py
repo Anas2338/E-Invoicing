@@ -64,17 +64,22 @@ def _clean_ntn_cnic(value: str) -> str:
     return s
 
 
-def get_user_environment_filter(user: User) -> Optional[str]:
+def get_user_environment_filter(db: Session, user: User) -> Optional[str]:
     """
-    Determine the FBR environment(s) a user can access based on their tokens.
+    Determine the FBR environment(s) a user's COMPANY can access, based on the
+    EFFECTIVE user's tokens (the owner's row holds the company's single FBR
+    credential set; employees carry no tokens of their own).
+
     Returns:
-        None if user has both sandbox and production tokens (show all invoices)
-        "SANDBOX" if user only has sandbox token
-        "PRODUCTION" if user only has production token
-        None if user has neither token (show all invoices — no token configured yet)
+        None if the company has both sandbox and production tokens (show all invoices)
+        "SANDBOX" if only a sandbox token is configured
+        "PRODUCTION" if only a production token is configured
+        None if neither token is configured (show all invoices)
     """
-    has_sandbox = bool(user.fbr_sandbox_token)
-    has_production = bool(user.fbr_production_token)
+    from src.services.company_service import resolve_effective_user
+    effective = resolve_effective_user(db, user)
+    has_sandbox = bool(effective.fbr_sandbox_token)
+    has_production = bool(effective.fbr_production_token)
 
     if has_sandbox and has_production:
         return None
@@ -110,10 +115,13 @@ class InvoiceService:
         # Generate external ID if not provided
         external_id = invoice_create.external_id or f"INV-{int(datetime.utcnow().timestamp())}-{hash(str(invoice_create.invoice_type)) % 10000}"
 
-        # Check for existing DRAFT invoice with same external_id for this user — update instead of duplicate
+        # Check for existing DRAFT invoice with same external_id for the COMPANY
+        # — update instead of duplicate. Company-wide: invoice numbers belong to
+        # the company sequence, so the draft-dedup must not let two members hold
+        # drafts with the same number. Standalone users resolve to themselves.
         existing = db.query(Invoice).filter(
             Invoice.external_id == external_id,
-            Invoice.user_id == user_id,
+            Invoice.user_id.in_(self._member_scope_ids(db, user_id)),
             Invoice.status == InvoiceStatus.DRAFT
         ).first()
         if existing:
@@ -161,9 +169,29 @@ class InvoiceService:
 
         return db_invoice
 
+    def _member_scope_ids(self, db: Session, user_id: UUID) -> List[UUID]:
+        """
+        Resolve the company scope for VISIBILITY queries: the acting user plus
+        every member of their company (deactivated employees included — their
+        rows remain company data). Standalone accounts resolve to ``[user_id]``,
+        which keeps their behavior identical to the pre-company model.
+
+        Creator/owner semantics (attribution, delete-matrix checks) are NOT
+        affected — callers keep the acting ``user_id`` for those.
+        """
+        actor = db.get(User, user_id)
+        if actor is None:
+            return [user_id]
+        from src.services.company_service import get_company_member_ids
+
+        return get_company_member_ids(db, actor)
+
     def get_invoice_by_id(self, db: Session, invoice_id: UUID, user_id: UUID) -> Optional[Invoice]:
         """
         Get an invoice by its ID, ensuring the user has access.
+
+        Access is company-wide: any member may read any invoice their company
+        owns, including rows created by deactivated employees.
 
         Args:
             db: Database session
@@ -173,10 +201,11 @@ class InvoiceService:
         Returns:
             Invoice object if found and user has access, None otherwise
         """
+        member_ids = self._member_scope_ids(db, user_id)
         invoice = db.exec(
             select(Invoice)
             .where(Invoice.id == invoice_id)
-            .where(Invoice.user_id == user_id)
+            .where(Invoice.user_id.in_(member_ids))
             .where(Invoice.is_deleted == False)
         ).first()
 
@@ -231,7 +260,8 @@ class InvoiceService:
         Returns:
             List of Invoice objects matching the criteria
         """
-        query = select(Invoice).where(Invoice.user_id == user_id).where(Invoice.is_deleted == False)
+        member_ids = self._member_scope_ids(db, user_id)
+        query = select(Invoice).where(Invoice.user_id.in_(member_ids)).where(Invoice.is_deleted == False)
 
         # Apply environment override first (hard limit based on user tokens)
         if environment_override:
@@ -404,11 +434,14 @@ class InvoiceService:
         """
         from src.models.posting_log import PostingLog
 
-        # Get the invoice (without is_deleted filter for deletion)
+        # Get the invoice (without is_deleted filter for deletion).
+        # Company scope: any member may delete a manual invoice company-wide;
+        # the route layer enforces the automation-posted owner-only matrix.
+        member_ids = self._member_scope_ids(db, user_id)
         invoice = db.exec(
             select(Invoice)
             .where(Invoice.id == invoice_id)
-            .where(Invoice.user_id == user_id)
+            .where(Invoice.user_id.in_(member_ids))
         ).first()
 
         if not invoice:
@@ -447,11 +480,12 @@ class InvoiceService:
         """
         from src.models.posting_log import PostingLog
 
-        # Find which invoices belong to this user
+        # Find which invoices belong to this user's company
+        member_ids = self._member_scope_ids(db, user_id)
         existing_ids = db.exec(
             select(Invoice.id)
             .where(Invoice.id.in_(invoice_ids))
-            .where(Invoice.user_id == user_id)
+            .where(Invoice.user_id.in_(member_ids))
         ).all()
 
         found_ids = set(existing_ids)
@@ -491,7 +525,8 @@ class InvoiceService:
         """
         from sqlalchemy import func
 
-        query = select(func.count(Invoice.id)).where(Invoice.user_id == user_id).where(Invoice.is_deleted == False)
+        member_ids = self._member_scope_ids(db, user_id)
+        query = select(func.count(Invoice.id)).where(Invoice.user_id.in_(member_ids)).where(Invoice.is_deleted == False)
 
         # Apply environment override (hard limit based on user tokens — applies regardless of filters)
         if environment_override:
@@ -527,9 +562,11 @@ class InvoiceService:
         Returns:
             Dictionary with prev_id and next_id (both nullable UUIDs)
         """
-        # Base filters shared across queries
+        # Base filters shared across queries — company-wide visibility so
+        # prev/next navigation spans the whole company's invoice list
+        member_ids = self._member_scope_ids(db, user_id)
         base_filters = [
-            Invoice.user_id == user_id,
+            Invoice.user_id.in_(member_ids),
             Invoice.is_deleted == False,
         ]
         if environment:
@@ -539,7 +576,7 @@ class InvoiceService:
         current = db.exec(
             select(Invoice.created_at)
             .where(Invoice.id == invoice_id)
-            .where(Invoice.user_id == user_id)
+            .where(Invoice.user_id.in_(member_ids))
             .where(Invoice.is_deleted == False)
         ).first()
 
@@ -629,9 +666,11 @@ class InvoiceService:
         Returns:
             Tuple of (list of normalized invoice dicts, total count)
         """
-        # Build query for main database Invoice table only
+        # Build query for main database Invoice table only — company-wide:
+        # every member sees the same unified history (manual + automation)
+        member_ids = self._member_scope_ids(db, user_id)
         query = select(Invoice).where(
-            Invoice.user_id == user_id,
+            Invoice.user_id.in_(member_ids),
             Invoice.is_deleted == False
         )
 
@@ -661,7 +700,7 @@ class InvoiceService:
 
         # Get total count
         count_query = select(Invoice).where(
-            Invoice.user_id == user_id,
+            Invoice.user_id.in_(member_ids),
             Invoice.is_deleted == False
         )
         if source == "manual":

@@ -112,10 +112,16 @@ def _generate_auto_invoice_numbers(
 
     prefix, start_number, padding, include_year = _get_user_invoice_settings(user)
 
+    # Company-wide sequence: the latest invoice continues the COMPANY's
+    # numbering, so rows attributed to other members (e.g. employees) advance
+    # the same sequence as the owner's. Standalone accounts resolve to
+    # themselves — identical to the pre-company behavior.
+    from src.services.company_service import get_company_member_ids
+    member_ids = get_company_member_ids(db, user)
     latest = db.exec(
         select(InvoiceModel)
         .where(
-            InvoiceModel.user_id == user.id,
+            InvoiceModel.user_id.in_(member_ids),
             InvoiceModel.is_deleted == False,
         )
         .order_by(InvoiceModel.created_at.desc())
@@ -761,35 +767,45 @@ def parse_excel_for_staging(
     if df.empty:
         return []
 
-    # --- Check for duplicate invoice numbers already in the database ---
-    from src.models.invoice import Invoice as InvoiceModel
+    # --- Collect invoice numbers explicitly present in the file ---
     excel_invoice_numbers: set[str] = set()
     for _, raw_row in df.iterrows():
         inv_num = _clean_ntn_cnic(raw_row.get("invoice_number"))
         if inv_num:
             excel_invoice_numbers.add(inv_num)
 
-    existing_invoice_numbers: set[str] = set()
-    if excel_invoice_numbers:
-        existing = db.exec(
-            select(InvoiceModel.external_id).where(
-                InvoiceModel.external_id.in_(excel_invoice_numbers),
-                InvoiceModel.user_id == user_id,
-                InvoiceModel.is_deleted == False,
-            )
-        ).all()
-        existing_invoice_numbers = set(existing)
-
     # --- Fetch seller info ---
     seller_info: dict = {}
     user = db.get(User, user_id)
     if user:
+        # Company-linked members stage under the OWNER's seller identity — the
+        # company's single seller profile
+        from src.services.company_service import resolve_effective_user
+        user = resolve_effective_user(db, user)
         seller_info = {
             "seller_ntn_cnic": user.fbr_seller_ntn or "",
             "seller_business_name": user.fbr_business_name or "",
             "seller_province": user.fbr_seller_province or "",
             "seller_address": user.fbr_seller_address or "",
         }
+
+    # --- Check for duplicate invoice numbers already used by the company ---
+    # Company-consistent: a number used by ANY member is taken, so an
+    # employee's explicit invoice number cannot collide with the owner's (or
+    # another member's) sequence.
+    from src.models.invoice import Invoice as InvoiceModel
+    existing_invoice_numbers: set[str] = set()
+    if excel_invoice_numbers and user:
+        from src.services.company_service import get_company_member_ids
+        member_ids = get_company_member_ids(db, user)
+        existing = db.exec(
+            select(InvoiceModel.external_id).where(
+                InvoiceModel.external_id.in_(excel_invoice_numbers),
+                InvoiceModel.user_id.in_(member_ids),
+                InvoiceModel.is_deleted == False,
+            )
+        ).all()
+        existing_invoice_numbers = set(existing)
 
     # --- Auto-issue invoice numbers for blank rows ---
     # One new sequential number per blank row, based on the user's numbering
@@ -1056,6 +1072,10 @@ def parse_excel_for_manual_invoice(
     if user_id and main_db:
         user = main_db.get(User, user_id)
         if user:
+            # Company-linked members create invoices under the OWNER's seller
+            # identity — the company's single seller profile
+            from src.services.company_service import resolve_effective_user
+            user = resolve_effective_user(main_db, user)
             seller_info = {
                 "seller_ntn_cnic": user.fbr_seller_ntn or "",
                 "seller_business_name": user.fbr_business_name or "",

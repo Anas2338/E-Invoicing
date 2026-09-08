@@ -25,6 +25,7 @@ from src.api.deps import get_database_session
 from src.api.middleware.auth_middleware import require_authentication
 from src.models.user import User
 from src.models.user_saved_product import UserSavedProduct
+from src.services.company_service import get_company_member_ids
 from src.schemas.report import InvoiceReportResponse, ReportYearsResponse
 from src.services.invoice_service import get_user_environment_filter
 from src.services.report_pdf_service import ReportPDFService
@@ -58,7 +59,7 @@ def get_report_years(
     """
     user_uuid = UUID(user_id)
     user = db.get(User, user_uuid)
-    env_filter = get_user_environment_filter(user) if user else None
+    env_filter = get_user_environment_filter(db, user) if user else None
 
     return ReportYearsResponse(years=fetch_available_years(db, user_uuid, env_filter))
 
@@ -83,11 +84,12 @@ def get_invoice_report(
     date_from, date_to = validate_date_range(date_from, date_to)
 
     user = db.get(User, user_uuid)
-    env_filter = get_user_environment_filter(user) if user else None
+    env_filter = get_user_environment_filter(db, user) if user else None
 
     invoices = fetch_report_invoices(db, user_uuid, date_from, date_to, env_filter)
+    member_ids = get_company_member_ids(db, user) if user else [user_uuid]
     saved_products = db.execute(
-        select(UserSavedProduct).where(UserSavedProduct.user_id == user_uuid)
+        select(UserSavedProduct).where(UserSavedProduct.user_id.in_(member_ids))
     ).scalars().all()
     data = build_report_data(invoices, date_from, date_to, saved_products)
 
@@ -110,7 +112,7 @@ async def get_invoice_report_pdf(
     date_from, date_to = validate_date_range(date_from, date_to)
 
     user = db.get(User, user_uuid)
-    env_filter = get_user_environment_filter(user) if user else None
+    env_filter = get_user_environment_filter(db, user) if user else None
 
     invoices = fetch_report_invoices(db, user_uuid, date_from, date_to, env_filter)
     data = build_report_data(invoices, date_from, date_to)

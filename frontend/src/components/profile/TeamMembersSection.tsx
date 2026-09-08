@@ -4,11 +4,12 @@
  * Team members section — company owner only.
  *
  * Owners (including standalone single-member companies, where the list is
- * just themselves) can add employee accounts and deactivate them. The
- * generated temporary password is shown ONCE with a copy affordance.
+ * just themselves) can add employee accounts and remove them with Delete.
+ * Delete deactivates the account server-side (login dies instantly, data
+ * rows stay company data) and the member drops off the team list.
  *
  * Pattern: SavedItemsSection.tsx — hand-rolled fixed inset-0 modal,
- * react-toastify feedback, window.confirm for deactivation.
+ * react-toastify feedback, window.confirm for removal.
  */
 
 import { useState, useEffect } from 'react';
@@ -17,7 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { toast } from 'react-toastify';
-import { Users, Plus, Loader2, Copy, Shield, UserX, X } from 'lucide-react';
+import { Users, Plus, Loader2, Copy, Shield, Trash2, X } from 'lucide-react';
 import { companyApi, CompanyMember } from '@/services/companyApi';
 
 export default function TeamMembersSection() {
@@ -25,7 +26,7 @@ export default function TeamMembersSection() {
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [deactivatingId, setDeactivatingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Add-employee form state
   const [email, setEmail] = useState('');
@@ -99,28 +100,29 @@ export default function TeamMembersSection() {
     }
   };
 
-  const handleDeactivate = async (member: CompanyMember) => {
+  const handleDeleteMember = async (member: CompanyMember) => {
     const confirmed = window.confirm(
-      `Deactivate ${member.name} (${member.email})?\n\n` +
-      'Their login will stop working immediately and their session will end. ' +
-      'All data they created stays with the company.'
+      `Delete ${member.name} (${member.email}) from your team?\n\n` +
+      'They will lose access immediately and be removed from this list. ' +
+      'Their invoices and other data stay with the company for records and FBR audit.'
     );
     if (!confirmed) return;
 
     try {
-      setDeactivatingId(member.id);
+      setDeletingId(member.id);
+      // Delete = deactivation under the hood: access dies instantly, the
+      // member drops off the team list (list API returns active members
+      // only), but every row they created stays company data — never a
+      // hard row deletion (FR-011).
       await companyApi.deactivateEmployee(member.id);
-      toast.success(`${member.name} has been deactivated`);
+      toast.success(`${member.name} has been removed from the team`);
       await loadMembers();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to deactivate employee');
+      toast.error(error instanceof Error ? error.message : 'Failed to delete employee');
     } finally {
-      setDeactivatingId(null);
+      setDeletingId(null);
     }
   };
-
-  const activeMembers = members.filter((m) => m.is_active);
-  const deactivatedMembers = members.filter((m) => !m.is_active);
 
   return (
     <>
@@ -148,7 +150,7 @@ export default function TeamMembersSection() {
                 </p>
               )}
 
-              {activeMembers.map((member) => (
+              {members.map((member) => (
                 <div
                   key={member.id}
                   className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl border border-[#e1e3e5] dark:border-[#2e2e2e] bg-white dark:bg-[#161616]"
@@ -180,42 +182,20 @@ export default function TeamMembersSection() {
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={deactivatingId === member.id}
-                      onClick={() => handleDeactivate(member)}
+                      disabled={deletingId === member.id}
+                      onClick={() => handleDeleteMember(member)}
                       className="flex items-center gap-2 h-8 text-xs border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 shrink-0"
                     >
-                      {deactivatingId === member.id ? (
+                      {deletingId === member.id ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       ) : (
-                        <UserX className="h-3.5 w-3.5" />
+                        <Trash2 className="h-3.5 w-3.5" />
                       )}
-                      Deactivate
+                      Delete
                     </Button>
                   )}
                 </div>
               ))}
-
-              {deactivatedMembers.length > 0 && (
-                <div className="pt-2">
-                  <p className="text-xs font-semibold text-[#6d7175] dark:text-[#8c9196] mb-2 uppercase tracking-wide">
-                    Deactivated ({deactivatedMembers.length})
-                  </p>
-                  {deactivatedMembers.map((member) => (
-                    <div
-                      key={member.id}
-                      className="flex items-center justify-between gap-3 p-3 rounded-xl border border-dashed border-[#e1e3e5] dark:border-[#2e2e2e] bg-neutral-50 dark:bg-neutral-900/50 opacity-70"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-[#202223] dark:text-[#e3e3e3] truncate">{member.name}</p>
-                        <p className="text-xs text-[#6d7175] dark:text-[#8c9196] truncate">{member.email}</p>
-                      </div>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#fee2e2] text-[#991b1b] dark:bg-[#7f1d1d]/40 dark:text-[#f87171] shrink-0">
-                        Deactivated
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
 
               <Button
                 size="default"

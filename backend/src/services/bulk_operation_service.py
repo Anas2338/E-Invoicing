@@ -23,6 +23,7 @@ from src.models.bulk_operation import (
 from src.services.fbr_service import fbr_service
 from src.services.posting_service import PostingService
 from src.services.invoice_service import InvoiceService
+from src.services.company_service import resolve_effective_user
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +130,10 @@ class BulkOperationService:
                             })
                             _update_task(db, task)
                             continue
+
+                        # Bulk validation is a MANUAL worker flow: company
+                        # members validate with the OWNER's credentials
+                        user = resolve_effective_user(db, user)
 
                         # Select and decrypt token based on environment
                         encrypted_token = _get_fbr_token(user, invoice.environment)

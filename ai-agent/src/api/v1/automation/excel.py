@@ -21,7 +21,6 @@ from src.services.background_validation_service import BackgroundValidationServi
 from src.models.automation_invoice import AutomationInvoiceStatus
 from src.utils.excel_validator import ExcelValidator
 from src.utils.secure_file_validator import SecureFileValidator
-from src.api.middleware.auth_middleware import require_authentication
 from src.middleware.rbac import require_automation_access
 from src.config.settings import settings
 

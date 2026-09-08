@@ -9,6 +9,7 @@ from src.database.session import get_db
 from src.models.invoice import Invoice, InvoiceStatus
 from src.models.user import User
 from src.services.invoice_service import get_user_environment_filter
+from src.services.company_service import get_company_member_ids
 from src.api.middleware.auth_middleware import require_authentication
 from src.utils.rate_limits import RateLimits
 from slowapi import Limiter
@@ -40,13 +41,16 @@ def get_dashboard_stats(
 
     # Determine environment filter based on user's available FBR tokens
     user = db.get(User, user_uuid)
-    env_filter = get_user_environment_filter(user) if user else None
+    env_filter = get_user_environment_filter(db, user) if user else None
+
+    # Dashboard stats are company-wide: every member sees the same numbers
+    member_ids = get_company_member_ids(db, user) if user else [user_uuid]
 
     # Query 1: Get manual invoice counts by status (single query with GROUP BY)
     manual_counts_base = select(
         Invoice.status,
         func.count(Invoice.id).label('count')
-    ).where(Invoice.user_id == user_uuid)
+    ).where(Invoice.user_id.in_(member_ids))
 
     # Apply environment filter
     if env_filter:
@@ -68,7 +72,7 @@ def get_dashboard_stats(
             manual_stats[status_lower] = count
 
     # Query 2: Get recent 10 invoices (lightweight - only needed fields)
-    recent_invoices_base = select(Invoice).where(Invoice.user_id == user_uuid)
+    recent_invoices_base = select(Invoice).where(Invoice.user_id.in_(member_ids))
 
     # Apply environment filter
     if env_filter:

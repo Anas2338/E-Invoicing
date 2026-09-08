@@ -22,7 +22,6 @@ from src.schemas.file_management import (
     DeleteInvoiceResponse,
     DeleteUploadSessionResponse,
 )
-from src.api.middleware.auth_middleware import require_authentication
 from src.middleware.rbac import require_automation_access
 
 

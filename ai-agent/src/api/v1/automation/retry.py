@@ -11,10 +11,10 @@ from datetime import datetime
 import logging
 
 from src.database.session import get_automation_db, get_db
-from src.api.middleware.auth_middleware import require_authentication
 from src.models.automation_invoice import AutomationInvoice, AutomationInvoiceStatus
 from src.models.user import User
 from src.services.fbr_client import FBRClient
+from src.middleware.rbac import require_automation_access
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -25,7 +25,7 @@ async def retry_failed_invoice(
     invoice_id: UUID,
     automation_db: Session = Depends(get_automation_db),
     main_db: Session = Depends(get_db),
-    user_id: str = Depends(require_authentication)
+    user_id: str = Depends(require_automation_access)
 ):
     """
     Retry a failed or pending automation invoice with actual FBR re-validation.

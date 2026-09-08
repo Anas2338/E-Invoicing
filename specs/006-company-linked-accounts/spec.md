@@ -101,8 +101,8 @@ Every existing customer today has one account that represents their whole compan
 
 **Acceptance Scenarios**:
 
-1. **Given** a standalone customer account (not linked to any company), **When** they use the portal as before, **Then** all existing screens and behavior are unchanged.
-2. **Given** a standalone customer account, **When** they attempt to use team-management features, **Then** they are not available unless the account is a company owner.
+1. **Given** a standalone customer account — the owner of its own single-member company (`company_id == id`) — **When** they use the portal as before, **Then** all existing screens and behavior are unchanged.
+2. **Given** a standalone customer account (a single-member company owner), **When** they open Settings, **Then** the Team section is visible and lists only themselves as the single member — team mechanics run only via owner-type accounts (FR-014), and employees never see them.
 3. **Given** an Automation-enabled standalone customer, **When** they log in, **Then** Automation still works exactly as before.
 
 ---

@@ -17,10 +17,26 @@ import io
 from src.api.middleware.auth_middleware import require_authentication
 from src.api.deps import get_database_session
 from src.models.user_saved_product import UserSavedProduct
+from src.models.user import User
 from src.models.fbr_master_data import FBRHSCode, FBRTransactionType, FBRUOM, FBRUOM
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _company_member_ids(db, user_uuid: UUID) -> list:
+    """
+    Company-wide VISIBILITY scope: the actor plus every member of their
+    company (deactivated employees included). Standalone accounts resolve to
+    ``[actor]`` — identical to pre-company behavior. Creator attribution on
+    each row (``user_id``) is untouched.
+    """
+    from src.services.company_service import get_company_member_ids
+
+    user = db.get(User, user_uuid)
+    if user is None:
+        return [user_uuid]
+    return get_company_member_ids(db, user)
 
 
 class SavedProductCreate(BaseModel):
@@ -87,8 +103,10 @@ async def get_saved_products(
         List of saved products
     """
     try:
+        # Saved products are company-shared: every member sees the same list
+        member_ids = _company_member_ids(db, UUID(user_id))
         query = db.query(UserSavedProduct).filter(
-            UserSavedProduct.user_id == UUID(user_id)
+            UserSavedProduct.user_id.in_(member_ids)
         )
 
         if active_only:
@@ -146,7 +164,7 @@ async def get_saved_product(
     try:
         product = db.query(UserSavedProduct).filter(
             UserSavedProduct.id == product_id,
-            UserSavedProduct.user_id == UUID(user_id)
+            UserSavedProduct.user_id.in_(_company_member_ids(db, UUID(user_id)))
         ).first()
 
         if not product:
@@ -317,7 +335,7 @@ async def update_saved_product(
     try:
         product = db.query(UserSavedProduct).filter(
             UserSavedProduct.id == product_id,
-            UserSavedProduct.user_id == UUID(user_id)
+            UserSavedProduct.user_id.in_(_company_member_ids(db, UUID(user_id)))
         ).first()
 
         if not product:
@@ -444,7 +462,7 @@ async def delete_saved_product(
     try:
         product = db.query(UserSavedProduct).filter(
             UserSavedProduct.id == product_id,
-            UserSavedProduct.user_id == UUID(user_id)
+            UserSavedProduct.user_id.in_(_company_member_ids(db, UUID(user_id)))
         ).first()
 
         if not product:
@@ -503,10 +521,10 @@ async def bulk_delete_saved_products(
                 detail="No product IDs provided"
             )
 
-        # Get all products that belong to the user
+        # Get all products that belong to the user's company
         products = db.query(UserSavedProduct).filter(
             UserSavedProduct.id.in_(product_ids),
-            UserSavedProduct.user_id == UUID(user_id)
+            UserSavedProduct.user_id.in_(_company_member_ids(db, UUID(user_id)))
         ).all()
 
         if not products:

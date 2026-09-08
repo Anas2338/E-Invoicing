@@ -38,7 +38,7 @@ The employee can log in immediately (`account_status = "approved"`).
 
 ### GET `/api/v1/company/employees`
 
-Lists the caller's company members (owner + active + deactivated employees). Caller must be the company owner.
+Lists the caller's company members — the owner + currently active employees. Removed (deactivated) employees drop from the team list (the Settings → Team "Delete" action); their account rows and every row they created remain company data. Caller must be the company owner.
 
 **Response 200**
 ```json

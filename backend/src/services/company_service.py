@@ -64,4 +64,5 @@ def get_company_member_ids(db: Session, actor: User) -> List[UUID]:
     """
     root_id = get_company_root_id(db, actor)
     statement = select(User.id).where(User.company_id == root_id)
-    return [row[0] for row in db.exec(statement).all()]
+    # Single-column selects come back from SQLModel as plain scalars (not rows)
+    return list(db.exec(statement).all())

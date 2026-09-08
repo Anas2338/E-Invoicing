@@ -10,6 +10,7 @@ from slowapi.util import get_remote_address
 
 from src.database.session import get_db
 from src.services.invoice_service import InvoiceService, get_user_environment_filter
+from src.services.company_service import is_company_owner, resolve_effective_user
 from src.services.fbr_service import fbr_service
 from src.services.auto_posting_service import AutoPostingService
 from src.services.pdf_service import PDFService
@@ -48,6 +49,21 @@ from src.models.bulk_operation import (
 logger = logging.getLogger(__name__)
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
+
+
+def _company_member_ids(db, user_uuid: UUID) -> list:
+    """
+    Company-wide VISIBILITY scope for route-level checks: the actor plus every
+    member of their company (deactivated employees included — their rows
+    remain company data). Standalone accounts resolve to ``[actor]``, which
+    keeps their behavior identical to the pre-company model.
+    """
+    user = db.get(User, user_uuid)
+    if user is None:
+        return [user_uuid]
+    from src.services.company_service import get_company_member_ids
+
+    return get_company_member_ids(db, user)
 
 
 @router.post("/", response_model=InvoiceResponse)
@@ -264,7 +280,7 @@ def get_unified_invoice_history(
 
     # Determine environment filter based on user's available FBR tokens
     user = db.get(User, user_uuid)
-    environment_filter = get_user_environment_filter(user) if user else None
+    environment_filter = get_user_environment_filter(db, user) if user else None
 
     # Get unified invoice history
     invoices, total = service.get_unified_invoice_history(
@@ -310,13 +326,16 @@ def get_buyers_from_invoice_history(
 
         # Determine environment filter based on user's available FBR tokens
         user = db.get(User, user_uuid)
-        env_filter = get_user_environment_filter(user) if user else None
+        env_filter = get_user_environment_filter(db, user) if user else None
 
-        # Get all invoices for this user with buyer information
+        # All invoices across the company — buyers are company-shared data
+        # (both members derive the same buyer list from the same history)
         from sqlmodel import select
 
+        member_ids = _company_member_ids(db, user_uuid)
+
         statement = select(Invoice).where(
-            Invoice.user_id == user_uuid,
+            Invoice.user_id.in_(member_ids),
             Invoice.is_deleted == False,
             Invoice.buyer_business_name.isnot(None),
             Invoice.buyer_business_name != ''
@@ -399,6 +418,7 @@ async def generate_bulk_pdf(
         StreamingResponse with PDF file
     """
     user_uuid = UUID(user_id)
+    member_ids = _company_member_ids(db, user_uuid)
 
     if not invoice_ids:
         raise HTTPException(
@@ -412,7 +432,8 @@ async def generate_bulk_pdf(
             detail=f"Cannot generate PDF for more than 50 invoices at once (got {len(invoice_ids)})"
         )
 
-    # Fetch all invoices and verify ownership
+    # Fetch all invoices and verify company membership (any member may PDF
+    # any invoice their company owns)
     invoices = []
     for invoice_id in invoice_ids:
         invoice = db.get(Invoice, invoice_id)
@@ -422,7 +443,7 @@ async def generate_bulk_pdf(
                 detail=f"Invoice {invoice_id} not found"
             )
 
-        if invoice.user_id != user_uuid:
+        if invoice.user_id not in member_ids:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"You do not have permission to access invoice {invoice_id}"
@@ -537,7 +558,7 @@ def get_adjacent_invoice(
     service = InvoiceService()
     user_uuid = UUID(user_id)
     user = db.get(User, user_uuid)
-    environment_override = get_user_environment_filter(user) if user else None
+    environment_override = get_user_environment_filter(db, user) if user else None
     result = service.get_adjacent_invoices(db, invoice_id, user_uuid, environment=environment_override)
     return result
 
@@ -558,7 +579,7 @@ def list_invoices(
 
     # Determine environment filter based on user's available FBR tokens
     user = db.get(User, user_uuid)
-    environment_override = get_user_environment_filter(user) if user else None
+    environment_override = get_user_environment_filter(db, user) if user else None
 
     # Get invoices with filters
     invoices = service.get_invoices_by_user(db, user_uuid, filters, environment_override)
@@ -683,12 +704,33 @@ def delete_invoice(
     user_id: str = Depends(require_authentication)
 ):
     """
-    Mark an invoice as deleted (soft delete).
+    Delete an invoice.
+
+    Delete matrix (data-model.md §5): any member may delete manual invoices
+    company-wide; automation-posted invoices (``automation_invoice_id`` set)
+    are owner-only. The row's ``user_id`` = creator is untouched (attribution).
     """
     service = InvoiceService()
 
     # Convert user_id string to UUID
     user_uuid = UUID(user_id)
+
+    # Pre-fetch to enforce the delete matrix (visibility is company-wide)
+    invoice = db.get(Invoice, invoice_id)
+    if not invoice or invoice.user_id not in _company_member_ids(db, user_uuid):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Invoice not found"
+        )
+
+    # Automation-posted invoices are owner-only (delete matrix §5)
+    if invoice.automation_invoice_id:
+        user = db.get(User, user_uuid)
+        if user is None or not is_company_owner(user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the company owner can delete automation-posted invoices"
+            )
 
     # Attempt to delete the invoice
     success = service.delete_invoice(db, invoice_id, user_uuid)
@@ -839,6 +881,10 @@ async def validate_invoice_with_fbr(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
+
+    # Company-linked members act under the OWNER's credentials — the owner's
+    # row holds the company's single FBR credential set (effective user)
+    user = resolve_effective_user(db, user)
 
     # Select the appropriate encrypted token based on invoice environment
     encrypted_token = None
@@ -999,6 +1045,10 @@ async def post_invoice_to_fbr(
             detail="User not found"
         )
 
+    # Company-linked members act under the OWNER's credentials — the owner's
+    # row holds the company's single FBR credential set (effective user)
+    user = resolve_effective_user(db, user)
+
     # Select the appropriate encrypted token based on invoice environment
     encrypted_token = None
     if invoice.environment == "SANDBOX":
@@ -1141,9 +1191,10 @@ async def manual_post_to_fbr(
     user_uuid = UUID(user_id)
     auto_posting_service = AutoPostingService(db)
 
-    # Get the invoice
+    # Get the invoice — visibility is company-wide: any member may manually
+    # post any validated invoice the company owns
     invoice = db.get(Invoice, invoice_id)
-    if not invoice or invoice.user_id != user_uuid:
+    if not invoice or invoice.user_id not in _company_member_ids(db, user_uuid):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Invoice not found"
@@ -1374,6 +1425,7 @@ async def get_invoice_pdf(
     For other statuses: Generates basic invoice PDF without FBR data
     """
     user_uuid = UUID(user_id)
+    member_ids = _company_member_ids(db, user_uuid)
 
     # Validate disposition
     if disposition not in ["attachment", "inline"]:
@@ -1390,8 +1442,8 @@ async def get_invoice_pdf(
             detail="Invoice not found"
         )
 
-    # Check ownership
-    if invoice.user_id != user_uuid:
+    # Check company membership
+    if invoice.user_id not in member_ids:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to access this invoice"
@@ -1599,7 +1651,35 @@ def bulk_delete_invoices(
     """
     service = InvoiceService()
     user_uuid = UUID(user_id)
-    result = service.bulk_delete_invoices(db, body.invoice_ids, user_uuid)
+
+    # Delete matrix (data-model.md §5): automation-posted invoices are
+    # owner-only. For a non-owner bulk request they are excluded from the
+    # deletion and reported in ``failed``.
+    invoice_ids = body.invoice_ids
+    user = db.get(User, user_uuid)
+    blocked_ids: List[UUID] = []
+    if user is not None and not is_company_owner(user):
+        from sqlmodel import select
+
+        blocked_ids = list(db.exec(
+            select(Invoice.id).where(
+                Invoice.id.in_(invoice_ids),
+                Invoice.automation_invoice_id.isnot(None),
+            )
+        ).all())
+        invoice_ids = [i for i in invoice_ids if i not in blocked_ids]
+
+    result = service.bulk_delete_invoices(db, invoice_ids, user_uuid)
+    result["failed"] = [
+        *(result.get("failed") or []),
+        *[
+            {
+                "invoice_id": str(i),
+                "error": "Only the company owner can delete automation-posted invoices",
+            }
+            for i in blocked_ids
+        ],
+    ]
     return BulkDeleteResponse(**result)
 
 

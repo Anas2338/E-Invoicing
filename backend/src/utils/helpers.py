@@ -50,27 +50,36 @@ def format_invoice_number(
 
 
 def get_next_invoice_number(db, user) -> tuple[str, int]:
-    """Compute the next invoice number for a user.
+    """Compute the next invoice number for a company.
 
-    Based on the user's invoice settings (prefix, start number, padding,
-    include_year) and their latest non-deleted invoice: the latest invoice's
-    trailing number + 1, or the configured start number if the latest invoice
-    has no numeric suffix / no invoices exist yet.
+    Based on the company's invoice settings (prefix, start number, padding,
+    include_year) — held on the EFFECTIVE (owner) row for company-linked
+    members — and the company's latest non-deleted invoice: the latest
+    invoice's trailing number + 1, or the configured start number if the
+    latest invoice has no numeric suffix / no invoices exist yet. Numbering
+    is company-wide: an employee's invoice continues the owner's sequence
+    instead of restarting at the configured start number.
 
     Returns (formatted_number, numeric_number) so callers can generate
     successive numbers by advancing the numeric part.
     """
     from src.models.invoice import Invoice
     from sqlmodel import select
+    from src.services.company_service import (
+        get_company_member_ids,
+        resolve_effective_user,
+    )
 
-    prefix = user.invoice_prefix or "INV-"
-    start_number = user.invoice_start_number or 1
-    padding = user.invoice_padding or 4
-    include_year = user.invoice_include_year or False
+    effective = resolve_effective_user(db, user)
+    prefix = effective.invoice_prefix or "INV-"
+    start_number = effective.invoice_start_number or 1
+    padding = effective.invoice_padding or 4
+    include_year = effective.invoice_include_year or False
 
+    member_ids = get_company_member_ids(db, effective)
     latest = db.exec(
         select(Invoice)
-        .where(Invoice.user_id == user.id, Invoice.is_deleted == False)
+        .where(Invoice.user_id.in_(member_ids), Invoice.is_deleted == False)
         .order_by(Invoice.created_at.desc())
     ).first()
 

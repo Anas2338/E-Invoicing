@@ -17,7 +17,6 @@ from src.schemas.agent import (
     AIAgentDecisionLog,
     AIAgentStatusSummary
 )
-from src.api.middleware.auth_middleware import require_authentication
 from src.middleware.rbac import require_automation_access
 
 router = APIRouter(prefix="/agent", tags=["ai-agent-status"])
