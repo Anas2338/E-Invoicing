@@ -166,10 +166,21 @@ async def get_all_invoice_ids(
     count_query = select(func.count(AutomationInvoice.id)).where(and_(*filters))
     total = db.exec(count_query).one()
 
-    ids_query = select(AutomationInvoice.id).where(and_(*filters))
-    invoice_ids = db.exec(ids_query).all()
+    # Fetch id + status together so the frontend can enforce bulk-action
+    # eligibility (e.g. no deleting transferred invoices) across all pages.
+    ids_query = select(AutomationInvoice.id, AutomationInvoice.status).where(and_(*filters))
+    rows = db.exec(ids_query).all()
+    invoice_ids = [row[0] for row in rows]
+    invoice_statuses = {
+        str(row[0]): row[1].value if isinstance(row[1], AutomationInvoiceStatus) else str(row[1])
+        for row in rows
+    }
 
-    return InvoiceIdsResponse(invoice_ids=invoice_ids, total=total)
+    return InvoiceIdsResponse(
+        invoice_ids=invoice_ids,
+        statuses=invoice_statuses,
+        total=total,
+    )
 
 
 @router.get("/invoice/{invoice_id}", response_model=InvoiceDetailResponse)

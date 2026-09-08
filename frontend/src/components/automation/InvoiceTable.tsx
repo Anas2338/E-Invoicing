@@ -80,6 +80,10 @@ export function InvoiceTable({
 }: InvoiceTableProps) {
   const [localFilters, setLocalFilters] = useState(filters);
   const [selectedInvoices, setSelectedInvoices] = useState<string[]>([]);
+  // id -> status snapshot for every selected invoice. Kept so bulk actions work
+  // on selections spanning multiple pages: `invoices` only holds the current page,
+  // and eligibility (e.g. don't delete transferred) must not drop off-page IDs.
+  const [selectedInvoiceStatuses, setSelectedInvoiceStatuses] = useState<Record<string, string>>({});
   const [bulkActionLoading, setBulkActionLoading] = useState(false);
   const [selectAllLoading, setSelectAllLoading] = useState(false);
   const [allSelected, setAllSelected] = useState(false);
@@ -137,47 +141,81 @@ export function InvoiceTable({
     return () => ro.disconnect();
   }, [invoices]);
 
+  const clearSelection = useCallback(() => {
+    setSelectedInvoices([]);
+    setSelectedInvoiceStatuses({});
+    setAllSelected(false);
+  }, []);
+
+  // Drop the selection whenever the applied filters change — the selection is a
+  // snapshot of the previously filtered list, and acting on it after re-filtering
+  // would silently operate on invoices the user is no longer looking at.
+  const lastFiltersRef = useRef(filters);
+  useEffect(() => {
+    if (lastFiltersRef.current === filters) return;
+    lastFiltersRef.current = filters;
+    clearSelection();
+  }, [filters, clearSelection]);
+
   const handleSelectAll = async (checked: boolean) => {
     if (checked) {
       setSelectAllLoading(true);
       try {
+        // Use localFilters: the `filters` prop lags behind the 400ms debounce
         const result = await automationApi.getAllInvoiceIds({
-          status: filters.status || undefined,
-          source: filters.source || undefined,
-          date_from: filters.date_from || undefined,
-          date_to: filters.date_to || undefined,
-          invoice_number: filters.invoice_number || undefined,
-          customer: filters.customer || undefined,
+          status: localFilters.status || undefined,
+          source: localFilters.source || undefined,
+          date_from: localFilters.date_from || undefined,
+          date_to: localFilters.date_to || undefined,
+          invoice_number: localFilters.invoice_number || undefined,
+          customer: localFilters.customer || undefined,
         });
         setSelectedInvoices(result.invoice_ids);
+        setSelectedInvoiceStatuses(result.statuses ?? {});
         setAllSelected(true);
       } catch {
         // Fallback: select only visible invoices
         setSelectedInvoices(invoices.map(inv => inv.id));
+        setSelectedInvoiceStatuses(
+          Object.fromEntries(invoices.map(inv => [inv.id, inv.status] as [string, string]))
+        );
         setAllSelected(false);
       } finally {
         setSelectAllLoading(false);
       }
     } else {
-      setSelectedInvoices([]);
-      setAllSelected(false);
+      clearSelection();
     }
   };
 
   const handleSelectInvoice = (invoiceId: string, checked: boolean) => {
     if (checked) {
       setSelectedInvoices([...selectedInvoices, invoiceId]);
+      const row = invoices.find(inv => inv.id === invoiceId);
+      if (row) {
+        setSelectedInvoiceStatuses(prev => ({ ...prev, [invoiceId]: row.status }));
+      }
     } else {
       setSelectedInvoices(selectedInvoices.filter(id => id !== invoiceId));
+      setSelectedInvoiceStatuses(prev => {
+        const next = { ...prev };
+        delete next[invoiceId];
+        return next;
+      });
       setAllSelected(false);
     }
   };
 
-  /** Filter `selectedInvoices` to only those whose status is in `validStatuses`. */
+  /**
+   * Filter `selectedInvoices` to only those whose status is in `validStatuses`.
+   * Statuses come from the selection snapshot (covers all pages); falls back to
+   * the current page's rows for selections made before the status map was known.
+   */
+  const getSelectedStatus = (id: string) =>
+    selectedInvoiceStatuses[id] ?? invoices.find(inv => inv.id === id)?.status ?? '';
+
   const filterEligible = (validStatuses: string[]) =>
-    selectedInvoices.filter(id => validStatuses.includes(
-      invoices.find(inv => inv.id === id)?.status ?? ''
-    ));
+    selectedInvoices.filter(id => validStatuses.includes(getSelectedStatus(id)));
 
   const handleBulkDelete = async () => {
     if (selectedInvoices.length === 0 || !onBulkDelete) return;
@@ -192,8 +230,7 @@ export function InvoiceTable({
     setBulkActionLoading(true);
     try {
       await onBulkDelete(eligible);
-      setSelectedInvoices([]);
-      setAllSelected(false);
+      clearSelection();
     } finally {
       setBulkActionLoading(false);
     }
@@ -208,7 +245,7 @@ export function InvoiceTable({
     setBulkActionLoading(true);
     try {
       await onBulkRetry(eligible);
-      setSelectedInvoices([]);
+      clearSelection();
     } finally {
       setBulkActionLoading(false);
     }
@@ -223,7 +260,7 @@ export function InvoiceTable({
     setBulkActionLoading(true);
     try {
       await onBulkPause(eligible);
-      setSelectedInvoices([]);
+      clearSelection();
     } finally {
       setBulkActionLoading(false);
     }
@@ -238,7 +275,7 @@ export function InvoiceTable({
     setBulkActionLoading(true);
     try {
       await onBulkResume(eligible);
-      setSelectedInvoices([]);
+      clearSelection();
     } finally {
       setBulkActionLoading(false);
     }
@@ -369,11 +406,10 @@ export function InvoiceTable({
   const BulkActionsSidebar = () => {
     const hasSelection = selectedInvoices.length > 0;
 
-    // Derive the statuses of selected invoices to smart-enable/disable each action
+    // Derive the statuses of selected invoices to smart-enable/disable each action.
+    // Uses the selection status snapshot so selections spanning pages enable correctly.
     const selectedStatuses = new Set(
-      invoices
-        .filter(inv => selectedInvoices.includes(inv.id))
-        .map(inv => inv.status)
+      selectedInvoices.map(id => getSelectedStatus(id)).filter(Boolean)
     );
 
     // Each action is enabled only when the selection includes at least one
@@ -552,9 +588,7 @@ export function InvoiceTable({
             {(() => {
               const hasSelection = selectedInvoices.length > 0;
               const selectedStatuses = new Set(
-                invoices
-                  .filter(inv => selectedInvoices.includes(inv.id))
-                  .map(inv => inv.status)
+                selectedInvoices.map(id => getSelectedStatus(id)).filter(Boolean)
               );
               const canRetry  = hasSelection && ['pending', 'failed', 'transfer_failed'].some(s => selectedStatuses.has(s));
               const canPause  = hasSelection && ['validated'].some(s => selectedStatuses.has(s));

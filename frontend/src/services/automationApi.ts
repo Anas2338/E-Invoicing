@@ -266,7 +266,11 @@ class AutomationApiClient {
     date_to?: string;
     invoice_number?: string;
     customer?: string;
-  }): Promise<{ invoice_ids: string[]; total: number }> {
+  }): Promise<{
+    invoice_ids: string[];
+    statuses: Record<string, string>;
+    total: number;
+  }> {
     const queryParams = new URLSearchParams();
     if (params.status) queryParams.append('status', params.status);
     if (params.source) queryParams.append('source', params.source);

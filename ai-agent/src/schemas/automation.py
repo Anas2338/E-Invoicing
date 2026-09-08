@@ -150,6 +150,11 @@ class InvoiceIdsResponse(BaseModel):
     """Schema for all invoice IDs matching filters (no pagination)."""
     invoice_ids: list[UUID]
     total: int
+    statuses: dict[str, str] = Field(
+        ...,
+        description="Map of invoice id (string) to its status, so the frontend can "
+        "check bulk-action eligibility for invoices across all pages",
+    )
 
 
 class BatchPdfRequest(BaseModel):
