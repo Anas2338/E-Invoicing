@@ -96,6 +96,18 @@ class FBRClient:
             logger.error(f"Failed to fetch UoM mappings: {str(e)}")
             return {}
 
+    def _map_buyer_registration_type(self, value: Any) -> str:
+        """
+        Map a local buyer_registration_type to the FBR wire value.
+
+        FBR accepts only "Registered" or "Unregistered". "Final Consumer" is a
+        local-only value (stored locally, never sent to FBR), so it is sent as
+        "Unregistered" - mirrors manual system's backend fbr_service transform.
+        """
+        if value is not None and str(value).strip().lower() == "final consumer":
+            return "Unregistered"
+        return value
+
     def _transform_items_to_fbr_format(self, items: list, uom_mapping: Dict[str, str]) -> list:
         """Transform items to FBR API format (matches manual system's _transform_invoice_to_fbr_format)."""
         transformed_items = []
@@ -197,7 +209,9 @@ class FBRClient:
             "buyerBusinessName": validation_data.get("buyer_business_name", ""),
             "buyerProvince": validation_data.get("buyer_province", ""),
             "buyerAddress": validation_data.get("buyer_address", ""),
-            "buyerRegistrationType": validation_data.get("buyer_registration_type", ""),
+            "buyerRegistrationType": self._map_buyer_registration_type(
+                validation_data.get("buyer_registration_type", "")
+            ),
             "items": transformed_items,
         }
 
@@ -283,7 +297,9 @@ class FBRClient:
             "buyerBusinessName": invoice_data.get("buyer_business_name", ""),
             "buyerProvince": invoice_data.get("buyer_province", ""),
             "buyerAddress": invoice_data.get("buyer_address", ""),
-            "buyerRegistrationType": invoice_data.get("buyer_registration_type", ""),
+            "buyerRegistrationType": self._map_buyer_registration_type(
+                invoice_data.get("buyer_registration_type", "")
+            ),
             "items": transformed_items,
         }
 
