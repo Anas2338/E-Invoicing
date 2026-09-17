@@ -25,6 +25,7 @@ from src.utils.manual_excel_helper import (
     _clean_ntn_cnic,
 )
 from src.services.invoice_service import InvoiceService
+from src.services.company_service import get_member_scope_ids
 from src.models.invoice import Invoice as InvoiceModel
 from src.models.user_saved_product import UserSavedProduct
 
@@ -293,8 +294,11 @@ class ExcelStagingService:
         # field) so invalid edits — e.g. an invoice number that already
         # exists in the user's history or elsewhere in this file — are
         # flagged immediately instead of silently accepted.
+        # Saved products are company-shared (same scope as the items page), so
+        # a member's row edit resolves codes saved by any member of the company.
+        member_ids = get_member_scope_ids(db, user_id)
         saved_items_stmt = select(UserSavedProduct).where(
-            UserSavedProduct.user_id == user_id,
+            UserSavedProduct.user_id.in_(member_ids),
             UserSavedProduct.is_active == 1,
         )
         saved_items = db.exec(saved_items_stmt).all()
@@ -308,14 +312,14 @@ class ExcelStagingService:
         )
         other_numbers = {n for n in db.exec(other_numbers_stmt).all() if n}
 
-        # Invoice numbers already saved in the user's history
+        # Invoice numbers already saved in the company's history
         existing_numbers: set[str] = set()
         invoice_number = str(row.invoice_number or "").strip()
         if invoice_number:
             existing_numbers = set(db.exec(
                 select(InvoiceModel.external_id).where(
                     InvoiceModel.external_id == invoice_number,
-                    InvoiceModel.user_id == user_id,
+                    InvoiceModel.user_id.in_(member_ids),
                     InvoiceModel.is_deleted == False,
                 )
             ).all())
@@ -384,9 +388,11 @@ class ExcelStagingService:
 
         errored_before = sum(1 for r in all_rows if not r.is_valid)
 
-        # Fetch saved items for validation
+        # Fetch saved items for validation — company-shared scope, same as the
+        # items page (see update_row)
+        member_ids = get_member_scope_ids(db, user_id)
         saved_items_stmt = select(UserSavedProduct).where(
-            UserSavedProduct.user_id == user_id,
+            UserSavedProduct.user_id.in_(member_ids),
             UserSavedProduct.is_active == 1,
         )
         saved_items = db.exec(saved_items_stmt).all()
@@ -402,7 +408,7 @@ class ExcelStagingService:
                 number_counts[num] = number_counts.get(num, 0) + 1
         other_numbers = {n for n, c in number_counts.items() if c > 1}
 
-        # Invoice numbers already saved in the user's history (batch query)
+        # Invoice numbers already saved in the company's history (batch query)
         dirty_numbers = {
             str(r.invoice_number or "").strip()
             for r in all_rows if r.is_dirty
@@ -413,7 +419,7 @@ class ExcelStagingService:
             existing_numbers = set(db.exec(
                 select(InvoiceModel.external_id).where(
                     InvoiceModel.external_id.in_(dirty_numbers),
-                    InvoiceModel.user_id == user_id,
+                    InvoiceModel.user_id.in_(member_ids),
                     InvoiceModel.is_deleted == False,
                 )
             ).all())
@@ -517,7 +523,7 @@ class ExcelStagingService:
             existing = db.exec(
                 select(InvoiceModel.external_id).where(
                     InvoiceModel.external_id.in_(numbers_to_check),
-                    InvoiceModel.user_id == user_id,
+                    InvoiceModel.user_id.in_(get_member_scope_ids(db, user_id)),
                     InvoiceModel.is_deleted == False,
                 )
             ).all()

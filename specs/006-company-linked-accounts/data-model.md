@@ -44,7 +44,7 @@
 | Table / area | Scope rule |
 |---|---|
 | `invoices` (manual + automation-posted) | company (read/edit per status rules; delete matrix below) |
-| `user_saved_product` | company (CRUD by all members) |
+| `user_saved_product` | company (CRUD by all members; the Excel bulk-upload parser resolves `saved_item_code` against the company set, so a member's upload accepts codes saved by any member) |
 | Buyers (derived from invoice history) | company (automatic) |
 | Dashboard stats, reports | company |
 | `excel_staging_session` / `excel_staging_row` | actor (workspace) |
@@ -59,9 +59,14 @@
 | Row | Owner | Employee | Portal admin |
 |---|---|---|---|
 | Manual invoice (any member's) | yes | yes | yes |
-| Automation-posted invoice (`automation_invoice_id` set — identifier confirmed on main-DB Invoice) | yes | **no (403)** | yes |
+| Automation-posted invoice (`automation_invoice_id` set — identifier confirmed on main-DB Invoice) | yes | yes | yes |
 | Saved product | yes | yes | — |
 | Employee account | deactivate (no hard delete) | no | deactivate/delete via existing admin routes (guarded: see spec FR-013 — owner may not be deletable while active employees exist; employee rows are never hard-deleted by the company API) |
+
+Deletion is bounded by the **company scope, not by role**: any member may delete
+any of the company's invoices — automation-posted ones included — while a row
+belonging to another company 404s exactly as before (single and bulk paths
+alike).
 
 ## 6. Numbering state
 

@@ -78,6 +78,12 @@ class UserProfile(UserResponse):
     fbr_seller_province: Optional[str] = None
     fbr_seller_address: Optional[str] = None
 
+    # Which environments the company has credentials for — company-resolved
+    # (owner's row) so members can render the invoice form correctly without
+    # the tokens themselves ever leaving the backend.
+    fbr_sandbox_token_configured: bool = False
+    fbr_production_token_configured: bool = False
+
     # Invoice numbering settings
     invoice_prefix: Optional[str] = 'INV-'
     invoice_start_number: Optional[int] = 1

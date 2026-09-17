@@ -451,6 +451,10 @@ def get_profile(
             fbr_business_name=effective_user.fbr_business_name,
             fbr_seller_province=effective_user.fbr_seller_province,
             fbr_seller_address=effective_user.fbr_seller_address,
+            # Token PRESENCE only — the invoice form picks its environment from
+            # this instead of the actor's own (empty) credential row.
+            fbr_sandbox_token_configured=bool(effective_user.fbr_sandbox_token),
+            fbr_production_token_configured=bool(effective_user.fbr_production_token),
             invoice_prefix=effective_user.invoice_prefix,
             invoice_start_number=effective_user.invoice_start_number,
             invoice_padding=effective_user.invoice_padding,
@@ -517,6 +521,10 @@ def update_profile(
             fbr_business_name=effective_user.fbr_business_name,
             fbr_seller_province=effective_user.fbr_seller_province,
             fbr_seller_address=effective_user.fbr_seller_address,
+            # Token PRESENCE only — the invoice form picks its environment from
+            # this instead of the actor's own (empty) credential row.
+            fbr_sandbox_token_configured=bool(effective_user.fbr_sandbox_token),
+            fbr_production_token_configured=bool(effective_user.fbr_production_token),
             invoice_prefix=effective_user.invoice_prefix,
             invoice_start_number=effective_user.invoice_start_number,
             invoice_padding=effective_user.invoice_padding,

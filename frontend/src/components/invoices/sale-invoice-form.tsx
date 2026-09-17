@@ -337,24 +337,16 @@ export function SaleInvoiceForm({
           setSellerAddress(profile.fbr_seller_address);
         }
 
-        // Auto-set environment based on configured FBR tokens
-        // Fetch FBR credentials to check which tokens are configured
-        try {
-          const fbrCredentials = await api.auth.getFbrCredentials();
-          const hasSandbox = !!fbrCredentials.fbr_sandbox_token;
-          const hasProduction = !!fbrCredentials.fbr_production_token;
-
-          // Logic: If both or only production → PRODUCTION, if only sandbox → SANDBOX
-          if (hasProduction) {
-            setEnvironment('PRODUCTION');
-          } else if (hasSandbox) {
-            setEnvironment('SANDBOX');
-          }
-          // If neither token exists, keep default SANDBOX
-        } catch (error) {
-          console.error('Failed to fetch FBR credentials:', error);
-          // Keep default SANDBOX if fetch fails
+        // Auto-set environment from the COMPANY's configured FBR tokens. The
+        // profile is company-resolved (employees carry no tokens of their own),
+        // so this matches the credentials the backend actually posts with.
+        // Logic: If both or only production → PRODUCTION, if only sandbox → SANDBOX
+        if (profile.fbr_production_token_configured) {
+          setEnvironment('PRODUCTION');
+        } else if (profile.fbr_sandbox_token_configured) {
+          setEnvironment('SANDBOX');
         }
+        // If neither token exists, keep default SANDBOX
       } catch (error) {
         console.error('Failed to fetch user profile:', error);
       }

@@ -79,10 +79,12 @@
 
 - [X] T020 [US2] Swap visibility predicates to company-member scope in `backend/src/services/invoice_service.py` (list/get/count/adjacent/unified history — use `get_company_member_ids`); keep every row's `user_id = creator` untouched (attribution, FR-005)
 - [X] T021 [US2] Same member-scope swap in `backend/src/api/v1/invoices.py`: history/list endpoints, PDF ownership checks, buyers-from-history derivation (~313–367, now company-wide automatically) and the DELETE matrix (data-model.md §5): any member may delete manual invoices company-wide; rows with `automation_invoice_id` set are owner-only (403 `"Only the company owner can delete automation-posted invoices"` for non-owner members) — apply to both single and bulk/manual-bulk delete paths
+  - **Superseded (2026-09-17)**: the owner-only 403 was removed at the product owner's request — deletion is now company-scoped for every member, automation-posted invoices included (data-model.md §5 updated; single + bulk paths). Foreign-company rows still 404 / report in `not_found_ids`.
 - [X] T022 [P] [US2] Company scope for all CRUD in `backend/src/api/v1/saved_products.py` (list/get/update/delete by all members)
 - [X] T023 [P] [US2] Company scope for stats in `backend/src/api/v1/dashboard.py` and `backend/src/api/v1/reports.py` (member ids instead of actor id)
 - [X] T024 [US2] Company scope for saved-product/invoice counts in `backend/src/api/v1/user_profile.py`; AUDIT (no code change) that staging sessions, bulk-operation tasks, posting logs and counters stay actor-scoped per data-model.md §4
 - [X] T025 [US2] Tests in `backend/tests/test_company.py`: two-way visibility of manual invoices, automation-posted invoices (insert with `automation_invoice_id` set), saved products, buyers list, dashboard counts, reports; creator `user_id` attribution preserved on employee-created rows; records of a deactivated employee remain visible to the owner; employee deletes manual invoice OK / automation-posted → 403; owner deletes both; staging/bulk/log isolation between members of the same company
+  - **Superseded (2026-09-17)**: the "employee → 403" expectations were replaced by `TestCompanyDeleteMatrix` coverage for the company-scoped delete rule (employee deletes manual + automation-posted, single and bulk; foreign company → 404 / `not_found_ids`).
 
 **Checkpoint**: US2 independently testable — shared dataset identical from both member accounts, attribution and delete matrix enforced.
 

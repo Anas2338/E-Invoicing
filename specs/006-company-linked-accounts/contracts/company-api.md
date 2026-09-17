@@ -74,7 +74,7 @@ Deactivates an employee. Caller must be the company owner; target must be a memb
 
 ### GET `/api/v1/auth/profile` (and login `user` object)
 
-Adds two fields; seller + numbering fields become **company-resolved** for members:
+Adds four fields; seller + numbering fields become **company-resolved** for members:
 
 ```json
 {
@@ -88,13 +88,15 @@ Adds two fields; seller + numbering fields become **company-resolved** for membe
   "fbr_business_name": "ACME (Pvt) Ltd",
   "fbr_seller_province": "Sindh",
   "fbr_seller_address": "Karachi",
+  "fbr_sandbox_token_configured": false,     // NEW — presence only, company-resolved
+  "fbr_production_token_configured": true,   // NEW — drives the invoice form's environment auto-select
   "invoice_prefix": "INV-",         // owner's numbering settings for employees
   "invoice_start_number": 1,
   "invoice_padding": 4,
   "invoice_include_year": false
 }
 ```
-Never includes token fields (unchanged behavior). For owners/standalone users, payload is unchanged except the two new fields.
+Never includes token fields (unchanged behavior). For owners/standalone users, payload is unchanged except the new fields. Consumers: the manual invoice form (`sale-invoice-form.tsx`) selects its environment from the two `*_token_configured` flags — it must never call `GET /auth/profile/fbr-credentials`, which returns the ACTOR's own row (empty for members).
 
 ### GET `/api/v1/profile/next-invoice-number`
 
@@ -114,7 +116,7 @@ Portal-admin endpoints (`/api/v1/admin/*`) are unchanged.
 
 ## 4. Data-scoping behavior changes (no shape changes)
 
-Existing GET/action endpoints keep their contracts; only the row set changes for company members: invoice list/history/detail/PDF, buyers, saved products (list/get/update/delete now company-wide for members), dashboard stats, reports, next-invoice-number. Employees gain 403 only on: deleting automation-posted invoices (`automation_invoice_id` set) and the owner-only writes above.
+Existing GET/action endpoints keep their contracts; only the row set changes for company members: invoice list/history/detail/PDF, buyers, saved products (list/get/update/delete now company-wide for members), dashboard stats, reports, next-invoice-number. Employees gain 403 only on the owner-only writes above — deletion is company-scoped for every member, automation-posted invoices (`automation_invoice_id` set) included; rows outside the company 404 (single) / report in `not_found_ids` (bulk).
 
 ## 5. AI-agent (direct calls, `/api/v1/automation/…`)
 

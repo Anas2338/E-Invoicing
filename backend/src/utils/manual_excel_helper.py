@@ -830,8 +830,12 @@ def parse_excel_for_staging(
     auto_numbers_iter = iter(auto_numbers)
 
     # --- Fetch saved items ---
+    # Saved products are company-shared (same scope as the items page), so a
+    # member's upload resolves codes saved by any member of the company.
+    from src.services.company_service import get_company_member_ids
+    member_ids = get_company_member_ids(db, user) if user else [user_id]
     statement = select(UserSavedProduct).where(
-        UserSavedProduct.user_id == user_id,
+        UserSavedProduct.user_id.in_(member_ids),
         UserSavedProduct.is_active == 1,
     )
     saved_items = db.exec(statement).all()
@@ -1085,8 +1089,12 @@ def parse_excel_for_manual_invoice(
 
     saved_items_dict = {}
     if user_id and main_db:
+        # Company-shared scope: members validate against every saved item in
+        # their company (see parse_excel_for_staging)
+        from src.services.company_service import get_company_member_ids
+        member_ids = get_company_member_ids(main_db, user) if user else [user_id]
         statement = select(UserSavedProduct).where(
-            UserSavedProduct.user_id == user_id,
+            UserSavedProduct.user_id.in_(member_ids),
             UserSavedProduct.is_active == 1,
         )
         saved_items = main_db.exec(statement).all()

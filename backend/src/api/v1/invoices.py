@@ -10,7 +10,7 @@ from slowapi.util import get_remote_address
 
 from src.database.session import get_db
 from src.services.invoice_service import InvoiceService, get_user_environment_filter
-from src.services.company_service import is_company_owner, resolve_effective_user
+from src.services.company_service import resolve_effective_user
 from src.services.fbr_service import fbr_service
 from src.services.auto_posting_service import AutoPostingService
 from src.services.pdf_service import PDFService
@@ -426,11 +426,9 @@ async def generate_bulk_pdf(
             detail="No invoice IDs provided"
         )
 
-    if len(invoice_ids) > 50:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot generate PDF for more than 50 invoices at once (got {len(invoice_ids)})"
-        )
+    # No batch size limit — users may print any number of invoices in one PDF.
+    # Generation is in-memory, so very large batches take proportionally longer
+    # and use more memory; the reverse proxy timeout must allow for that.
 
     # Fetch all invoices and verify company membership (any member may PDF
     # any invoice their company owns)
@@ -706,31 +704,23 @@ def delete_invoice(
     """
     Delete an invoice.
 
-    Delete matrix (data-model.md §5): any member may delete manual invoices
-    company-wide; automation-posted invoices (``automation_invoice_id`` set)
-    are owner-only. The row's ``user_id`` = creator is untouched (attribution).
+    Deletion follows the company scope: any member (owner or employee) may
+    delete any of the company's invoices, automation-posted ones included.
+    Rows outside the caller's company 404. The row's ``user_id`` = creator is
+    untouched (attribution).
     """
     service = InvoiceService()
 
     # Convert user_id string to UUID
     user_uuid = UUID(user_id)
 
-    # Pre-fetch to enforce the delete matrix (visibility is company-wide)
+    # Pre-fetch for the company visibility check (deletion shares that scope)
     invoice = db.get(Invoice, invoice_id)
     if not invoice or invoice.user_id not in _company_member_ids(db, user_uuid):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Invoice not found"
         )
-
-    # Automation-posted invoices are owner-only (delete matrix §5)
-    if invoice.automation_invoice_id:
-        user = db.get(User, user_uuid)
-        if user is None or not is_company_owner(user):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only the company owner can delete automation-posted invoices"
-            )
 
     # Attempt to delete the invoice
     success = service.delete_invoice(db, invoice_id, user_uuid)
@@ -1652,34 +1642,10 @@ def bulk_delete_invoices(
     service = InvoiceService()
     user_uuid = UUID(user_id)
 
-    # Delete matrix (data-model.md §5): automation-posted invoices are
-    # owner-only. For a non-owner bulk request they are excluded from the
-    # deletion and reported in ``failed``.
-    invoice_ids = body.invoice_ids
-    user = db.get(User, user_uuid)
-    blocked_ids: List[UUID] = []
-    if user is not None and not is_company_owner(user):
-        from sqlmodel import select
-
-        blocked_ids = list(db.exec(
-            select(Invoice.id).where(
-                Invoice.id.in_(invoice_ids),
-                Invoice.automation_invoice_id.isnot(None),
-            )
-        ).all())
-        invoice_ids = [i for i in invoice_ids if i not in blocked_ids]
-
-    result = service.bulk_delete_invoices(db, invoice_ids, user_uuid)
-    result["failed"] = [
-        *(result.get("failed") or []),
-        *[
-            {
-                "invoice_id": str(i),
-                "error": "Only the company owner can delete automation-posted invoices",
-            }
-            for i in blocked_ids
-        ],
-    ]
+    # Company-wide, same as single delete: every member may delete any of the
+    # company's invoices, automation-posted ones included. Ids outside the
+    # company are reported in ``failed`` by the service.
+    result = service.bulk_delete_invoices(db, body.invoice_ids, user_uuid)
     return BulkDeleteResponse(**result)
 
 

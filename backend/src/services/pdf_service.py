@@ -389,8 +389,6 @@ class PDFService:
         """Generate PDF for multiple invoices. Each starts on a new page."""
         if not invoices:
             raise ValueError("No invoices provided for batch PDF generation")
-        if len(invoices) > 50:
-            raise ValueError(f"Batch size exceeds maximum limit of 50 invoices")
 
         logger.info(f"Generating batch PDF for {len(invoices)} invoices")
 

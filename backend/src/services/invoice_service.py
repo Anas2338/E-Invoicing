@@ -179,12 +179,9 @@ class InvoiceService:
         Creator/owner semantics (attribution, delete-matrix checks) are NOT
         affected — callers keep the acting ``user_id`` for those.
         """
-        actor = db.get(User, user_id)
-        if actor is None:
-            return [user_id]
-        from src.services.company_service import get_company_member_ids
+        from src.services.company_service import get_member_scope_ids
 
-        return get_company_member_ids(db, actor)
+        return get_member_scope_ids(db, user_id)
 
     def get_invoice_by_id(self, db: Session, invoice_id: UUID, user_id: UUID) -> Optional[Invoice]:
         """
@@ -435,8 +432,8 @@ class InvoiceService:
         from src.models.posting_log import PostingLog
 
         # Get the invoice (without is_deleted filter for deletion).
-        # Company scope: any member may delete a manual invoice company-wide;
-        # the route layer enforces the automation-posted owner-only matrix.
+        # Company scope: any member may delete any company invoice, including
+        # automation-posted ones.
         member_ids = self._member_scope_ids(db, user_id)
         invoice = db.exec(
             select(Invoice)

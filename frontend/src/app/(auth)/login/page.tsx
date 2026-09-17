@@ -21,10 +21,13 @@ export default function LoginPage() {
     }
   };
 
+  // `-my-12` cancels the (auth) layout's `py-12`. Without it this nested
+  // min-h-screen box sits inside that padding and forces the document to
+  // 100vh + 96px, so the page scrolls on every screen size.
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#f6f6f7] via-white to-[#f1f8f5] dark:from-[#0a0a0a] dark:via-[#1a1a1a] dark:to-[#0d3d2f]/20 px-4 py-12 sm:px-6 lg:px-8">
+    <div className="-my-12 min-h-screen flex items-center justify-center bg-gradient-to-br from-[#f6f6f7] via-white to-[#f1f8f5] dark:from-[#0a0a0a] dark:via-[#1a1a1a] dark:to-[#0d3d2f]/20 px-4 py-6 sm:px-6 lg:px-8">
       <div className="max-w-7xl w-full">
-        <div className="grid lg:grid-cols-[3fr_2fr] gap-8 items-start">
+        <div className="grid lg:grid-cols-[5fr_4fr] gap-8 items-start">
           {/* Feature Highlights - Hidden on mobile, shown on desktop */}
           <div className="hidden lg:block">
             <FeatureHighlights />

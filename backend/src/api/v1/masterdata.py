@@ -99,6 +99,11 @@ async def get_user_fbr_token(db, user_id: str, environment: str = "SANDBOX") -> 
             logger.warning(f"User {user_id} not found in database")
             return None
 
+        # Company-linked members use the company's single FBR credential set
+        # (owner's row) — same resolution as validation/posting.
+        from src.services.company_service import resolve_effective_user
+        user = resolve_effective_user(db, user)
+
         encrypted_token = None
         if environment == "SANDBOX":
             encrypted_token = user.fbr_sandbox_token or user.fbr_access_token

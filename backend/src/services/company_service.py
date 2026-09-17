@@ -15,6 +15,7 @@ import logging
 from typing import List
 from uuid import UUID
 
+from sqlalchemy import or_
 from sqlmodel import Session, select
 
 from src.models.user import User
@@ -63,6 +64,23 @@ def get_company_member_ids(db: Session, actor: User) -> List[UUID]:
     owner this degrades to ``[actor.id]``.
     """
     root_id = get_company_root_id(db, actor)
-    statement = select(User.id).where(User.company_id == root_id)
+    # ``User.id == root_id`` keeps the root row in scope even when its
+    # ``company_id`` is still NULL (rows created before the backfill migration
+    # — ``company_id == id`` is what normally matches it).
+    statement = select(User.id).where(
+        or_(User.company_id == root_id, User.id == root_id)
+    )
     # Single-column selects come back from SQLModel as plain scalars (not rows)
     return list(db.exec(statement).all())
+
+
+def get_member_scope_ids(db: Session, user_id: UUID) -> List[UUID]:
+    """
+    Company scope for callers that hold a bare user id instead of a User row.
+    Falls back to ``[user_id]`` when the row is missing, keeping pre-company
+    behavior for a nonexistent actor.
+    """
+    actor = db.get(User, user_id)
+    if actor is None:
+        return [user_id]
+    return get_company_member_ids(db, actor)
