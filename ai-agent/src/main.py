@@ -65,6 +65,9 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "X-CSRF-Token"],
+    # Lets the frontend read the report downloads' server-computed filename
+    # (and the inline/attachment disposition) off the cross-origin response.
+    expose_headers=["Content-Disposition"],
     max_age=600,
 )
 

@@ -6,8 +6,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Eye, RefreshCw, Loader2, Trash2, Pause, Play, Calendar, ArrowLeft } from 'lucide-react';
-import { automationApi } from '@/services/automationApi';
+import { automationApi, type AutomationReportFilters } from '@/services/automationApi';
 import { toast } from 'sonner';
+import { AutomationReportButton } from './automation-report-button';
 
 interface Invoice {
   id: string;
@@ -402,6 +403,19 @@ export function InvoiceTable({
     </div>
   );
 
+  // The report downloads cover whatever the dashboard is filtered to.
+  // Built from localFilters, not the `filters` prop, which lags behind the
+  // 400ms debounce (same reasoning as handleSelectAll). `amount` is left out:
+  // it is a client-side-only filter the server-side report cannot honour.
+  const reportFilters: AutomationReportFilters = {
+    status: localFilters.status || undefined,
+    source: localFilters.source || undefined,
+    date_from: localFilters.date_from || undefined,
+    date_to: localFilters.date_to || undefined,
+    invoice_number: localFilters.invoice_number || undefined,
+    customer: localFilters.customer || undefined,
+  };
+
   // Bulk Actions Sidebar
   const BulkActionsSidebar = () => {
     const hasSelection = selectedInvoices.length > 0;
@@ -432,6 +446,10 @@ export function InvoiceTable({
               <ArrowLeft className="h-4 w-4" />
             </Button>
           )}
+        <AutomationReportButton
+          filters={reportFilters}
+          className="h-10 lg:h-12 w-10 lg:w-12"
+        />
         {onBulkRetry && (
           <Button
             variant="outline"
@@ -597,6 +615,7 @@ export function InvoiceTable({
 
               return (
                 <>
+                  <AutomationReportButton filters={reportFilters} className="h-8 w-8" />
                   {onBulkRetry && (
                     <Button
                       variant="outline"

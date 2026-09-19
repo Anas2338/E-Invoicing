@@ -104,6 +104,35 @@ export interface UploadSessionsResponse {
   total: number;
 }
 
+/**
+ * The six report downloads offered over a filtered invoice set: the sales tax
+ * and income tax (236G / 236H) reports, each as a PDF, a CSV line-item export
+ * and a party-wise PDF.
+ *
+ * Each value doubles as the endpoint's path segment under
+ * /automation/reports/invoices/.
+ */
+export type AutomationReportFormat =
+  | 'pdf'
+  | 'csv'
+  | 'party-wise-pdf'
+  | 'income-tax-pdf'
+  | 'income-tax-csv'
+  | 'income-tax-party-wise-pdf';
+
+/**
+ * Dashboard filters carried through to a report download. All optional so
+ * "no filters" means the whole automation history rather than an error.
+ */
+export interface AutomationReportFilters {
+  status?: string;
+  source?: string;
+  date_from?: string;
+  date_to?: string;
+  invoice_number?: string;
+  customer?: string;
+}
+
 class AutomationApiClient {
   private baseUrl: string;
 
@@ -668,6 +697,70 @@ class AutomationApiClient {
 
     return response.blob();
   }
+
+  /**
+   * Download a report over the automation invoices matching the given filters.
+   *
+   * Served from the automation database, so it covers exactly the rows the
+   * dashboard is showing — including invoices that have not been transferred
+   * to the main database yet. The date filters are the scheduled-date range;
+   * leaving them out reports everything, and the server names the period it
+   * actually covered in the response filename (and the PDF header).
+   *
+   * Returns the file together with the server's filename, which is null when
+   * the header is unreadable, so callers can fall back to their own naming.
+   */
+  async downloadReport(
+    format: AutomationReportFormat,
+    filters: AutomationReportFilters = {}
+  ): Promise<{ blob: Blob; filename: string | null }> {
+    const queryParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(filters)) {
+      if (value) queryParams.append(key, value);
+    }
+    const query = queryParams.toString();
+
+    const response = await fetch(
+      `${this.baseUrl}/automation/reports/invoices/${format}${query ? `?${query}` : ''}`,
+      { headers: this.getHeaders() }
+    );
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => null);
+      // The ai-agent's error handler reports the error's type in `detail` and
+      // the actual cause in `message` (outside production), so surfacing only
+      // `detail` would reduce every failure to "Internal server error: X".
+      const detail = error?.message
+        ? `${error?.detail ?? 'Request failed'} — ${error.message}`
+        : error?.detail;
+      throw new Error(detail || 'Failed to generate report');
+    }
+
+    return {
+      blob: await response.blob(),
+      filename: filenameFromContentDisposition(response.headers.get('Content-Disposition')),
+    };
+  }
+}
+
+/**
+ * Extract a filename from a Content-Disposition header, preferring the
+ * RFC 5987 form when the server sends both.
+ */
+function filenameFromContentDisposition(header: string | null): string | null {
+  if (!header) return null;
+
+  const encoded = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded[1]);
+    } catch {
+      return encoded[1];
+    }
+  }
+
+  const quoted = header.match(/filename="?([^";]+)"?/i);
+  return quoted ? quoted[1] : null;
 }
 
 // Export singleton instance

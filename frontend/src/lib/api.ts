@@ -95,6 +95,10 @@ export interface ReportInvoiceRow {
 export interface InvoiceReportResponse {
   date_from: string;
   date_to: string;
+  /** Customer filters that were applied ("" when unset), echoed back so
+   *  downloads reuse the searched filters rather than the current inputs. */
+  buyer_name: string;
+  buyer_ntn_cnic: string;
   summary: ReportSummary;
   items_summary: ReportItemSummary[];
   invoices: ReportInvoiceRow[];
@@ -259,8 +263,15 @@ export const api = {
 
   // Report endpoints
   reports: {
-    getInvoiceReport: async (params: { date_from: string; date_to: string }): Promise<InvoiceReportResponse> => {
+    getInvoiceReport: async (params: {
+      date_from: string;
+      date_to: string;
+      buyer_name?: string;
+      buyer_ntn_cnic?: string;
+    }): Promise<InvoiceReportResponse> => {
       const queryParams = new URLSearchParams({ date_from: params.date_from, date_to: params.date_to });
+      if (params.buyer_name) queryParams.append('buyer_name', params.buyer_name);
+      if (params.buyer_ntn_cnic) queryParams.append('buyer_ntn_cnic', params.buyer_ntn_cnic);
       return fetchWithAuth(`/reports/invoices?${queryParams.toString()}`);
     },
     getInvoiceYears: async (): Promise<ReportYearsResponse> => {

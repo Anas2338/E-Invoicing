@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { CalendarDays, FileSearch, Loader2, Search, X } from 'lucide-react';
+import { CalendarDays, FileSearch, Hash, Loader2, Search, User, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { api, type InvoiceReportResponse } from '@/lib/api';
+import { resolveReportRange } from '@/lib/report-date-range';
 import { ReportSummaryTable } from '@/components/reports/report-summary-table';
 import { ReportItemsTable } from '@/components/reports/report-items-table';
 import { ReportDownloadButton } from '@/components/reports/report-download-button';
@@ -41,6 +42,8 @@ export default function ReportPage() {
   const [availableYears, setAvailableYears] = useState<number[]>([]);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [buyerName, setBuyerName] = useState('');
+  const [buyerNtnCnic, setBuyerNtnCnic] = useState('');
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState<InvoiceReportResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -62,41 +65,32 @@ export default function ReportPage() {
   }, []);
 
   const handleSearch = async () => {
-    let queryFrom = '';
-    let queryTo = '';
+    const range = resolveReportRange({
+      year,
+      month,
+      dateFrom,
+      dateTo,
+      hasBuyerFilter: buyerName.trim() !== '' || buyerNtnCnic.trim() !== '',
+      availableYears,
+    });
 
-    if (year) {
-      // Year/month mode takes precedence over the From/To fields
-      if (month) {
-        const m = Number(month);
-        const lastDay = new Date(Number(year), m, 0).getDate();
-        queryFrom = `${year}-${month}-01`;
-        queryTo = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
-      } else {
-        queryFrom = `${year}-01-01`;
-        queryTo = `${year}-12-31`;
-      }
-    } else {
-      if (month) {
-        toast.error('Please select a year along with the month');
-        return;
-      }
-      if (!dateFrom || !dateTo) {
-        toast.error('Please select both From and To dates, or pick a Year/Month');
-        return;
-      }
-      if (dateFrom > dateTo) {
-        toast.error('From date must not be after To date');
-        return;
-      }
-      queryFrom = dateFrom;
-      queryTo = dateTo;
+    if (!range.ok) {
+      toast.error(range.error);
+      return;
     }
+
+    const queryFrom = range.from;
+    const queryTo = range.to;
 
     setLoading(true);
     setError(null);
     try {
-      const data = await api.reports.getInvoiceReport({ date_from: queryFrom, date_to: queryTo });
+      const data = await api.reports.getInvoiceReport({
+        date_from: queryFrom,
+        date_to: queryTo,
+        buyer_name: buyerName.trim() || undefined,
+        buyer_ntn_cnic: buyerNtnCnic.trim() || undefined,
+      });
       setReport(data);
     } catch (err) {
       setReport(null);
@@ -113,19 +107,23 @@ export default function ReportPage() {
     setMonth('');
     setDateFrom('');
     setDateTo('');
+    setBuyerName('');
+    setBuyerNtnCnic('');
     setReport(null);
     setError(null);
   };
 
   // Any non-empty filter means the user has set a filter
-  const isFilterSet = year !== '' || month !== '' || dateFrom !== '' || dateTo !== '';
+  const isFilterSet =
+    year !== '' || month !== '' || dateFrom !== '' || dateTo !== '' || buyerName !== '' || buyerNtnCnic !== '';
 
   return (
     <div className="max-w-7xl mx-auto p-3 sm:p-4 lg:p-5 space-y-3 lg:space-y-4">
 
-      {/* Filter bar — grid below lg (tidy 1/2-col layout), flex-wrap with even
-          spacing on laptop and up (matches the invoice history filter bar) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-wrap lg:justify-around items-end gap-2 lg:gap-3 px-3 lg:px-4 py-2 lg:py-2.5 border-2 border-blue-600 rounded-4xl bg-white shadow-sm">
+      {/* Filter bar — grid below lg (tidy 1/2-col layout), single left-packed
+          row on laptop and up: fields first, then the action buttons grouped
+          right after them */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-wrap lg:justify-start items-end gap-2 lg:gap-3 px-3 lg:px-4 py-2 lg:py-2.5 border-2 border-blue-600 rounded-4xl bg-white shadow-sm">
         <div className="flex flex-col gap-1 lg:min-w-30">
           <label className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-500 dark:text-neutral-400 uppercase tracking-wider">
             <CalendarDays className="h-3 w-3" />
@@ -199,6 +197,42 @@ export default function ReportPage() {
             aria-label="To date"
           />
         </div>
+        {/* Customer filters narrow the date range, so they stay enabled in
+            both date modes (Year/Month and From/To). */}
+        <div className="flex flex-col gap-1 lg:min-w-42.5">
+          <label className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-500 dark:text-neutral-400 uppercase tracking-wider">
+            <User className="h-3 w-3" />
+            Customer
+          </label>
+          <input
+            type="text"
+            value={buyerName}
+            onChange={(e) => setBuyerName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !loading) handleSearch();
+            }}
+            placeholder="Customer name"
+            className={filterInputClass}
+            aria-label="Customer name"
+          />
+        </div>
+        <div className="flex flex-col gap-1 lg:min-w-37.5">
+          <label className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-500 dark:text-neutral-400 uppercase tracking-wider">
+            <Hash className="h-3 w-3" />
+            NTN/CNIC
+          </label>
+          <input
+            type="text"
+            value={buyerNtnCnic}
+            onChange={(e) => setBuyerNtnCnic(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !loading) handleSearch();
+            }}
+            placeholder="Customer NTN/CNIC"
+            className={filterInputClass}
+            aria-label="Customer NTN/CNIC"
+          />
+        </div>
         <div className="flex flex-wrap items-end gap-2 lg:gap-3 sm:col-span-2 lg:contents">
           <Button type="button" size="default" onClick={handleSearch} disabled={loading}>
             {loading ? (
@@ -218,6 +252,8 @@ export default function ReportPage() {
             <ReportDownloadButton
               dateFrom={report.date_from}
               dateTo={report.date_to}
+              buyerName={report.buyer_name}
+              buyerNtnCnic={report.buyer_ntn_cnic}
               disabled={report.invoices.length === 0}
             />
           )}
@@ -237,7 +273,7 @@ export default function ReportPage() {
         <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
           <FileSearch className="h-6 w-6 text-slate-300 dark:text-neutral-600" />
           <p className="mt-2 text-sm text-slate-500 dark:text-neutral-400">
-            Select a year/month or a date range, then click Search to generate your report.
+            Search by customer name or NTN/CNIC on its own to cover everything up to today, or narrow it with a date range or Year/Month.
           </p>
         </div>
       )}
@@ -260,6 +296,14 @@ export default function ReportPage() {
 
       {!loading && report !== null && (
         <div className="space-y-4 sm:space-y-6">
+          {/* The searched range can differ from the From/To inputs (a
+              customer-only search resolves to "earliest data → today"), so
+              state it explicitly rather than leaving it implied. */}
+          <p className="text-xs text-slate-500 dark:text-neutral-400">
+            <span className="font-semibold">Period:</span> {report.date_from} to {report.date_to}
+            {report.buyer_name && <> · <span className="font-semibold">Customer:</span> {report.buyer_name}</>}
+            {report.buyer_ntn_cnic && <> · <span className="font-semibold">NTN/CNIC:</span> {report.buyer_ntn_cnic}</>}
+          </p>
           {report.invoices.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 px-4 border-2 border-dashed border-blue-200 dark:border-neutral-800 rounded-4xl bg-white dark:bg-neutral-900">
               <FileSearch className="h-8 w-8 text-slate-300 dark:text-neutral-600" />
@@ -267,7 +311,7 @@ export default function ReportPage() {
                 No invoices found for the selected period
               </p>
               <p className="mt-1 text-xs text-slate-400 dark:text-neutral-500">
-                Try widening the date range or selecting a different year/month.
+                Try widening the date range, clearing the customer filter, or selecting a different year/month.
               </p>
             </div>
           ) : (

@@ -150,7 +150,7 @@ export function RecentInvoices({
                     <td className="border-r-2 border-blue-200 px-2 py-1.5 w-[29%]">
                       <div className="text-[11px] lg:text-[13px] xl:text-sm font-medium text-slate-700 truncate">{invoice.buyerName || 'N/A'}</div>
                     </td>
-                    <td className="border-r-2 border--blue-200 px-2 py-1.5 w-[11%]">
+                    <td className="border-r-2 border-blue-200 px-2 py-1.5 w-[11%]">
                       <div className="text-[11px] lg:text-[13px] xl:text-sm font-medium text-slate-700 text-right whitespace-nowrap">
                         {invoice.amount.toLocaleString(
                           'en-US', {
@@ -159,7 +159,7 @@ export function RecentInvoices({
                         })}
                       </div>
                     </td>
-                    <td className="border-r-2 border--blue-200 px-1 py-1.5 text-center w-[10%]">
+                    <td className="border-r-2 border-blue-200 px-1 py-1.5 text-center w-[10%]">
                       <Badge className={`${getStatusColor(invoice.status)}`}>
                         {invoice.status === 'validated' ? 'valid' : invoice.status}
                       </Badge>

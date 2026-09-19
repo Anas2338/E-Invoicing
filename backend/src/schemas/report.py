@@ -63,9 +63,15 @@ class ReportInvoiceRow(BaseModel):
 class InvoiceReportResponse(BaseModel):
     """
     Full invoice report for a date range.
+
+    buyer_name / buyer_ntn_cnic echo the buyer filters that were applied
+    (empty string when unset), so the client can reuse the searched
+    filters for the PDF/CSV downloads.
     """
     date_from: str
     date_to: str
+    buyer_name: str = ""
+    buyer_ntn_cnic: str = ""
     summary: ReportSummary
     items_summary: List[ReportItemSummary]
     invoices: List[ReportInvoiceRow]

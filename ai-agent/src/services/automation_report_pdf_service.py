@@ -1,10 +1,11 @@
 """
-Report PDF generation service (platypus).
+Automation report PDF generation service (platypus).
 
-Generates professional A4 portrait reports for a date range:
+Generates professional A4 portrait reports for a date range over the
+automation database:
 - Invoice report: title / info header, full summary table (all tax totals,
-  reusing the exact numbers the JSON endpoint returns), a multi-page invoice
-  details table with a repeating header row, and a grand-total row.
+  reusing the exact numbers the aggregation service returns), a multi-page
+  invoice details table with a repeating header row, and a grand-total row.
 - Party-wise report: the same header, then one row per customer with their
   invoice count and tax totals, and a grand-total row.
 - Income tax report: the same header, then one row per income tax section
@@ -13,16 +14,24 @@ Generates professional A4 portrait reports for a date range:
 - Party-wise income tax report: one row per customer *and* section, so the
   income tax position can be read per party.
 
+Mirror of the main backend's ``report_pdf_service.py``: same header blocks,
+palette, column geometry and footers, so an automation report and a manual
+report are visually indistinguishable apart from the period and the filter
+note they describe. The only difference is the data source — rows here come
+from ``automation_report_service`` (automation payloads flattened out of the
+``invoice_data`` JSON column), and the period is the scheduled-date range the
+dashboard was filtered to.
+
 All four share the title/info header blocks and the table styling, and end
 with "Page X of Y" footers via a two-pass numbered canvas.
 
 Uses the installed reportlab platypus engine (part of reportlab>=4.0.0,
-no new dependency). Font and number formatting are shared with the
-existing FBR invoice PDFService (FONT_PATH, fmt_num) so both documents
-render identically.
+no new dependency). Number formatting matches the main backend's
+PDFService.fmt_num so both services render figures identically.
 """
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 from typing import Dict, List, Optional
 from xml.sax.saxutils import escape as xml_escape
 
@@ -43,9 +52,31 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-from .pdf_service import FONT_PATH, fmt_num
-
 logger = logging.getLogger(__name__)
+
+# Same asset location convention as the invoice PDFService (src/../assets).
+# The Unicode font is optional: when it is absent every report falls back to
+# Helvetica, which is what the main backend does too.
+ASSETS_DIR = Path(__file__).parent.parent / "assets"
+FONT_PATH = ASSETS_DIR / "NotoSansArabic-Regular.ttf"
+
+
+def fmt_num(value) -> str:
+    """Format a numeric value for display.
+
+    Copied from the main backend's PDFService.fmt_num so an automation
+    report formats money exactly like a manual one.
+    """
+    if value is None or value == '':
+        return '0.00'
+    try:
+        v = float(value)
+        if v == int(v) and abs(v) < 1000:
+            return str(int(v))
+        return f"{v:,.2f}"
+    except (ValueError, TypeError):
+        return str(value)
+
 
 PAGE_WIDTH, PAGE_HEIGHT = A4  # 595.27 x 841.89 pt
 
@@ -66,7 +97,8 @@ WHITE = colors.white
 
 # Summary block rows: (label, summary key, is_currency).
 # Mirrors the report page's summary table, so PDF and UI show the same
-# full tax picture. Keys must exist in ReportSummary.
+# full tax picture. Keys must exist in the summary built by
+# automation_report_service.build_report_data.
 SUMMARY_ROWS = [
     ("Total Number of Invoices", 'total_invoices', False),
     ("Total Sales Value Excl. Tax", 'sales_value_excluding_st', True),
@@ -174,8 +206,8 @@ class _NumberedCanvas(canvas_module.Canvas):
         self.restoreState()
 
 
-class ReportPDFService:
-    """Service for generating date-range invoice report PDFs."""
+class AutomationReportPDFService:
+    """Service for generating date-range automation report PDFs."""
 
     def __init__(self):
         self._fonts_registered = False
@@ -270,12 +302,13 @@ class ReportPDFService:
         """
         Generate the report PDF and return it as bytes.
 
-        `summary` and `rows` come from report_service.build_report_data,
-        so the PDF totals always match the JSON endpoint's totals.
+        `summary` and `rows` come from
+        automation_report_service.build_report_data, so the PDF totals
+        always match the aggregation the other downloads use.
 
-        `filter_note` describes any buyer filters applied on top of the
-        date range (e.g. "Customer: Ali & Sons"), printed in the info
-        block so a filtered report is never mistaken for a full one.
+        `filter_note` describes the dashboard filters applied on top of the
+        period (e.g. "Status: validated | Customer: Ali & Sons"), printed in
+        the info block so a filtered report is never mistaken for a full one.
         """
         styles = self._styles()
         generated_at = generated_at or datetime.utcnow()
@@ -289,13 +322,13 @@ class ReportPDFService:
             rightMargin=MARGIN_RIGHT,
             topMargin=MARGIN_TOP,
             bottomMargin=MARGIN_BOTTOM,
-            title="Tax Invoice Report",
+            title="Automation Invoice Report",
             author="Taxntec",
             canvasmaker=_NumberedCanvas,
         )
 
         story = []
-        story.extend(self._title_block(styles, "Tax Invoice Report", generated_str))
+        story.extend(self._title_block(styles, "Automation Invoice Report", generated_str))
         story.extend(self._info_block(
             styles,
             date_from=date_from,
@@ -334,13 +367,13 @@ class ReportPDFService:
         try:
             doc.build(story)
         except Exception as e:
-            logger.error(f"Failed to build report PDF: {e}")
+            logger.error(f"Failed to build automation report PDF: {e}")
             raise
 
         pdf_bytes = buffer.getvalue()
         buffer.close()
         logger.info(
-            f"Generated report PDF: {len(pdf_bytes)} bytes, "
+            f"Generated automation report PDF: {len(pdf_bytes)} bytes, "
             f"{len(rows)} invoices, {date_from} to {date_to}"
         )
         return pdf_bytes
@@ -362,8 +395,8 @@ class ReportPDFService:
 
         One row per customer with its invoice count and tax totals, then a
         grand-total row. `parties` and `totals` come from
-        report_service.build_party_wise_report, so a customer's figures here
-        always match the same figures in the invoice report.
+        automation_report_service.build_party_wise_report, so a customer's
+        figures here always match the same figures in the invoice report.
 
         Shares the title/info header with generate_report_pdf, so both
         documents are styled identically and carry the same period, business
@@ -381,13 +414,14 @@ class ReportPDFService:
             rightMargin=MARGIN_RIGHT,
             topMargin=MARGIN_TOP,
             bottomMargin=MARGIN_BOTTOM,
-            title="Party-wise Sales Report",
+            title="Automation Party-wise Sales Report",
             author="Taxntec",
             canvasmaker=_NumberedCanvas,
         )
 
         story = []
-        story.extend(self._title_block(styles, "Party-wise Sales Report", generated_str))
+        story.extend(self._title_block(
+            styles, "Automation Party-wise Sales Report", generated_str))
         story.extend(self._info_block(
             styles,
             date_from=date_from,
@@ -404,13 +438,13 @@ class ReportPDFService:
         try:
             doc.build(story)
         except Exception as e:
-            logger.error(f"Failed to build party-wise report PDF: {e}")
+            logger.error(f"Failed to build party-wise automation report PDF: {e}")
             raise
 
         pdf_bytes = buffer.getvalue()
         buffer.close()
         logger.info(
-            f"Generated party-wise report PDF: {len(pdf_bytes)} bytes, "
+            f"Generated party-wise automation report PDF: {len(pdf_bytes)} bytes, "
             f"{len(parties)} parties, {date_from} to {date_to}"
         )
         return pdf_bytes
@@ -431,12 +465,12 @@ class ReportPDFService:
         Generate the income tax (236G / 236H) report PDF and return it as bytes.
 
         `sections` and `totals` come from
-        report_service.build_income_tax_report, so the sales value and
-        withholding tax here reconcile with the invoice report's totals.
+        automation_report_service.build_income_tax_report, so the sales value
+        and withholding tax here reconcile with the invoice report's totals.
 
         Shares the title/info header with the other report documents, so the
-        period, business, environment and any active customer filter read the
-        same way on every download.
+        period, business, environment and any active filter read the same way
+        on every download.
         """
         styles = self._styles()
         generated_at = generated_at or datetime.utcnow()
@@ -450,13 +484,14 @@ class ReportPDFService:
             rightMargin=MARGIN_RIGHT,
             topMargin=MARGIN_TOP,
             bottomMargin=MARGIN_BOTTOM,
-            title="Income Tax Report",
+            title="Automation Income Tax Report",
             author="Taxntec",
             canvasmaker=_NumberedCanvas,
         )
 
         story = []
-        story.extend(self._title_block(styles, "Income Tax Report", generated_str))
+        story.extend(self._title_block(
+            styles, "Automation Income Tax Report", generated_str))
         story.extend(self._info_block(
             styles,
             date_from=date_from,
@@ -472,13 +507,13 @@ class ReportPDFService:
         try:
             doc.build(story)
         except Exception as e:
-            logger.error(f"Failed to build income tax report PDF: {e}")
+            logger.error(f"Failed to build income tax automation report PDF: {e}")
             raise
 
         pdf_bytes = buffer.getvalue()
         buffer.close()
         logger.info(
-            f"Generated income tax report PDF: {len(pdf_bytes)} bytes, "
+            f"Generated income tax automation report PDF: {len(pdf_bytes)} bytes, "
             f"{len(sections)} sections, {date_from} to {date_to}"
         )
         return pdf_bytes
@@ -501,7 +536,7 @@ class ReportPDFService:
         One row per (customer, income tax section) with the sales value and
         withholding tax reported under that section, then a grand-total row.
         `parties` and `totals` come from
-        report_service.build_party_wise_income_tax_report.
+        automation_report_service.build_party_wise_income_tax_report.
         """
         styles = self._styles()
         generated_at = generated_at or datetime.utcnow()
@@ -515,14 +550,14 @@ class ReportPDFService:
             rightMargin=MARGIN_RIGHT,
             topMargin=MARGIN_TOP,
             bottomMargin=MARGIN_BOTTOM,
-            title="Party-wise Income Tax Report",
+            title="Automation Party-wise Income Tax Report",
             author="Taxntec",
             canvasmaker=_NumberedCanvas,
         )
 
         story = []
         story.extend(self._title_block(
-            styles, "Party-wise Income Tax Report", generated_str))
+            styles, "Automation Party-wise Income Tax Report", generated_str))
         story.extend(self._info_block(
             styles,
             date_from=date_from,
@@ -538,13 +573,13 @@ class ReportPDFService:
         try:
             doc.build(story)
         except Exception as e:
-            logger.error(f"Failed to build party-wise income tax PDF: {e}")
+            logger.error(f"Failed to build party-wise income tax automation report PDF: {e}")
             raise
 
         pdf_bytes = buffer.getvalue()
         buffer.close()
         logger.info(
-            f"Generated party-wise income tax PDF: {len(pdf_bytes)} bytes, "
+            f"Generated party-wise income tax automation report PDF: {len(pdf_bytes)} bytes, "
             f"{len(parties)} parties, {date_from} to {date_to}"
         )
         return pdf_bytes
@@ -598,7 +633,7 @@ class ReportPDFService:
             f"Environment: {env_label}",
         ]
         if filter_note:
-            # Paragraph parses a mini-XML subset, so a raw "&" in a business
+            # Paragraph parses a mini-XML subset, so a raw "&" in a customer
             # name ("Ali & Sons") would abort the build.
             info_lines.append(xml_escape(filter_note))
 
@@ -644,7 +679,7 @@ class ReportPDFService:
 
         if not rows:
             empty_style = ParagraphStyle('empty-row', parent=styles['empty'])
-            data.append([Paragraph("No invoices found for the selected period", empty_style)]
+            data.append([Paragraph("No invoices found for the selected filters", empty_style)]
                         + [Paragraph('', styles['cell_center']) for _ in COL_HEADERS[1:]])
         else:
             for idx, row in enumerate(rows, 1):
@@ -703,7 +738,7 @@ class ReportPDFService:
 
         if not parties:
             data.append(
-                [Paragraph("No invoices found for the selected period", styles['empty'])]
+                [Paragraph("No invoices found for the selected filters", styles['empty'])]
                 + [Paragraph('', styles['cell_center']) for _ in PARTY_COL_HEADERS[1:]]
             )
         else:
@@ -762,7 +797,7 @@ class ReportPDFService:
 
         if not sections:
             data.append(
-                [Paragraph("No invoices found for the selected period", styles['empty'])]
+                [Paragraph("No invoices found for the selected filters", styles['empty'])]
                 + [Paragraph('', styles['cell_center']) for _ in INCOME_TAX_COL_HEADERS[1:]]
             )
         else:
@@ -818,7 +853,7 @@ class ReportPDFService:
 
         if not parties:
             data.append(
-                [Paragraph("No invoices found for the selected period", styles['empty'])]
+                [Paragraph("No invoices found for the selected filters", styles['empty'])]
                 + [Paragraph('', styles['cell_center']) for _ in PARTY_INCOME_TAX_COL_HEADERS[1:]]
             )
         else:
