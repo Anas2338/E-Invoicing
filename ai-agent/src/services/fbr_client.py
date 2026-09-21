@@ -45,11 +45,11 @@ class FBRClient:
         "20": "Cement/Concrete Block",
         "21": "Potassium Chlorate",
         "22": "CNG Sales",
-        "23": "Goods as per SRO.297(I)/2023",
+        # FBR's own reference data (and the spec's SN024 row) spells this with a
+        # pipe — a capital I is a different string to FBR. See _resolve_sale_type.
+        "23": "Goods as per SRO.297(|)/2023",
         "24": "Non-Adjustable Supplies"
     }
-
-    SALE_TYPE_REVERSE_MAPPING = {v: k for k, v in SALE_TYPE_MAPPING.items()}
 
     PRODUCTION_VALIDATE_URL = f"{settings.fbr_production_base_url}/validateinvoicedata"
     PRODUCTION_POST_URL = f"{settings.fbr_production_base_url}/postinvoicedata"
@@ -108,20 +108,44 @@ class FBRClient:
             return "Unregistered"
         return value
 
+    @staticmethod
+    def _normalise_sale_type(value: str) -> str:
+        """
+        Fold the spellings FBR's data varies on for the same sale type.
+
+        FBR's reference data spells 297 with a pipe ("SRO.297(|)/2023") while
+        older hardcoded tables in this project use a capital I ("SRO.297(I)/2023").
+        """
+        return value.strip().lower().replace("|", "i")
+
+    def _resolve_sale_type(self, sale_type_input: str) -> str:
+        """
+        Resolve a stored sale_type — an FBR code, or a name from FBR's reference
+        data — to the value FBR expects on the wire.
+
+        An unrecognised name is passed through unchanged, mirroring the manual
+        system's transform. It must not silently fall back to "Goods at standard
+        rate (default)": that pairs an SRO/zero-rated item with the standard-rate
+        sale type, and FBR then rejects the item's rate with error 0046
+        ("Provided Rate is not correct").
+        """
+        normalised = self._normalise_sale_type(sale_type_input)
+        for description in self.SALE_TYPE_MAPPING.values():
+            if self._normalise_sale_type(description) == normalised:
+                return description
+
+        if sale_type_input.isdigit() and sale_type_input in self.SALE_TYPE_MAPPING:
+            return self.SALE_TYPE_MAPPING[sale_type_input]
+
+        return sale_type_input or self.SALE_TYPE_MAPPING["01"]
+
     def _transform_items_to_fbr_format(self, items: list, uom_mapping: Dict[str, str]) -> list:
         """Transform items to FBR API format (matches manual system's _transform_invoice_to_fbr_format)."""
         transformed_items = []
         for item in items:
-            sale_type_input = str(item.get("sale_type", "01")).strip()
-
-            if sale_type_input in self.SALE_TYPE_REVERSE_MAPPING:
-                sale_type_code = self.SALE_TYPE_REVERSE_MAPPING[sale_type_input]
-            elif sale_type_input.isdigit() and sale_type_input in self.SALE_TYPE_MAPPING:
-                sale_type_code = sale_type_input
-            else:
-                sale_type_code = "01"
-
-            sale_type_description = self.SALE_TYPE_MAPPING[sale_type_code]
+            sale_type_description = self._resolve_sale_type(
+                str(item.get("sale_type", "01")).strip()
+            )
 
             rate = str(item.get("rate", "0"))
             if not rate.endswith("%"):
