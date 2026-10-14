@@ -29,7 +29,10 @@ logger = logging.getLogger(__name__)
 
 def validate_database_url_security(url: str) -> None:
     url_lower = url.lower()
-    if url_lower.startswith('postgresql://') or url_lower.startswith('postgres://'):
+    # Scheme only, so driver-qualified URLs (postgresql+psycopg2://) are
+    # validated the same as the bare postgresql:// form.
+    scheme = url_lower.split('://', 1)[0] if '://' in url_lower else ''
+    if scheme.startswith('postgres'):
         if 'sslmode=' not in url_lower:
             raise ValueError(
                 "SECURITY ERROR: Database connection must use SSL/TLS encryption. "

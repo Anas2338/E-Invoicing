@@ -16,11 +16,13 @@ RUN apt-get update -o Acquire::Retries=5 -o Acquire::http::Timeout=30 \
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Copy dependency files
-COPY pyproject.toml ./
+# Copy dependency files (uv.lock included so the install is reproducible)
+COPY pyproject.toml uv.lock ./
 
-# Install dependencies
-RUN rm -f uv.lock && uv sync --no-cache --no-dev --no-install-project
+# Install dependencies from the committed lock. --frozen installs exactly the
+# locked versions instead of re-resolving, so a build can never pick up a
+# newer release than the one tested locally.
+RUN uv sync --frozen --no-cache --no-dev --no-install-project
 
 # Cleanup
 RUN find /app/.venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \

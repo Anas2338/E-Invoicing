@@ -23,6 +23,8 @@ dependencies = [
     "alembic>=1.15.0",
     "python-dotenv>=1.0.0",
     "pandas>=2.2.0",
+    # Server CPU predates x86-64-v2: numpy 2.x Linux wheels won't import there.
+    "numpy<2.0.0",
     "openpyxl>=3.1.0",
     "apscheduler>=3.10.0",
     "slowapi>=0.1.9",

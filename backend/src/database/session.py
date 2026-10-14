@@ -37,9 +37,12 @@ def validate_database_url_security(url: str) -> None:
         ValueError: If SSL/TLS is not enabled
     """
     url_lower = url.lower()
+    # Scheme only, so driver-qualified URLs (postgresql+psycopg2://) are
+    # validated the same as the bare postgresql:// form.
+    scheme = url_lower.split('://', 1)[0] if '://' in url_lower else ''
 
     # Check for PostgreSQL SSL mode
-    if url_lower.startswith('postgresql://') or url_lower.startswith('postgres://'):
+    if scheme.startswith('postgres'):
         # Skip SSL check for local Unix socket connections (inherently secure)
         if 'host=' in url_lower and ('/var/run/postgresql' in url_lower or '/tmp/' in url_lower or '/run/' in url_lower):
             logger.info("Database connection uses local Unix socket — SSL not required")
@@ -67,7 +70,7 @@ def validate_database_url_security(url: str) -> None:
         logger.info("Database connection encryption validated: SSL/TLS enabled")
 
     # Check for MySQL SSL
-    elif url_lower.startswith('mysql://'):
+    elif scheme.startswith('mysql'):
         if 'ssl=' not in url_lower and 'ssl_ca=' not in url_lower:
             logger.warning(
                 "Database connection may not be encrypted. "

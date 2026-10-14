@@ -22,8 +22,10 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 # Copy dependency files
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies with uv (no cache, no dev dependencies)
-RUN uv sync --no-cache --no-dev --no-install-project
+# Install dependencies from the committed lock. --frozen installs exactly the
+# locked versions instead of re-resolving, so a build can never pick up a
+# newer release than the one tested locally.
+RUN uv sync --frozen --no-cache --no-dev --no-install-project
 
 # Cleanup
 RUN find /app/.venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \

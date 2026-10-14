@@ -14,6 +14,27 @@ class Settings(BaseSettings):
     automation_database_url: str = Field(default="postgresql://localhost/fbr_automation", validation_alias="AUTOMATION_DATABASE_URL")
     main_database_url: str = Field(default="", validation_alias="DATABASE_URL")
 
+    @field_validator('automation_database_url', 'main_database_url')
+    @classmethod
+    def pin_postgresql_driver(cls, v: str) -> str:
+        """Name the PostgreSQL driver in the URL instead of relying on a default.
+
+        With a bare ``postgresql://`` URL SQLAlchemy picks its own default
+        DBAPI, and which one that is depends on the SQLAlchemy version (2.1
+        moved it to psycopg 3). Only ``psycopg2-binary`` is installed, so an
+        image that resolves a newer SQLAlchemy dies at import time with
+        "No module named 'psycopg'". Spelling out ``+psycopg2`` keeps every
+        environment on the driver that is installed. Empty URLs (no main
+        database configured) pass through untouched.
+        """
+        for scheme in ('postgresql', 'postgres'):
+            if v.startswith(f'{scheme}://'):
+                return 'postgresql+psycopg2://' + v.split('://', 1)[1]
+        for scheme in ('postgresql+psycopg://', 'postgres+psycopg://'):
+            if v.startswith(scheme):
+                return 'postgresql+psycopg2://' + v.split('://', 1)[1]
+        return v
+
     # Authentication settings (MUST match main backend)
     auth_jwt_secret: str = Field(validation_alias="AUTH_JWT_SECRET")
     auth_issuer: Optional[str] = Field(default="fbr-invoice-portal", validation_alias="AUTH_ISSUER")
