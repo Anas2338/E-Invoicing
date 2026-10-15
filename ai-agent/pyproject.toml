@@ -3,7 +3,7 @@ name = "fbr-ai-agent-automation"
 version = "0.1.0"
 description = "AI-Agent standalone service for FBR Invoice Automation (future-date Excel uploads)"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 license = { text = "MIT" }
 authors = [
     { name = "Development Team", email = "dev@example.com" }
