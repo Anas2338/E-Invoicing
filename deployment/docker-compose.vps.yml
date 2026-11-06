@@ -1,0 +1,78 @@
+# ============================================================
+# FBR E-Invoicing — standalone VPS deployment
+#
+# Started by deployment/07-deploy-app.sh. Contains no secrets:
+# the service env files are rendered into ../runtime/ from
+# deployment/.env plus the application env files.
+#
+# The compose file is provider-neutral: it runs the same way on
+# any Ubuntu/Debian VPS (Hostinger, DigitalOcean, Vultr, AWS,
+# Azure, GCP, Oracle Cloud, a local VM, ...). Host networking
+# matches the existing production deployment, so containers
+# reach PostgreSQL at 127.0.0.1:5432 and Nginx reaches them on
+# 3001, 7860, and 8002.
+# ============================================================
+
+name: e-invoicing-vps
+
+services:
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    image: e-invoicing-backend:vps
+    container_name: fbr-backend
+    network_mode: host
+    env_file:
+      - ../runtime/backend.env
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      # PUBLIC_URL comes from deployment/.env, which Compose loads
+      # from the compose file's directory.
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${PUBLIC_URL}/api/v1
+        NEXT_PUBLIC_BACKEND_URL: ${PUBLIC_URL}
+        NEXT_PUBLIC_AI_AGENT_API_URL: ${PUBLIC_URL}/agent/api/v1
+    image: e-invoicing-frontend:vps
+    container_name: fbr-frontend
+    network_mode: host
+    environment:
+      HOSTNAME: 0.0.0.0
+      PORT: 3001
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  ai-agent:
+    build:
+      context: ../ai-agent
+      dockerfile: Dockerfile
+    image: e-invoicing-ai-agent:vps
+    container_name: fbr-ai-agent
+    network_mode: host
+    env_file:
+      - ../runtime/ai-agent.env
+    # The image defaults to 7860 for Hugging Face; on this host the
+    # agent must listen on 8002 so it does not collide with the backend.
+    command:
+      - uvicorn
+      - src.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8002"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped

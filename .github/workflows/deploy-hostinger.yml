@@ -1,0 +1,172 @@
+# ============================================================
+# Hostinger standby deployment
+#
+# One push to master updates every deployment target:
+#   - deploy-vps.yml       -> Namecheap (production)
+#   - deploy-agent.yml     -> Hugging Face Space (AI agent)
+#   - this workflow        -> Hostinger (standby images)
+#
+# Hostinger runs PostgreSQL as a streaming replica, so its
+# database is read-only. This workflow syncs code, refreshes the
+# host Nginx config, and builds the three images. It never starts
+# the backend, frontend, or AI agent and never runs migrations:
+# posting to FBR happens before the database write, so a backend
+# started against a standby would submit an invoice and then fail
+# to record it.
+#
+# Required repository secrets:
+#   HOSTINGER_HOST, HOSTINGER_USERNAME, HOSTINGER_PORT,
+#   HOSTINGER_SSH_PRIVATE_KEY
+# ============================================================
+name: Deploy to Hostinger (standby)
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'ai-agent/**'
+      - 'deployment/docker-compose.vps.yml'
+      - 'nginx/vps.conf'
+      - '.github/workflows/deploy-hostinger.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-hostinger-standby
+  cancel-in-progress: false
+
+jobs:
+  stage:
+    name: Build and stage images
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Verify deploy secrets are configured
+        env:
+          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
+          HOSTINGER_USERNAME: ${{ secrets.HOSTINGER_USERNAME }}
+          HOSTINGER_PORT: ${{ secrets.HOSTINGER_PORT }}
+          HOSTINGER_SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+        run: |
+          missing=0
+          for name in HOSTINGER_HOST HOSTINGER_USERNAME HOSTINGER_PORT HOSTINGER_SSH_PRIVATE_KEY; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Repository secret ${name} is empty. Add it under Settings -> Secrets and variables -> Actions -> Secrets (not Variables)."
+              missing=1
+            fi
+          done
+          exit "${missing}"
+
+      - name: Copy application code to Hostinger
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.HOSTINGER_HOST }}
+          username: ${{ secrets.HOSTINGER_USERNAME }}
+          key: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+          port: ${{ secrets.HOSTINGER_PORT }}
+          source: "backend,frontend,ai-agent,deployment,nginx"
+          target: /opt/e-invoicing/
+          rm: false
+          overwrite: true
+          timeout: 300s
+          command_timeout: 15m
+
+      - name: Build images without starting services
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.HOSTINGER_HOST }}
+          username: ${{ secrets.HOSTINGER_USERNAME }}
+          key: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+          port: ${{ secrets.HOSTINGER_PORT }}
+          command_timeout: 55m
+          script: |
+            set -Eeuo pipefail
+            cd /opt/e-invoicing
+
+            # The SCP step must have delivered the CI inputs, and the
+            # runtime env files must already exist on the host. They
+            # hold application secrets and are never stored in Git.
+            test -f deployment/docker-compose.vps.yml
+            test -f nginx/vps.conf
+            test -f runtime/backend.env
+            test -f runtime/ai-agent.env
+
+            # Refuse to run if the disk cannot hold another image layer.
+            available_kb="$(df -Pk / | awk 'NR==2 {print $4}')"
+            if [ "${available_kb}" -lt 10485760 ]; then
+              echo "ERROR: less than 10 GiB free on / (${available_kb} KiB)."
+              df -h /
+              exit 1
+            fi
+
+            # Hostinger must still be a standby. If it was promoted, the
+            # operator must run deployment/07-deploy-app.sh deliberately.
+            in_recovery="$(runuser -u postgres -- psql -tAc 'SELECT pg_is_in_recovery()' | tr -d '[:space:]')"
+            echo "pg_is_in_recovery=${in_recovery}"
+            if [ "${in_recovery}" != "t" ]; then
+              echo "ERROR: Hostinger is not in recovery. Refusing to build/start automatically."
+              echo "Run deployment/07-deploy-app.sh after promotion instead."
+              exit 1
+            fi
+
+            wal_status="$(runuser -u postgres -- psql -tAc 'SELECT status FROM pg_stat_wal_receiver' | tr -d '[:space:]')"
+            echo "wal_receiver_status=${wal_status}"
+            if [ "${wal_status}" != "streaming" ]; then
+              echo "ERROR: WAL receiver is not streaming. Fix replication before deploying."
+              exit 1
+            fi
+
+            # Refresh the host-level Nginx config. Hostinger is not the
+            # active origin, so this does not affect production traffic.
+            install -m 0644 nginx/vps.conf /etc/nginx/conf.d/e-invoicing.conf
+            nginx -t
+            systemctl reload nginx
+
+            # The remote deployment/.env still contains the raw HTTP
+            # origin from the initial setup. Force the public HTTPS URL
+            # into the frontend build so a promoted Hostinger serves
+            # the correct API and agent endpoints.
+            export PUBLIC_URL="https://taxntec.com"
+
+            echo "Building backend, frontend, and AI-agent images..."
+            docker compose -f deployment/docker-compose.vps.yml build
+
+            # Prove the images were produced.
+            docker image inspect \
+              e-invoicing-backend:vps \
+              e-invoicing-frontend:vps \
+              e-invoicing-ai-agent:vps > /dev/null
+
+            # Safety: the application must remain stopped on a standby.
+            for name in fbr-backend fbr-frontend fbr-ai-agent; do
+              if docker inspect "${name}" > /dev/null 2>&1; then
+                state="$(docker inspect -f '{{.State.Status}}' "${name}")"
+                echo "container ${name}: ${state}"
+                if [ "${state}" = "running" ]; then
+                  echo "ERROR: ${name} is running on the standby. Refusing to continue."
+                  exit 1
+                fi
+              fi
+            done
+
+            # Confirm the build did not disturb replication.
+            wal_status_after="$(runuser -u postgres -- psql -tAc 'SELECT status FROM pg_stat_wal_receiver' | tr -d '[:space:]')"
+            echo "wal_receiver_status_after_build=${wal_status_after}"
+            if [ "${wal_status_after}" != "streaming" ]; then
+              echo "ERROR: replication stopped during the build."
+              exit 1
+            fi
+
+            # Keep recent images for rollback; remove only old dangling layers.
+            docker image prune -f --filter "until=24h" || true
+            df -h / | tail -1
+            echo "Hostinger images staged; services remain stopped."
