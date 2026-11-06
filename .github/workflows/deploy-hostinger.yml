@@ -24,8 +24,6 @@ on:
   push:
     branches:
       - master
-      # Temporary: remove this branch after the first dry run.
-      - ci/hostinger-deploy
     paths:
       - 'backend/**'
       - 'frontend/**'
