@@ -109,3 +109,9 @@ demo
 data_backup_plan.md
 taxntec-backup.json
 specs
+
+# Deployment: only the files CI needs are tracked; local secrets
+# and discovery output stay out of the repository.
+deployment/.env
+# Server inventory output from 00-discover-primary.sh
+deployment/discovery/
