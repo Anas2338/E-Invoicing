@@ -52,6 +52,22 @@ jobs:
       - name: Check out the repository
         uses: actions/checkout@v4
 
+      - name: Verify deploy secrets are configured
+        env:
+          HOSTINGER_HOST: ${{ secrets.HOSTINGER_HOST }}
+          HOSTINGER_USERNAME: ${{ secrets.HOSTINGER_USERNAME }}
+          HOSTINGER_PORT: ${{ secrets.HOSTINGER_PORT }}
+          HOSTINGER_SSH_PRIVATE_KEY: ${{ secrets.HOSTINGER_SSH_PRIVATE_KEY }}
+        run: |
+          missing=0
+          for name in HOSTINGER_HOST HOSTINGER_USERNAME HOSTINGER_PORT HOSTINGER_SSH_PRIVATE_KEY; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Repository secret ${name} is empty. Add it under Settings -> Secrets and variables -> Actions -> Secrets (not Variables)."
+              missing=1
+            fi
+          done
+          exit "${missing}"
+
       - name: Copy application code to Hostinger
         uses: appleboy/scp-action@v0.1.7
         with:
